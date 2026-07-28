@@ -1,6 +1,6 @@
 id: "kandev-plugin-gotchi"
 api_version: 1
-version: "0.3.0"
+version: "0.3.1"
 display_name: "Kandev Gotchi"
 description: "A tiny creature that lives in the session top bar and evolves forever as work happens in this kandev instance."
 author: "kandev"

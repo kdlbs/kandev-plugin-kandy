@@ -814,18 +814,22 @@ function creatureParts(h, data) {
   return parts;
 }
 
-function creatureSvg(h, data, size, extraClass) {
+// isStatic renders a motionless portrait (top-bar icon): no bob wrapper, and
+// the kandev-gotchi-static class kills descendant blink/wiggle animations so
+// the icon sits still — all the life stays in the hover card.
+function creatureSvg(h, data, size, extraClass, isStatic) {
+  var cls = (extraClass || "") + (isStatic ? " kandev-gotchi-static" : "");
   return h(
     "svg",
     {
       width: size,
       height: size,
       viewBox: "0 0 100 100",
-      className: extraClass || "",
+      className: cls.trim(),
       "aria-hidden": "true",
       style: { overflow: "visible", flexShrink: 0 },
     },
-    h("g", { className: "kandev-gotchi-bob" }, creatureParts(h, data)),
+    h("g", { className: isStatic ? "" : "kandev-gotchi-bob" }, creatureParts(h, data)),
   );
 }
 
@@ -1125,6 +1129,7 @@ var GOTCHI_CSS =
   ".kandev-gotchi-bob{animation:kandev-gotchi-bob 2.8s ease-in-out infinite}" +
   ".kandev-gotchi-blink{animation:kandev-gotchi-blink 4.6s ease-in-out infinite}" +
   ".kandev-gotchi-wiggle{animation:kandev-gotchi-wiggle 7s ease-in-out infinite;transform-origin:50% 70%}" +
+  ".kandev-gotchi-static,.kandev-gotchi-static *{animation:none!important}" +
   "@media (prefers-reduced-motion: reduce){.kandev-gotchi-bob,.kandev-gotchi-blink,.kandev-gotchi-wiggle{animation:none}}";
 
 function injectStyles() {
@@ -1309,7 +1314,7 @@ function makeGotchiWidget(host) {
             onMouseEnter: load,
             onFocus: load,
           },
-          creatureSvg(h, shown, 24),
+          creatureSvg(h, shown, 24, "", true),
         ),
       ),
       h(
