@@ -28,8 +28,23 @@ const WEB_DIR =
 const OUT_DIR = "/tmp/kandev-gotchi-demo/screenshots";
 
 const SALT = 20260728; // fixed demo lineage — note in any report/README
-const LEVELS = [1, 2, 3, 4, 5];
-for (let l = 10; l <= 100; l += 5) LEVELS.push(l);
+
+// `--hero-level <n>` renders only a hero cell for that level
+// (evolution-hero-lv<n>.png) instead of the full 1..100 sheet.
+const heroArg = process.argv.indexOf("--hero-level");
+const HERO_LEVEL = heroArg >= 0 ? Number.parseInt(process.argv[heroArg + 1], 10) : null;
+
+const LEVELS = [];
+if (HERO_LEVEL != null) {
+  if (!Number.isInteger(HERO_LEVEL) || HERO_LEVEL < 1) {
+    console.error("--hero-level must be a positive integer");
+    process.exit(1);
+  }
+  LEVELS.push(HERO_LEVEL);
+} else {
+  LEVELS.push(1, 2, 3, 4, 5);
+  for (let l = 10; l <= 100; l += 5) LEVELS.push(l);
+}
 
 // --- 1. Faithful level facts from the real Go functions ---
 const bin = path.join(REPO, "bin", "kandev-plugin-gotchi");
@@ -202,19 +217,24 @@ try {
   await page.goto("file://" + htmlPath);
   await page.waitForTimeout(300);
 
-  await page.locator("#sheet").screenshot({
-    path: path.join(OUT_DIR, "evolution-sheet-1-100.png"),
-  });
+  const heroLevel = LEVELS[LEVELS.length - 1];
+  if (HERO_LEVEL == null) {
+    await page.locator("#sheet").screenshot({
+      path: path.join(OUT_DIR, "evolution-sheet-1-100.png"),
+    });
+  }
   await page.locator("#hero-wrap").screenshot({
-    path: path.join(OUT_DIR, "evolution-hero-lv100.png"),
+    path: path.join(OUT_DIR, `evolution-hero-lv${heroLevel}.png`),
   });
 
-  await page.evaluate(() => document.body.classList.add("dark"));
-  await page.waitForTimeout(200);
-  await page.locator("#sheet").screenshot({
-    path: path.join(OUT_DIR, "evolution-sheet-1-100-dark.png"),
-  });
-  console.log("wrote evolution sheets to " + OUT_DIR);
+  if (HERO_LEVEL == null) {
+    await page.evaluate(() => document.body.classList.add("dark"));
+    await page.waitForTimeout(200);
+    await page.locator("#sheet").screenshot({
+      path: path.join(OUT_DIR, "evolution-sheet-1-100-dark.png"),
+    });
+  }
+  console.log("wrote evolution renders to " + OUT_DIR);
 } finally {
   await browser.close();
 }
