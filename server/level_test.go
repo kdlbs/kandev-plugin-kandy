@@ -87,67 +87,88 @@ func TestRoundDownToTenth_NeverReaches100(t *testing.T) {
 	require.Equal(t, 42.1, roundDownToTenth(42.19))
 }
 
-func TestTierForLevel_SceneRotationInBand(t *testing.T) {
-	const salt = 7
-	require.Equal(t, 0, tierForLevel(salt, 1), "the egg hatches in the meadow")
-
-	seen := map[int]bool{}
-	for level := 2; level <= bandMax; level++ {
-		tier := tierForLevel(salt, level)
-		require.GreaterOrEqual(t, tier, 0)
-		require.Less(t, tier, numScenes)
-		seen[tier] = true
-		// Scenes rotate every 2-3 levels: any 4-level window spans a block
-		// boundary, and adjacent blocks always differ.
-		if level+3 <= bandMax {
-			require.NotEqual(t, tier, tierForLevel(salt, level+3),
-				"scene must change within 3 levels of %d", level)
-		}
-	}
-	require.GreaterOrEqual(t, len(seen), 12, "band tours nearly the whole scene vocabulary")
-}
-
-func TestTierForLevel_InfiniteLadderBeyondBand(t *testing.T) {
-	const salt = 7
-	require.Equal(t, numScenes, tierForLevel(salt, bandMax+1))
-	require.Equal(t, numScenes, tierForLevel(salt, bandMax+5))
-	require.Equal(t, numScenes+1, tierForLevel(salt, bandMax+6))
-	require.Less(t, tierForLevel(salt, 100), tierForLevel(salt, 1000),
-		"cosmos keeps advancing forever")
-}
-
-func TestArchetypeForLevel_AdjacentLevelsAlwaysDiffer(t *testing.T) {
+func TestLineageDNA_DeterministicAndInRange(t *testing.T) {
 	for _, salt := range []uint32{0, 7, 42, 20260728} {
-		require.Equal(t, -1, archetypeForLevel(salt, 1), "level 1 is the egg")
-		prev := -1
-		for level := 2; level <= 120; level++ {
-			arch := archetypeForLevel(salt, level)
-			require.GreaterOrEqual(t, arch, 0)
-			require.Less(t, arch, numArchetypes)
-			require.NotEqual(t, prev, arch,
-				"salt=%d: levels %d and %d share a silhouette", salt, level-1, level)
-			prev = arch
-		}
+		arch := archetypeForLineage(salt)
+		require.GreaterOrEqual(t, arch, 0)
+		require.Less(t, arch, numArchetypes)
+		require.Equal(t, arch, archetypeForLineage(salt))
+
+		family := paletteFamilyForLineage(salt)
+		require.GreaterOrEqual(t, family, 0)
+		require.Less(t, family, numFamilies)
+
+		biome := biomeForLineage(salt)
+		require.GreaterOrEqual(t, biome, 0)
+		require.Less(t, biome, numBiomes)
+
+		require.Equal(t, lineageSeed(salt), lineageSeed(salt))
+		require.NotEqual(t, salt, lineageSeed(salt), "raw salt is never exposed")
 	}
 }
 
-func TestArchetypeForLevel_Deterministic(t *testing.T) {
-	for level := 1; level <= 50; level++ {
-		require.Equal(t, archetypeForLevel(42, level), archetypeForLevel(42, level))
+// TestCrossSeedDiversity: different installs at the same level are clearly
+// different beings — over 8 salts, multiple archetypes and palette families
+// show up.
+func TestCrossSeedDiversity(t *testing.T) {
+	salts := []uint32{1, 2, 3, 4, 5, 6, 7, 8}
+	archetypes := map[int]bool{}
+	families := map[int]bool{}
+	names := map[string]bool{}
+	for _, salt := range salts {
+		archetypes[archetypeForLineage(salt)] = true
+		families[paletteFamilyForLineage(salt)] = true
+		names[stageName(salt, 20)] = true
 	}
+	require.GreaterOrEqual(t, len(archetypes), 3, "distinct species across seeds")
+	require.GreaterOrEqual(t, len(families), 3, "distinct palettes across seeds")
+	require.GreaterOrEqual(t, len(names), 3, "distinct names across seeds")
 }
 
-// TestAdjacentLevelsDifferBeyondPalette is the distinctness property: for
-// every consecutive pair in the designed band, the appearance descriptor
-// (archetype silhouette; the scene also rotates every 2-3 levels) differs —
-// never only the palette/seed.
-func TestAdjacentLevelsDifferBeyondPalette(t *testing.T) {
+// TestCoherence_SameIdentityAcrossBand: for levels 2..bandMax, consecutive
+// levels are the SAME being (archetype, palette family, biome, species all
+// constant) AND differ by at least one additive element (richness strictly
+// grows). This replaces the v0.2 adjacent-distinctness property.
+func TestCoherence_SameIdentityAcrossBand(t *testing.T) {
 	const salt = 20260728
-	for level := 1; level < bandMax; level++ {
-		aThis := archetypeForLevel(salt, level)
-		aNext := archetypeForLevel(salt, level+1)
-		require.NotEqual(t, aThis, aNext, "levels %d/%d share a silhouette", level, level+1)
-		require.NotEqual(t, stageName(salt, level), stageName(salt, level+1))
+	arch := archetypeForLineage(salt)
+	family := paletteFamilyForLineage(salt)
+	biome := biomeForLineage(salt)
+	species := speciesByArchetype[arch]
+	for level := 2; level <= bandMax; level++ {
+		require.Equal(t, arch, archetypeForLineage(salt), "level %d", level)
+		require.Equal(t, family, paletteFamilyForLineage(salt))
+		require.Equal(t, biome, biomeForLineage(salt))
+		require.Contains(t, stageName(salt, level), species,
+			"level %d keeps its species name", level)
+		require.Greater(t, richnessScore(level), richnessScore(level-1),
+			"level %d must add something new", level)
+	}
+}
+
+func TestStageForLevel_MetamorphosisMilestones(t *testing.T) {
+	require.Equal(t, stageEgg, stageForLevel(1))
+	require.Equal(t, stageHatch, stageForLevel(2))
+	require.Equal(t, stageHatch, stageForLevel(7))
+	require.Equal(t, stageJuvenile, stageForLevel(8))
+	require.Equal(t, stageAdult, stageForLevel(18))
+	require.Equal(t, stageMajestic, stageForLevel(30))
+	require.Equal(t, stageMajestic, stageForLevel(1000))
+}
+
+// TestRichness_MonotonicAwesomeness: the awesomeness budget never dips, is
+// strictly increasing through the whole 1..bandMax arc (every level adds),
+// and stays non-decreasing forever after.
+func TestRichness_MonotonicAwesomeness(t *testing.T) {
+	for level := 2; level <= bandMax; level++ {
+		require.Greater(t, richnessScore(level), richnessScore(level-1),
+			"richness must strictly increase at level %d", level)
+	}
+	prev := richnessScore(bandMax)
+	for level := bandMax + 1; level <= 200; level++ {
+		score := richnessScore(level)
+		require.GreaterOrEqual(t, score, prev, "richness dipped at level %d", level)
+		prev = score
 	}
 }
 
@@ -157,16 +178,22 @@ func TestAppearanceSeed_DeterministicPerLevel(t *testing.T) {
 	require.NotEqual(t, appearanceSeed(42, 3), appearanceSeed(43, 3), "instances have distinct lineages")
 }
 
-func TestStageName_TracksArchetype(t *testing.T) {
+func TestStageName_FixedSpeciesRisingEpithets(t *testing.T) {
 	const salt = 7
 	require.Equal(t, "Egg", stageName(salt, 1))
+	species := speciesByArchetype[archetypeForLineage(salt)]
 	for level := 2; level <= bandMax; level++ {
 		name := stageName(salt, level)
-		species := speciesByArchetype[archetypeForLevel(salt, level)]
 		require.True(t, strings.HasSuffix(name, " "+species),
-			"level %d: %q must name its silhouette %q", level, name, species)
+			"level %d: %q keeps the lineage species %q", level, name, species)
 		require.Equal(t, name, stageName(salt, level), "stable per level")
 	}
+	// The epithet ladder tells the dull->awesome story: humble words early,
+	// radiant words late.
+	humble := stageName(salt, 3)
+	require.Contains(t, epithetBands[0], strings.TrimSuffix(humble, " "+species))
+	epic := stageName(salt, 40)
+	require.Contains(t, epithetBands[4], strings.TrimSuffix(epic, " "+species))
 }
 
 func TestStageName_MythicLadderBeyondBand(t *testing.T) {

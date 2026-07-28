@@ -114,7 +114,24 @@ Response — creature facts only, no factor breakdown:
   with an activity overlay (recently fed vs. napping) derived from
   `updated_at` — never mentions factors or numbers.
 
-## 6. Procedural evolution (v0.2.0: every band level meaningfully different)
+## 6. Procedural evolution
+
+> **v0.3.0 — DNA vs growth.** v0.2's per-level archetype cycling broke the
+> tamagotchi fantasy ("it's a different guy every level"). v0.3 splits the
+> generator: the **salt is DNA** — it fixes archetype/species, palette
+> family, biome, and lineage style picks (eye/horn/tail/marking/held-item
+> styles via `lineage_seed`) for the whole lifetime — while the **level is
+> growth**: a strictly additive unlock ladder (one new/upgraded element per
+> level 2..40: markings, tail/horn/wing growth, companions, held items,
+> crown@15, glow@25, halo@30, aura@31/36, rays@35, burst@40) over
+> metamorphosis milestones (hatch 2, juvenile 8, adult 18, majestic 30)
+> that scale/mature the same body. Colors ramp dull->vivid with level;
+> scenes stay in one biome (verdant/aquatic/alpine/ember) maturing through
+> 5 phases (barren -> sparse -> lively -> lush -> celestial); names keep a
+> fixed species with an epithet ladder from "Timid" to "Celestial". A Go
+> `richnessScore` proves the awesomeness budget strictly increases across
+> the band and never dips after. The v0.2 text below is retained only for
+> the parts it still describes (determinism, no render-time randomness).
 
 Everything derives from `(salt, level)` server-side and
 `(appearance_seed, level, tier, archetype)` in the UI via a mulberry32

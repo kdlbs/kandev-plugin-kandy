@@ -11,7 +11,7 @@ import { expect, test } from "../fixtures/test-base";
 import { SessionPage } from "../pages/session-page";
 
 const PLUGIN_ID = "kandev-plugin-gotchi";
-const PACKAGE_PATH = "/home/jcfs/kandev-plugins/kandev-plugin-gotchi/kandev-plugin-gotchi-0.2.0.tar.gz";
+const PACKAGE_PATH = "/home/jcfs/kandev-plugins/kandev-plugin-gotchi/kandev-plugin-gotchi-0.3.0.tar.gz";
 const SHOT_DIR = "/tmp/kandev-gotchi-demo/screenshots";
 
 type GotchiState = {
@@ -152,7 +152,7 @@ test("gotchi evolves in an isolated instance (demo screenshots)", async ({
       await testPage.evaluate(() => document.documentElement.classList.remove("dark"));
     }
     // eslint-disable-next-line no-console
-    console.log(`stage ${stage.label}: level=${state.level} tier=${state.tier} name="${state.stage_name}" progress=${state.progress_pct}%`);
+    console.log(`stage ${stage.label}: level=${state.level} biome=${state.biome} stage=${state.stage} name="${state.stage_name}" progress=${state.progress_pct}%`);
     shot++;
   }
 

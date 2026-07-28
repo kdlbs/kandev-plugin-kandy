@@ -62,11 +62,16 @@ type ledger struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-// gotchiResponse is everything the UI is allowed to know.
+// gotchiResponse is everything the UI is allowed to know. Archetype,
+// family, biome and lineage_seed are the lineage DNA (constant for the
+// install's lifetime); level/stage drive the additive growth.
 type gotchiResponse struct {
 	Level          int     `json:"level"`
-	Tier           int     `json:"tier"`
-	Archetype      int     `json:"archetype"` // body silhouette index; -1 = egg
+	Stage          int     `json:"stage"` // metamorphosis stage 0..4
+	Archetype      int     `json:"archetype"`
+	Family         int     `json:"family"`
+	Biome          int     `json:"biome"`
+	LineageSeed    uint32  `json:"lineage_seed"`
 	StageName      string  `json:"stage_name"`
 	ProgressPct    float64 `json:"progress_pct"`
 	AppearanceSeed uint32  `json:"appearance_seed"`
@@ -251,8 +256,11 @@ func (p *plugin) presentLedger(l *ledger) gotchiResponse {
 	}
 	return gotchiResponse{
 		Level:          level,
-		Tier:           tierForLevel(l.Salt, level),
-		Archetype:      archetypeForLevel(l.Salt, level),
+		Stage:          stageForLevel(level),
+		Archetype:      archetypeForLineage(l.Salt),
+		Family:         paletteFamilyForLineage(l.Salt),
+		Biome:          biomeForLineage(l.Salt),
+		LineageSeed:    lineageSeed(l.Salt),
 		StageName:      stageName(l.Salt, level),
 		ProgressPct:    roundDownToTenth(progressPct(l.XP)),
 		AppearanceSeed: appearanceSeed(l.Salt, level),

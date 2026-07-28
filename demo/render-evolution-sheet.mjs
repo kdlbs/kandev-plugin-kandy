@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 /**
- * Evolution-sheet poster generator. Pure rendering — no kandev instance.
+ * Evolution-poster generator. Pure rendering — no kandev instance.
  *
  * 1. Runs the real plugin binary's `genlevels` subcommand (same Go functions
- *    that serve the webhook) with a FIXED salt, so seeds/names are faithful.
+ *    that serve the webhook) with FIXED salts, so DNA/names are faithful.
  * 2. Builds a self-contained HTML harness that loads the real ui/bundle.js
  *    (window.registerKandevPlugin stub captures its exposed __render
- *    helpers) and renders every level's creature inside its tier scene via
+ *    helpers) and renders each level's creature inside its biome scene via
  *    a tiny DOM hyperscript in place of host.jsx.
- * 3. Screenshots the sheet (light + dark) and a Lv-max hero cell with the
- *    Playwright chromium already installed under the kandev monorepo.
+ * 3. Screenshots with the Playwright chromium installed under the monorepo.
  *
- * Usage:  make build && node demo/render-evolution-sheet.mjs
- * Env:    KANDEV_WEB_DIR — apps/web dir of a kandev checkout (for playwright)
+ * Modes:
+ *   node demo/render-evolution-sheet.mjs                 # Lv 1..40 sheet + Lv40 hero (v3 names)
+ *   node demo/render-evolution-sheet.mjs --hero-level N  # single hero cell
+ *   node demo/render-evolution-sheet.mjs --compare       # 4 lineages x levels 1/10/20/30/40
+ * Env: KANDEV_WEB_DIR — apps/web dir of a kandev checkout (for playwright)
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -28,43 +30,47 @@ const WEB_DIR =
 const OUT_DIR = "/tmp/kandev-gotchi-demo/screenshots";
 
 const SALT = 20260728; // fixed demo lineage — note in any report/README
+const COMPARE_SALTS = [20260728, 424242, 90210, 777001]; // comparison rows
 
-// `--hero-level <n>` renders only a hero cell for that level
-// (evolution-hero-lv<n>.png) instead of the full 1..100 sheet.
 const heroArg = process.argv.indexOf("--hero-level");
 const HERO_LEVEL = heroArg >= 0 ? Number.parseInt(process.argv[heroArg + 1], 10) : null;
+const COMPARE = process.argv.includes("--compare");
 
-const LEVELS = [];
-if (HERO_LEVEL != null) {
-  if (!Number.isInteger(HERO_LEVEL) || HERO_LEVEL < 1) {
-    console.error("--hero-level must be a positive integer");
-    process.exit(1);
-  }
-  LEVELS.push(HERO_LEVEL);
-} else {
-  // v0.2.0 default: the whole designed band, every level.
-  for (let l = 1; l <= 40; l++) LEVELS.push(l);
-}
-
-// --- 1. Faithful level facts from the real Go functions ---
 const bin = path.join(REPO, "bin", "kandev-plugin-gotchi");
 if (!fs.existsSync(bin)) {
   console.error(`missing ${bin} — run \`make build\` first`);
   process.exit(1);
 }
-const levelsJson = execFileSync(bin, [
-  "genlevels",
-  "-salt",
-  String(SALT),
-  "-levels",
-  LEVELS.join(","),
-]).toString();
 
-// --- 2. Self-contained harness page ---
+function genLevels(salt, levels) {
+  return JSON.parse(
+    execFileSync(bin, ["genlevels", "-salt", String(salt), "-levels", levels.join(",")]).toString(),
+  );
+}
+
+let LEVELS = [];
+let ROWS = null; // compare mode: [{salt, infos}]
+if (COMPARE) {
+  const cols = [1, 10, 20, 30, 40];
+  ROWS = COMPARE_SALTS.map((salt) => ({ salt, infos: genLevels(salt, cols) }));
+} else if (HERO_LEVEL != null) {
+  if (!Number.isInteger(HERO_LEVEL) || HERO_LEVEL < 1) {
+    console.error("--hero-level must be a positive integer");
+    process.exit(1);
+  }
+  LEVELS = genLevels(SALT, [HERO_LEVEL]);
+} else {
+  const all = [];
+  for (let l = 1; l <= 40; l++) all.push(l);
+  LEVELS = genLevels(SALT, all);
+}
+
+// --- Self-contained harness page ---
 const bundleSrc = fs.readFileSync(path.join(REPO, "ui", "bundle.js"), "utf8");
 
 const harnessScript = `
-var LEVELS = ${levelsJson};
+var LEVELS = ${JSON.stringify(LEVELS)};
+var ROWS = ${JSON.stringify(ROWS)};
 var R = window.__plugins["kandev-plugin-gotchi"].__render;
 
 var SVG_TAGS = { svg: 1, g: 1, circle: 1, ellipse: 1, path: 1, rect: 1, line: 1, polygon: 1, text: 1 };
@@ -106,7 +112,7 @@ function domH(tag, props) {
 R.setJsx(domH);
 
 function makeCell(info, sceneW, sceneH, creatureSize, hero) {
-  var scene = R.sceneFor(info.tier, info.appearance_seed >>> 0);
+  var scene = R.sceneFor(info.biome, info.level, info.lineage_seed >>> 0);
   var sceneSvg = domH(
     "svg",
     {
@@ -143,14 +149,41 @@ function makeCell(info, sceneW, sceneH, creatureSize, hero) {
   );
 }
 
-var grid = document.getElementById("grid");
-LEVELS.forEach(function (info) {
-  grid.appendChild(makeCell(info, 176, 108, 84, false));
-});
-var last = LEVELS[LEVELS.length - 1];
-document.getElementById("hero").appendChild(makeCell(last, 480, 250, 200, true));
+if (ROWS) {
+  var cmp = document.getElementById("grid");
+  ROWS.forEach(function (row) {
+    var species = row.infos[row.infos.length - 1].stage_name.split(" ").pop();
+    var rowEl = domH("div", { className: "cmp-row" });
+    rowEl.appendChild(
+      domH(
+        "div",
+        { className: "cmp-head" },
+        domH("div", { className: "cmp-species" }, species),
+        domH("div", { className: "cmp-salt" }, "seed " + row.salt),
+      ),
+    );
+    row.infos.forEach(function (info) {
+      rowEl.appendChild(makeCell(info, 150, 96, 72, false));
+    });
+    cmp.appendChild(rowEl);
+  });
+} else {
+  var grid = document.getElementById("grid");
+  LEVELS.forEach(function (info) {
+    grid.appendChild(makeCell(info, 176, 108, 84, false));
+  });
+  var last = LEVELS[LEVELS.length - 1];
+  document.getElementById("hero").appendChild(makeCell(last, 480, 250, 200, true));
+}
 document.title = "kandev gotchi evolution sheet";
 `;
+
+const title = COMPARE
+  ? "Kandev Gotchi — four lineages, growing up"
+  : `Kandev Gotchi — evolution, Lv ${LEVELS[0] ? LEVELS[0].level : 1} → ${LEVELS.length ? LEVELS[LEVELS.length - 1].level : 40}`;
+const subtitle = COMPARE
+  ? "Different seeds are different beings; each one grows coherently. Rendered by the shipped plugin code."
+  : `One lineage (salt ${SALT}), the same being at every level — it only ever grows. Rendered by the shipped plugin code.`;
 
 const html = `<!DOCTYPE html>
 <html>
@@ -170,7 +203,11 @@ const html = `<!DOCTYPE html>
   header { padding: 2px 4px 14px; }
   header h1 { font-size: 20px; font-weight: 700; }
   header p { font-size: 11px; color: var(--fg-dim); margin-top: 2px; }
-  #grid { display: grid; grid-template-columns: repeat(6, max-content); gap: 14px; }
+  #grid { display: ${COMPARE ? "flex" : "grid"}; ${COMPARE ? "flex-direction: column; gap: 14px;" : "grid-template-columns: repeat(6, max-content); gap: 14px;"} }
+  .cmp-row { display: flex; gap: 12px; align-items: stretch; }
+  .cmp-head { width: 92px; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+  .cmp-species { font-size: 15px; font-weight: 700; }
+  .cmp-salt { font-size: 10px; color: var(--fg-dim); }
   .cell { border-radius: 10px; overflow: hidden; border: 1px solid var(--border);
     background: var(--card); }
   .scene { position: relative; overflow: hidden; }
@@ -188,8 +225,8 @@ const html = `<!DOCTYPE html>
 <body>
 <div id="sheet">
   <header>
-    <h1>Kandev Gotchi — evolution, Lv ${LEVELS[0]} → ${LEVELS[LEVELS.length - 1]}</h1>
-    <p>One lineage (salt ${SALT}), rendered by the shipped plugin code. It keeps going.</p>
+    <h1>${title}</h1>
+    <p>${subtitle}</p>
   </header>
   <div id="grid"></div>
 </div>
@@ -203,7 +240,7 @@ const html = `<!DOCTYPE html>
 </body>
 </html>`;
 
-// --- 3. Screenshot with the monorepo's Playwright chromium ---
+// --- Screenshot with the monorepo's Playwright chromium ---
 const require2 = createRequire(path.join(WEB_DIR, "package.json"));
 const { chromium } = require2("@playwright/test");
 
@@ -213,25 +250,24 @@ fs.writeFileSync(htmlPath, html);
 
 const browser = await chromium.launch();
 try {
-  const page = await browser.newPage({ viewport: { width: 1400, height: 2200 } });
+  const page = await browser.newPage({ viewport: { width: 1400, height: 2400 } });
   await page.goto("file://" + htmlPath);
   await page.waitForTimeout(300);
 
-  const heroLevel = LEVELS[LEVELS.length - 1];
-  if (HERO_LEVEL == null) {
+  if (COMPARE) {
     await page.locator("#sheet").screenshot({
-      path: path.join(OUT_DIR, "evolution-sheet-v2-1-40.png"),
+      path: path.join(OUT_DIR, "lineages-comparison-v3.png"),
     });
-  }
-  await page.locator("#hero-wrap").screenshot({
-    path: path.join(OUT_DIR, `evolution-hero-lv${heroLevel}.png`),
-  });
-
-  if (HERO_LEVEL == null) {
-    await page.evaluate(() => document.body.classList.add("dark"));
-    await page.waitForTimeout(200);
+  } else if (HERO_LEVEL != null) {
+    await page.locator("#hero-wrap").screenshot({
+      path: path.join(OUT_DIR, `evolution-hero-lv${HERO_LEVEL}.png`),
+    });
+  } else {
     await page.locator("#sheet").screenshot({
-      path: path.join(OUT_DIR, "evolution-sheet-v2-1-40-dark.png"),
+      path: path.join(OUT_DIR, "evolution-sheet-v3-1-40.png"),
+    });
+    await page.locator("#hero-wrap").screenshot({
+      path: path.join(OUT_DIR, "evolution-hero-lv40-v3.png"),
     });
   }
   console.log("wrote evolution renders to " + OUT_DIR);

@@ -17,8 +17,11 @@ import (
 
 type levelInfo struct {
 	Level          int    `json:"level"`
-	Tier           int    `json:"tier"`
+	Stage          int    `json:"stage"`
 	Archetype      int    `json:"archetype"`
+	Family         int    `json:"family"`
+	Biome          int    `json:"biome"`
+	LineageSeed    uint32 `json:"lineage_seed"`
 	StageName      string `json:"stage_name"`
 	AppearanceSeed uint32 `json:"appearance_seed"`
 }
@@ -39,8 +42,11 @@ func genLevels(w io.Writer, args []string) error {
 		}
 		out = append(out, levelInfo{
 			Level:          level,
-			Tier:           tierForLevel(uint32(*salt), level),
-			Archetype:      archetypeForLevel(uint32(*salt), level),
+			Stage:          stageForLevel(level),
+			Archetype:      archetypeForLineage(uint32(*salt)),
+			Family:         paletteFamilyForLineage(uint32(*salt)),
+			Biome:          biomeForLineage(uint32(*salt)),
+			LineageSeed:    lineageSeed(uint32(*salt)),
 			StageName:      stageName(uint32(*salt), level),
 			AppearanceSeed: appearanceSeed(uint32(*salt), level),
 		})
