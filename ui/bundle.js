@@ -791,4 +791,15 @@ window.registerKandevPlugin(PLUGIN_ID, {
   destroy: function () {
     removeStyles();
   },
+  // Pure, deterministic render helpers exposed for offline tooling (the
+  // evolution-sheet poster in demo/). Harmless in production: kandev's
+  // plugin loader only reads initialize/destroy.
+  __render: {
+    creatureSvg: creatureSvg,
+    creatureParts: creatureParts,
+    sceneFor: sceneFor,
+    setJsx: function (jsx) {
+      h0 = jsx;
+    },
+  },
 });
