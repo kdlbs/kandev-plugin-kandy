@@ -66,6 +66,7 @@ type ledger struct {
 type gotchiResponse struct {
 	Level          int     `json:"level"`
 	Tier           int     `json:"tier"`
+	Archetype      int     `json:"archetype"` // body silhouette index; -1 = egg
 	StageName      string  `json:"stage_name"`
 	ProgressPct    float64 `json:"progress_pct"`
 	AppearanceSeed uint32  `json:"appearance_seed"`
@@ -250,7 +251,8 @@ func (p *plugin) presentLedger(l *ledger) gotchiResponse {
 	}
 	return gotchiResponse{
 		Level:          level,
-		Tier:           tierForLevel(level),
+		Tier:           tierForLevel(l.Salt, level),
+		Archetype:      archetypeForLevel(l.Salt, level),
 		StageName:      stageName(l.Salt, level),
 		ProgressPct:    roundDownToTenth(progressPct(l.XP)),
 		AppearanceSeed: appearanceSeed(l.Salt, level),

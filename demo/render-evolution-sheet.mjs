@@ -42,8 +42,8 @@ if (HERO_LEVEL != null) {
   }
   LEVELS.push(HERO_LEVEL);
 } else {
-  LEVELS.push(1, 2, 3, 4, 5);
-  for (let l = 10; l <= 100; l += 5) LEVELS.push(l);
+  // v0.2.0 default: the whole designed band, every level.
+  for (let l = 1; l <= 40; l++) LEVELS.push(l);
 }
 
 // --- 1. Faithful level facts from the real Go functions ---
@@ -188,7 +188,7 @@ const html = `<!DOCTYPE html>
 <body>
 <div id="sheet">
   <header>
-    <h1>Kandev Gotchi — evolution, Lv 1 → 100</h1>
+    <h1>Kandev Gotchi — evolution, Lv ${LEVELS[0]} → ${LEVELS[LEVELS.length - 1]}</h1>
     <p>One lineage (salt ${SALT}), rendered by the shipped plugin code. It keeps going.</p>
   </header>
   <div id="grid"></div>
@@ -220,7 +220,7 @@ try {
   const heroLevel = LEVELS[LEVELS.length - 1];
   if (HERO_LEVEL == null) {
     await page.locator("#sheet").screenshot({
-      path: path.join(OUT_DIR, "evolution-sheet-1-100.png"),
+      path: path.join(OUT_DIR, "evolution-sheet-v2-1-40.png"),
     });
   }
   await page.locator("#hero-wrap").screenshot({
@@ -231,7 +231,7 @@ try {
     await page.evaluate(() => document.body.classList.add("dark"));
     await page.waitForTimeout(200);
     await page.locator("#sheet").screenshot({
-      path: path.join(OUT_DIR, "evolution-sheet-1-100-dark.png"),
+      path: path.join(OUT_DIR, "evolution-sheet-v2-1-40-dark.png"),
     });
   }
   console.log("wrote evolution renders to " + OUT_DIR);

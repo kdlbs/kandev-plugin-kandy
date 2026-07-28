@@ -41,16 +41,27 @@ the plugin process (single supervised process per instance).
 threshold(L) = K * (B^(L-1) - 1)          // XP needed to *reach* level L
 level(xp)    = floor(log(1 + xp/K) / log(B)) + 1
 progress     = (xp - threshold(L)) / (threshold(L+1) - threshold(L)) * 100
-K = 200, B = 1.75
+K = 400, B = 1.32                          // v0.2.0 retune
 ```
 
-- Level 1 at 0 XP; level 2 at 150 XP (~a light day: ~20 msgs + ~10 turns +
-  2 agent runs ≈ 140 XP; one finished task alone is 150); level 3 at 412 XP
-  (a solid day); level 10 ≈ 30.8k XP; level 20 ≈ 8.2M XP. Geometric growth
-  stretches forever; float64 log stays finite and monotonic for any
-  realistic xp, so there is no cap.
+- v0.1.0 shipped K=200, B=1.75; reality check showed a heavy user's whole
+  first year fit in ~level 17 — the real game lives in levels 1..~40, so
+  v0.2.0 flattens the base: level 2 at 128 XP (first day of light use, the
+  hook), then ~1.32x per level forever.
+- Expected levels (heavy ≈ 6,600 XP/day: ~20 finished tasks + turns/msgs/
+  completions; solo dev ≈ 800 XP/day):
+
+  | Usage | 1 month | 1 year |
+  |---|---|---|
+  | Solo dev (~800 XP/day) | ~Lv 15 | ~Lv 24 |
+  | Heavy multi-agent (~6,600 XP/day) | ~Lv 23 | ~Lv 32 |
+
+  Level 40 ≈ 20M XP (~8 heavy years); beyond it only the infinite prestige
+  ladder continues. Geometric growth stretches forever; float64 log stays
+  finite and monotonic for any realistic xp, so there is no cap.
 - Unit-tested properties: monotonic in xp, never NaN/Inf, `level(0) == 1`,
-  progress always in `[0, 100)`, thresholds strictly increasing.
+  progress always in `[0, 100)`, thresholds strictly increasing, and the
+  month/year expectations above.
 
 ## 3. State & persistence
 
@@ -103,28 +114,40 @@ Response — creature facts only, no factor breakdown:
   with an activity overlay (recently fed vs. napping) derived from
   `updated_at` — never mentions factors or numbers.
 
-## 6. Procedural evolution (deterministic, novel forever)
+## 6. Procedural evolution (v0.2.0: every band level meaningfully different)
 
-Everything derives from `(level, tier, appearance_seed)` via a mulberry32
-seeded PRNG in the UI — **no `Math.random` at render time**, so no flicker.
+Everything derives from `(salt, level)` server-side and
+`(appearance_seed, level, tier, archetype)` in the UI via a mulberry32
+seeded PRNG — **no `Math.random` at render time**, so no flicker.
 
-- **Tier** = `floor((level-1)/5)` — a new era every 5 levels.
-- **Scene background** per tier: 8 handcrafted scenes (meadow → forest →
-  lake → mountain → city dusk → neon night → aurora → deep space) as CSS
-  gradients + simple SVG props (grass blades, trees, stars…). Tiers beyond 7
-  reuse the space scene with a seeded hue-rotation and star-count growth, so
-  backgrounds keep shifting indefinitely.
-- **Creature**: level 1 is an egg. From level 2 the body is a seeded blob
-  (superellipse-ish path with seeded squash), with parts that *accumulate*:
-  eyes (2), then mouth, blush, ears/antennae, spikes (count grows with
-  level), stubby feet, tail, wings, crown/halo at high tiers. Part counts and
-  offsets are seeded, palette comes from the tier with seeded hue jitter —
-  tiered palettes + accumulating parts + seeded variation means every level
-  looks stable but new, forever.
-- **Stage name**: procedural `<adjective> <species>` — species word list
-  indexed by tier (cycling with a "Cosmic/Elder/Mythic…" prefix ladder past
-  the list end), adjective seeded per level. Level 1 is always "Egg".
-  Generated server-side so name logic stays hidden and stable.
+- **Body archetypes (10)**: round blob, tall/lanky, squat/wide, serpentine,
+  mushroom-capped, ghost/floaty, crystalline/angular, mech/boxy, multi-eyed
+  alien, winged sprite. The backend walks a salt-shuffled permutation with a
+  +1-per-cycle rotation, so **consecutive levels are guaranteed different
+  silhouettes** (distinct permutation slots), at any level, forever. The
+  chosen archetype travels in the webhook so the name and the render can
+  never disagree.
+- **Part swaps, not accumulation**: per level the seed picks eye style
+  (round/wide/sleepy/dot; aliens get 3-5 eyes), mouth (smile/open/fang/
+  flat/wavy), horns (none/nubs/curved/antlers/unicorn/antenna), tail
+  (none/curl/spike/fluff, grounded bodies only), and a companion
+  (none/orbiting pet/flag/tool/balloon) — each level gains a signature
+  feature and loses another. **Prestige parts only accumulate at
+  milestones**: crown at 15, halo at 30, aura ring at 60.
+- **Palette identity per level**: 12 palette families; a rotating-index walk
+  over the family list makes adjacent levels jump families (green → purple
+  → amber…), never micro-rotate hue. Seeded jitter stays within the family.
+- **Scenes (14)**: meadow, forest, lake, mountain, city dusk, neon night,
+  aurora, deep space, cave, desert, ruins, volcano, workshop, underwater.
+  Band levels tour them in alternating 2-3 level blocks in a salt-shuffled
+  order (meadow always first; adjacent blocks always differ; ≤2 repeats
+  before level 40). Beyond level 40 the seeded-cosmos hue ladder advances
+  every 5 levels, forever — sameyness is acceptable out there.
+- **Stage name**: `<seeded adjective> <archetype species>` (Blip, Willow,
+  Chonk, Noodle, Sporeling, Wisp, Shardling, Cogling, Gazer, Flitter);
+  level 1 is always "Egg"; past level 40 the mythic prefix ladder plus a
+  roman generation numeral every 50 levels keeps names moving. Generated
+  server-side so name logic stays hidden and stable.
 
 ## 7. UI component structure (`ui/bundle.js`, no build step)
 

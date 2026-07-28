@@ -17,7 +17,8 @@ func TestGenLevels_MatchesRealFunctions(t *testing.T) {
 	require.Len(t, out, 3)
 	for i, level := range []int{1, 6, 41} {
 		require.Equal(t, level, out[i].Level)
-		require.Equal(t, tierForLevel(level), out[i].Tier)
+		require.Equal(t, tierForLevel(7, level), out[i].Tier)
+		require.Equal(t, archetypeForLevel(7, level), out[i].Archetype)
 		require.Equal(t, stageName(7, level), out[i].StageName)
 		require.Equal(t, appearanceSeed(7, level), out[i].AppearanceSeed)
 	}

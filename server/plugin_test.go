@@ -108,8 +108,9 @@ func TestOnEvent_AwardsHiddenXP(t *testing.T) {
 	require.Equal(t, 1.0+8+20+150, persistedXP(t, host))
 
 	state := fetchGotchi(t, p, "")
-	require.Equal(t, 2, state.Level, "179 XP crosses the level-2 threshold (150)")
+	require.Equal(t, 2, state.Level, "179 XP crosses the level-2 threshold (128)")
 	require.NotEqual(t, "Egg", state.StageName)
+	require.Equal(t, archetypeForLevel(42, 2), state.Archetype)
 }
 
 func TestOnEvent_TaskStateChangedToNonDoneAwardsNothing(t *testing.T) {
@@ -165,6 +166,8 @@ func TestWebhook_ShapeAndHiddenFactors(t *testing.T) {
 
 	state := fetchGotchi(t, p, "")
 	require.GreaterOrEqual(t, state.Level, 1)
+	require.GreaterOrEqual(t, state.Archetype, -1)
+	require.Less(t, state.Archetype, numArchetypes)
 	require.NotEmpty(t, state.StageName)
 	require.GreaterOrEqual(t, state.ProgressPct, 0.0)
 	require.Less(t, state.ProgressPct, 100.0)
