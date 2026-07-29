@@ -1756,35 +1756,51 @@ var HEARTS_BY_MOOD = { elated: 5, happy: 5, content: 4, bored: 3, sad: 2, gloomy
 var HEART_PATH =
   "M5 8.8 C2.2 6.6 0.9 4.9 0.9 3.4 C0.9 2 2 1 3.3 1 C4 1 4.7 1.4 5 2 C5.3 1.4 6 1 6.7 1 C8 1 9.1 2 9.1 3.4 C9.1 4.9 7.8 6.6 5 8.8 Z";
 
-// heartsRow — the tamagotchi attention meter: filled hearts by mood tier.
-function heartsRow(h, mood) {
-  var filled = HEARTS_BY_MOOD[mood] || 4;
-  var hearts = [];
-  for (var i = 0; i < 5; i++) {
-    hearts.push(
-      h(
-        "svg",
-        { key: "heart" + i, width: 11, height: 11, viewBox: "0 0 10 10", "aria-hidden": "true" },
-        h("path", {
-          d: HEART_PATH,
-          fill: i < filled ? "#f43f5e" : "none",
-          stroke: "#f43f5e",
-          strokeWidth: 0.9,
-          opacity: i < filled ? 1 : 0.45,
-        }),
-      ),
-    );
-  }
+// Mood dot colors — warm when fed, cooling toward gray as it stagnates.
+var MOOD_COLORS = {
+  elated: "#f59e0b",
+  happy: "#22c55e",
+  content: "#38bdf8",
+  bored: "#eab308",
+  sad: "#60a5fa",
+  gloomy: "#94a3b8",
+};
+
+// moodBadge — the mood indicator: a colored dot + the mood word (replaced
+// the 5-hearts meter; the word says more than a heart count did).
+function moodBadge(h, mood) {
   return h(
-    "div",
+    "span",
     {
       role: "img",
-      "aria-label": "mood: " + mood + ", " + filled + " of 5 hearts",
-      // flexShrink 0: the hearts sit in the header row next to a long stage
-      // name — they must never be squeezed into wrapping.
-      style: { display: "flex", gap: "2px", alignItems: "center", flexShrink: 0 },
+      "aria-label": "mood: " + mood,
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "5px",
+        fontSize: "10px",
+        fontWeight: 600,
+        padding: "1px 7px",
+        borderRadius: "999px",
+        background: "var(--muted)",
+        textTransform: "capitalize",
+        // flexShrink 0: sits in the header row next to a long stage name —
+        // must never be squeezed into wrapping.
+        flexShrink: 0,
+        whiteSpace: "nowrap",
+      },
     },
-    hearts,
+    h("span", {
+      style: {
+        width: "7px",
+        height: "7px",
+        borderRadius: "999px",
+        background: MOOD_COLORS[mood] || MOOD_COLORS.content,
+        display: "inline-block",
+        flexShrink: 0,
+      },
+    }),
+    mood,
   );
 }
 
@@ -2038,7 +2054,7 @@ function kandyCard(h, data, celebration, care) {
           },
           "Lv " + data.level,
         ),
-        heartsRow(h, data.mood || "content"),
+        moodBadge(h, data.mood || "content"),
       ),
       h(
         "div",
