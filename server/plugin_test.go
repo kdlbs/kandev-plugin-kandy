@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 
@@ -106,86 +105,31 @@ func TestOnEvent_AwardsHiddenXP(t *testing.T) {
 	require.NoError(t, p.OnEvent(ctx, busEvent("message.added", map[string]any{"message_id": "m1"})))
 	require.NoError(t, p.OnEvent(ctx, busEvent("turn.completed", map[string]any{"id": "t1"})))
 	require.NoError(t, p.OnEvent(ctx, busEvent("agent.completed", map[string]any{"agent_id": "a1"})))
-	require.NoError(t, p.OnEvent(ctx, busEvent("task.state_changed",
-		map[string]any{"task_id": "t-done", "old_state": "IN_PROGRESS", "new_state": "COMPLETED"})))
 
-	require.Equal(t, 1.0+8+20+150, persistedXP(t, host))
+	require.Equal(t, 1.0+8+20, persistedXP(t, host))
 
 	state := fetchKandy(t, p, "")
-	require.Equal(t, levelForXP(179), state.Level, "level derives from the hidden ledger")
+	require.Equal(t, levelForXP(29), state.Level, "level derives from the hidden ledger")
 	require.Equal(t, archetypeForLineage(42), state.Archetype)
-	require.Equal(t, int64(4), state.AwardSeq, "every award bumps the sequence")
+	require.Equal(t, int64(3), state.AwardSeq, "every award bumps the sequence")
 	require.Equal(t, "elated", state.Mood, "just fed")
 }
 
-func TestOnEvent_TaskStateChangedToNonDoneAwardsNothing(t *testing.T) {
-	host := newFakeHost(nil)
-	p := newTestPlugin(t, host)
-	require.NoError(t, p.OnEvent(context.Background(), busEvent("task.state_changed",
-		map[string]any{"task_id": "t1", "old_state": "TODO", "new_state": "IN_PROGRESS"})))
-	require.Empty(t, host.state, "no ledger write for zero-XP events")
-}
-
-// The measured production flow: tasks end at REVIEW and get ARCHIVED —
-// new_state=="COMPLETED" never fires. Archiving publishes task.updated
-// with archived_at set, and that must award the task XP.
-func TestOnEvent_ArchiveAwardsTaskXP(t *testing.T) {
+// Task lifecycle events must award NOTHING: creating and archiving a task
+// is free and repeatable, so task-completion XP was an abuse vector. Only
+// agent activity (turns, runs, messages) feeds the kandy.
+func TestOnEvent_TaskLifecycleAwardsNothing(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
 
+	require.NoError(t, p.OnEvent(ctx, busEvent("task.state_changed",
+		map[string]any{"task_id": "t-done", "old_state": "IN_PROGRESS", "new_state": "COMPLETED"})))
 	require.NoError(t, p.OnEvent(ctx, busEvent("task.updated",
 		map[string]any{"task_id": "t-arch", "archived_at": "2026-07-29T00:00:00Z", "state": "REVIEW"})))
-	require.Equal(t, xpTaskCompleted, persistedXP(t, host))
-
-	// A plain task.updated (no archived_at) never awards.
-	require.NoError(t, p.OnEvent(ctx, busEvent("task.updated",
-		map[string]any{"task_id": "t-other", "title": "renamed"})))
-	require.Equal(t, xpTaskCompleted, persistedXP(t, host))
-}
-
-func TestOnEvent_TaskAwardsExactlyOnceAcrossPaths(t *testing.T) {
-	host := newFakeHost(nil)
-	p := newTestPlugin(t, host)
-	ctx := context.Background()
-
-	// Complete, then archive, then more archived-task updates, then a
-	// retried delivery: one award total.
-	complete := busEvent("task.state_changed",
-		map[string]any{"task_id": "t1", "new_state": "COMPLETED"})
-	archived := busEvent("task.updated",
-		map[string]any{"task_id": "t1", "archived_at": "2026-07-29T00:00:00Z"})
-	require.NoError(t, p.OnEvent(ctx, complete))
-	require.NoError(t, p.OnEvent(ctx, archived))
-	require.NoError(t, p.OnEvent(ctx, archived))
-	require.NoError(t, p.OnEvent(ctx, complete))
-	require.Equal(t, xpTaskCompleted, persistedXP(t, host))
-
-	// A different task still awards, and the guard survives a plugin
-	// restart (fresh cache, same persisted state).
-	p2 := newTestPlugin(t, host)
-	require.NoError(t, p2.OnEvent(ctx, archived))
-	require.Equal(t, xpTaskCompleted, persistedXP(t, host), "restart must not re-award")
-	require.NoError(t, p2.OnEvent(ctx, busEvent("task.updated",
-		map[string]any{"task_id": "t2", "archived_at": "2026-07-29T01:00:00Z"})))
-	require.Equal(t, 2*xpTaskCompleted, persistedXP(t, host))
-}
-
-func TestAwardedTasksRingIsBounded(t *testing.T) {
-	host := newFakeHost(nil)
-	p := newTestPlugin(t, host)
-	ctx := context.Background()
-	for i := 0; i < maxAwardedTasks+100; i++ {
-		require.NoError(t, p.OnEvent(ctx, busEvent("task.updated",
-			map[string]any{"task_id": fmt.Sprintf("t%d", i), "archived_at": "2026-07-29T00:00:00Z"})))
-	}
-	p.mu.Lock()
-	ring := p.cached.AwardedTasks
-	p.mu.Unlock()
-	require.Len(t, ring, maxAwardedTasks, "ring stays bounded")
-	require.Equal(t, fmt.Sprintf("t%d", maxAwardedTasks+99), ring[len(ring)-1], "newest kept")
-	require.Equal(t, "t100", ring[0], "oldest evicted")
-	require.Equal(t, float64(maxAwardedTasks+100)*xpTaskCompleted, persistedXP(t, host))
+	require.NoError(t, p.OnEvent(ctx, busEvent("task.created",
+		map[string]any{"task_id": "t-new"})))
+	require.Empty(t, host.state, "no ledger write for task lifecycle events")
 }
 
 func TestOnEvent_UnknownEventIsNoOp(t *testing.T) {

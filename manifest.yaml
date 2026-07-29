@@ -1,8 +1,8 @@
 id: "kandev-plugin-kandy"
 api_version: 1
-version: "0.1.0"
+version: "0.2.0"
 display_name: "Kandy"
-description: "A tiny creature that grows when you ship — it feeds on shipped tasks, agent runs, and turns, and evolves forever in your session top bar."
+description: "A tiny creature that grows as your agents work — it feeds on agent runs, turns, and conversation, and evolves forever in your session top bar."
 author: "kandev"
 categories: ["tools"]
 
@@ -21,8 +21,6 @@ runtime:
 capabilities:
   state: true
   events:
-    - "task.state_changed"
-    - "task.updated"
     - "turn.completed"
     - "agent.completed"
     - "message.added"

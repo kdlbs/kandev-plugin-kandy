@@ -1,10 +1,10 @@
 # Kandy
 
-A tiny creature that **grows when you ship**. It lives in the session top
-bar and feeds on shipped tasks, agent runs, and turns — evolving forever as
-work happens in your kandev instance. Finish tasks, run agents, keep the
-conversation going — the kandy grows through endless procedurally generated
-forms, scenes, and stage names. It starts as an egg. It never stops.
+A tiny creature that **grows as your agents work**. It lives in the session
+top bar and feeds on agent runs, turns, and conversation — evolving forever
+as real work happens in your kandev instance. The kandy grows through
+endless procedurally generated forms, scenes, and stage names. It starts as
+an egg. It never stops.
 
 - **Top bar**: a small creature portrait next to the session controls,
   updating live as work lands (no page reload needed).

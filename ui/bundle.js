@@ -25,8 +25,6 @@ var WS_ACTIONS = [
   "session.turn.completed",
   "session.message.added",
   "session.state_changed",
-  "task.updated",
-  "task.state_changed",
 ];
 // The plugin backend awards XP when its own event delivery lands, which races
 // the WS notification to the browser. Debounce so a burst of events costs one

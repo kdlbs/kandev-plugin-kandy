@@ -21,18 +21,20 @@ import (
 
 const (
 	webhookKeyKandy = "kandy"
-	webhookKeyPet      = "pet"
+	webhookKeyPet   = "pet"
 
 	stateScope = "instance" // one kandy per kandev instance
 	stateKey   = "kandy"
 
 	configKeyDebug = "debug"
 
-	// Hidden XP recipe. The UI and webhook never itemize these.
+	// Hidden XP recipe. The UI and webhook never itemize these. Only
+	// agent activity feeds the kandy — task lifecycle events are excluded
+	// on purpose (archiving a freshly created task is free, agent work
+	// is not).
 	xpMessageAdded   = 1.0
 	xpTurnCompleted  = 8.0
 	xpAgentCompleted = 20.0
-	xpTaskCompleted  = 150.0
 
 	// debugGrantMax bounds the dev/demo XP knob to something that cannot
 	// overflow the math even if mashed repeatedly.
@@ -41,18 +43,9 @@ const (
 
 // Bus subjects this plugin subscribes to (mirrors manifest.yaml).
 const (
-	eventMessageAdded     = "message.added"
-	eventTurnCompleted    = "turn.completed"
-	eventAgentCompleted   = "agent.completed"
-	eventTaskStateChanged = "task.state_changed"
-	eventTaskUpdated      = "task.updated"
-
-	taskStateCompleted = "COMPLETED"
-
-	// maxAwardedTasks bounds the once-per-task completion ledger (a ring:
-	// oldest ids fall off). ~500 covers two months at the measured ~8.4
-	// archived tasks/active day.
-	maxAwardedTasks = 500
+	eventMessageAdded   = "message.added"
+	eventTurnCompleted  = "turn.completed"
+	eventAgentCompleted = "agent.completed"
 )
 
 // ledger is the whole persisted kandy: lifetime XP plus private counters.
@@ -62,17 +55,11 @@ type ledger struct {
 	Messages  int64   `json:"messages"`
 	Turns     int64   `json:"turns"`
 	AgentRuns int64   `json:"agent_runs"`
-	TasksDone int64   `json:"tasks_done"`
 	// Salt is the instance's lineage: chosen randomly once, it makes two
 	// instances at the same level look different, forever.
 	Salt      uint32 `json:"salt"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
-	// AwardedTasks is a bounded ring of task ids that already received
-	// completion XP — a task never awards twice, whether it completes,
-	// archives, or both. (In real production use tasks end at REVIEW and
-	// get archived; new_state=="COMPLETED" never fires there.)
-	AwardedTasks []string `json:"awarded_tasks,omitempty"`
 	// AwardSeq increments on every XP award — the UI's "gained since last
 	// fetch" signal that never exposes the hidden XP magnitude.
 	AwardSeq int64 `json:"award_seq,omitempty"`
@@ -83,22 +70,6 @@ type ledger struct {
 	// LastPettedAt (RFC3339): petting briefly lifts the displayed mood
 	// (one tier, capped at happy, for petLiftWindow). It never touches XP.
 	LastPettedAt string `json:"last_petted_at,omitempty"`
-}
-
-func (l *ledger) hasAwardedTask(taskID string) bool {
-	for _, id := range l.AwardedTasks {
-		if id == taskID {
-			return true
-		}
-	}
-	return false
-}
-
-func (l *ledger) markTaskAwarded(taskID string) {
-	l.AwardedTasks = append(l.AwardedTasks, taskID)
-	if len(l.AwardedTasks) > maxAwardedTasks {
-		l.AwardedTasks = l.AwardedTasks[len(l.AwardedTasks)-maxAwardedTasks:]
-	}
 }
 
 // kandyResponse is everything the UI is allowed to know. Archetype,
@@ -209,10 +180,6 @@ func (p *plugin) OnEvent(ctx context.Context, e *pluginsdk.Event) error {
 	if e == nil {
 		return nil
 	}
-	if taskID, done := taskCompletionFromEvent(e); done {
-		p.awardTaskCompletion(ctx, taskID)
-		return nil
-	}
 	delta, apply := xpForEvent(e)
 	if delta <= 0 {
 		return nil
@@ -226,51 +193,11 @@ func (p *plugin) OnEvent(ctx context.Context, e *pluginsdk.Event) error {
 	return nil
 }
 
-// taskCompletionFromEvent reports whether the event marks a task as
-// finished, covering both real-world endings:
-//   - task.state_changed with new_state == "COMPLETED" (workflows that end
-//     in a COMPLETED state), and
-//   - task.updated with archived_at set (the measured production flow:
-//     tasks end at REVIEW and are archived — COMPLETED never fires there).
-//
-// A task id is required so the once-per-task guard can hold across both
-// paths; malformed payloads award nothing.
-func taskCompletionFromEvent(e *pluginsdk.Event) (string, bool) {
-	taskID, _ := e.Payload["task_id"].(string)
-	if taskID == "" {
-		return "", false
-	}
-	switch e.EventType {
-	case eventTaskStateChanged:
-		newState, _ := e.Payload["new_state"].(string)
-		return taskID, newState == taskStateCompleted
-	case eventTaskUpdated:
-		archivedAt, _ := e.Payload["archived_at"].(string)
-		return taskID, archivedAt != ""
-	default:
-		return "", false
-	}
-}
-
-// awardTaskCompletion grants the big task XP exactly once per task id,
-// whether the task completed, archived, or both (retries and repeated
-// task.updated deliveries included).
-func (p *plugin) awardTaskCompletion(ctx context.Context, taskID string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.loadLedger(ctx).hasAwardedTask(taskID) {
-		return
-	}
-	p.awardXP(ctx, func(l *ledger) {
-		l.XP += xpTaskCompleted
-		l.TasksDone++
-		l.markTaskAwarded(taskID)
-	})
-}
-
 // xpForEvent maps a per-activity bus event to its XP award and counter
-// bump. Unknown subjects award nothing (task completion is handled by
-// taskCompletionFromEvent above).
+// bump. Unknown subjects award nothing. There is deliberately NO XP for
+// task completion/archival: creating and archiving a task is free and
+// repeatable, so it was an abuse vector — agent activity (turns, runs,
+// messages) costs real work and is the only food the kandy accepts.
 func xpForEvent(e *pluginsdk.Event) (float64, func(*ledger)) {
 	switch e.EventType {
 	case eventMessageAdded:

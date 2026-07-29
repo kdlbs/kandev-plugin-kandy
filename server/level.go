@@ -30,13 +30,15 @@ import (
 )
 
 const (
-	// v0.6.0 retune (user-approved): under v0.4/v0.5 a single archived
-	// task (~193 XP all-in) bought more than a whole early level. Now an
-	// early level costs ~3 shipped tasks (threshold(2) = 500 XP) while the
-	// endgame timing stays put: at the measured pace (~2,860 XP/active
-	// day, 18 active days/30 => ~51.5k XP/month) day one ends ~Lv6, month
-	// one ~Lv36, year one ~Lv80, and level 100 lands at ~2.8 years.
-	levelK = 9174.0
+	// Retuned when the task-completion XP factor was removed (it was
+	// abusable: creating and archiving a task is free). Only agent
+	// activity feeds XP now — at the measured pace that's ~1,600 XP per
+	// active day (~129 turns x8 + ~260 messages x1 + agent completions),
+	// 18 active days/30. K scaled by the rate ratio (9174 x 1600/2860 ≈
+	// 5100) so the level timeline is unchanged: day one ends ~Lv6, month
+	// one ~Lv36, year one ~Lv80, level 100 at ~2.8 years, and an early
+	// level still costs roughly a solid session of agent work.
+	levelK = 5100.0
 	levelB = 1.0545
 
 	// bandMax is the last level of the designed dull->awesome arc; beyond

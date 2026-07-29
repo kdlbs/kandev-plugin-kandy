@@ -18,20 +18,21 @@ func TestLevelForXP_BaseCases(t *testing.T) {
 }
 
 func TestLevelForXP_TunedConstants(t *testing.T) {
-	// K=9174, B=1.0545: level 2 at ~500 XP — about 3 shipped tasks, so a
-	// single archive can no longer buy more than a whole early level.
-	require.Equal(t, 1, levelForXP(498))
-	require.Equal(t, 2, levelForXP(502))
-	require.Greater(t, thresholdXP(2), 2*xpTaskCompleted, "one task must not clear an early level")
+	// K=5100, B=1.0545: level 2 at ~278 XP — a solid stretch of real agent
+	// work (tens of turns), not something a couple of clicks can farm.
+	require.Equal(t, 1, levelForXP(276))
+	require.Equal(t, 2, levelForXP(280))
+	require.Greater(t, thresholdXP(2), 10*xpAgentCompleted,
+		"a handful of agent completions must not clear an early level")
 }
 
-// measuredMonthlyXP is the user's real production pace: ~129 turns + ~8.4
-// archived tasks + ~2 messages/turn per active day (~2,860 XP), 18 active
-// days per 30 calendar days => ~51.5k XP/month.
-const measuredMonthlyXP = 2860 * 18
+// measuredMonthlyXP is the user's real production pace with the task factor
+// removed: ~129 turns x8 + ~260 messages + agent completions per active day
+// (~1,600 XP), 18 active days per 30 calendar days => ~28.8k XP/month.
+const measuredMonthlyXP = 1600 * 18
 
 func TestLevelForXP_MeasuredPaceTargets(t *testing.T) {
-	day1 := levelForXP(2860)
+	day1 := levelForXP(1600)
 	require.GreaterOrEqual(t, day1, 5, "day one ends around Lv6")
 	require.LessOrEqual(t, day1, 7)
 
