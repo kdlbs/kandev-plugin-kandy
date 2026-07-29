@@ -1376,7 +1376,9 @@ function heartsRow(h, mood) {
     {
       role: "img",
       "aria-label": "mood: " + mood + ", " + filled + " of 5 hearts",
-      style: { display: "flex", gap: "2px", alignItems: "center" },
+      // flexShrink 0: the hearts sit in the header row next to a long stage
+      // name — they must never be squeezed into wrapping.
+      style: { display: "flex", gap: "2px", alignItems: "center", flexShrink: 0 },
     },
     hearts,
   );
@@ -1526,14 +1528,18 @@ function shiplingCard(h, data, celebration, pet) {
     h(
       "div",
       { style: { padding: "10px 12px 11px", display: "flex", flexDirection: "column", gap: "6px" } },
+      // Header row: the name is the only child allowed to shrink/wrap — the
+      // Lv pill and hearts are nowrap + shrink-0, so a long stage name
+      // ("Drowsy Sporeling") wraps within its own box instead of crushing
+      // the pill into a two-line circle.
       h(
         "div",
-        { style: { display: "flex", alignItems: "baseline", gap: "8px" } },
+        { style: { display: "flex", alignItems: "center", gap: "8px" } },
         h(
           "span",
           {
             className: celebration && celebration.kind === "levelup" ? "kandev-shipling-namehl" : "",
-            style: { fontSize: "13px", fontWeight: 600 },
+            style: { fontSize: "13px", fontWeight: 600, flex: "1 1 auto", minWidth: 0, lineHeight: 1.25 },
           },
           data.stage_name,
         ),
@@ -1547,11 +1553,12 @@ function shiplingCard(h, data, celebration, pet) {
               borderRadius: "999px",
               background: "var(--muted)",
               opacity: 0.9,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
             },
           },
           "Lv " + data.level,
         ),
-        h("span", { style: { flex: 1 } }),
         heartsRow(h, data.mood || "content"),
       ),
       h(
@@ -1825,6 +1832,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     creatureParts: creatureParts,
     sceneFor: sceneFor,
     growthForLevel: growthForLevel,
+    shiplingCard: shiplingCard,
     setJsx: function (jsx) {
       h0 = jsx;
     },
