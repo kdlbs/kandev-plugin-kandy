@@ -9,11 +9,17 @@ an egg. It never stops.
 - **Top bar**: a small creature portrait next to the session controls,
   updating live as work lands (no page reload needed).
 - **Hover or click/tap**: the kandy card — its current scene, the creature
-  with idle animations, its stage name, an XP bar, and a 5-heart mood meter.
+  with idle animations, its stage name, an XP bar, and a mood badge
+  (Happy, Bored, Gloomy, ...).
 - **Moods**: it celebrates when XP lands and gets bored, sad, and eventually
   gloomy (rain cloud included) when nothing ships for days.
-- **Petting**: click the creature in the open card. Petting comforts it —
-  lifting its mood for a while — but never feeds it. Only shipped work does.
+- **Care**: left-click drops it a treat; right-click dumps a bucket of cold
+  water on it. Neither ever feeds it — only real work does — but it
+  remembers how you treat it, and how you treat it shapes how it grows up.
+  Be kind. Or don't, and live with what you raise.
+- **Day and night**: scenes follow your local clock, and every kandy has its
+  own bedtime — at night it sleeps in the top bar, and waking it is on your
+  conscience.
 - **How XP works**: it's a secret. The recipe lives server-side and the UI is
   never told the breakdown — your kandy simply reacts to how much real work
   flows through the instance.
@@ -22,7 +28,11 @@ an egg. It never stops.
 
 The first week — an egg hatches and starts to grow:
 
-![Your first week](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/608efdec3580ef0fb3bb0c92c843bba20f81450e/first-week-light.png)
+![Your first week](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/9fd3c2b764245379e756e1e6640943c6583d1cdc/first-week-light.png)
+
+At night, it sleeps:
+
+![Fast asleep](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/9fd3c2b764245379e756e1e6640943c6583d1cdc/night-light.png)
 
 What it grows into — the species your install rolls, the places it lives,
 what it looks like months from now — is yours to find out. Ship and see.
