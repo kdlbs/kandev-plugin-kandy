@@ -21,6 +21,7 @@ import (
 
 const (
 	webhookKeyShipling = "shipling"
+	webhookKeyPet      = "pet"
 
 	stateScope = "instance" // one shipling per kandev instance
 	stateKey   = "shipling"
@@ -79,6 +80,9 @@ type ledger struct {
 	// was last fed. Missing on pre-0.6 state: presentLedger falls back to
 	// UpdatedAt (every award touched it), never to "ancient".
 	LastAwardAt string `json:"last_award_at,omitempty"`
+	// LastPettedAt (RFC3339): petting briefly lifts the displayed mood
+	// (one tier, capped at happy, for petLiftWindow). It never touches XP.
+	LastPettedAt string `json:"last_petted_at,omitempty"`
 }
 
 func (l *ledger) hasAwardedTask(taskID string) bool {
@@ -281,6 +285,9 @@ func xpForEvent(e *pluginsdk.Event) (float64, func(*ledger)) {
 }
 
 func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookRequest) (*pluginsdk.WebhookResponse, error) {
+	if req.WebhookKey == webhookKeyPet {
+		return p.handlePet(ctx), nil
+	}
 	if req.WebhookKey != webhookKeyShipling {
 		return jsonResponse(404, []byte(`{"error":"unknown webhook"}`)), nil
 	}
@@ -312,6 +319,27 @@ func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookReques
 		return jsonResponse(500, []byte(`{"error":"encoding state"}`)), nil
 	}
 	return jsonResponse(200, body), nil
+}
+
+// handlePet stamps last_petted_at and returns the (possibly mood-lifted)
+// presentation. Deliberately NOT debug-gated, unlike debug_grant: petting
+// is a harmless presentational stamp — it cannot change XP, level,
+// progress, or the award sequence, and the lift is one tier, capped at
+// "happy", expiring after an hour. Worst case an anonymous caller makes
+// the creature look slightly less sad for a while.
+func (p *plugin) handlePet(ctx context.Context) *pluginsdk.WebhookResponse {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// Plain mutateLedger, not awardXP: no XP, no award_seq bump, no
+	// last_award_at change.
+	l := p.mutateLedger(ctx, func(l *ledger) {
+		l.LastPettedAt = p.now().UTC().Format(time.RFC3339)
+	})
+	body, err := json.Marshal(p.presentLedger(l, nil))
+	if err != nil {
+		return jsonResponse(500, []byte(`{"error":"encoding state"}`))
+	}
+	return jsonResponse(200, body)
 }
 
 // applyDebugGrant handles the ?debug_grant dev/demo knob. It grants XP only
@@ -384,6 +412,17 @@ func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) shiplingR
 		sinceAward = *idleOverride
 	}
 	mood := moodFor(sinceAward)
+	flavor := flavorText(l.Salt, level, mood)
+	// A recent petting lifts the displayed mood one tier (capped at happy)
+	// — presentational only; the base mood keeps decaying from
+	// last_award_at underneath.
+	if petted, err := time.Parse(time.RFC3339, l.LastPettedAt); err == nil &&
+		p.now().UTC().Sub(petted) < petLiftWindow {
+		if lifted := liftMood(mood); lifted != mood {
+			mood = lifted
+			flavor = "Your shipling purrs — but it's still hungry for shipped work."
+		}
+	}
 	return shiplingResponse{
 		Level:          level,
 		Stage:          stageForLevel(level),
@@ -397,7 +436,7 @@ func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) shiplingR
 		Mood:           mood,
 		AwardSeq:       l.AwardSeq,
 		LastAwardAt:    l.LastAwardAt,
-		Flavor:         flavorText(l.Salt, level, mood),
+		Flavor:         flavor,
 		AliveSince:     l.CreatedAt,
 	}
 }

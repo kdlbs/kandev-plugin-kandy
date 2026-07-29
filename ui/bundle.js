@@ -1290,6 +1290,7 @@ var SHIPLING_CSS =
   "@keyframes kandev-shipling-cardhop{0%,100%{transform:translate(-50%,0)}18%{transform:translate(-50%,-9px)}36%{transform:translate(-50%,0)}52%{transform:translate(-50%,-6px)}68%{transform:translate(-50%,0)}84%{transform:translate(-50%,-3px)}}" +
   "@keyframes kandev-shipling-burstpop{0%{opacity:0;transform:scale(0.3)}30%{opacity:1;transform:scale(1.2)}100%{opacity:0;transform:scale(1.6) translateY(-9px)}}" +
   "@keyframes kandev-shipling-namehl{0%,100%{background:transparent}30%{background:rgba(255,209,102,0.5)}}" +
+  "@keyframes kandev-shipling-heartfloat{0%{opacity:0;transform:translateY(4px) scale(0.6)}25%{opacity:1;transform:translateY(-6px) scale(1.05)}100%{opacity:0;transform:translateY(-26px) scale(1)}}" +
   ".kandev-shipling-bob{animation:kandev-shipling-bob 2.8s ease-in-out infinite}" +
   ".kandev-shipling-bob-fast{animation-duration:1.6s}" +
   ".kandev-shipling-bob-slow{animation-duration:5.5s}" +
@@ -1303,8 +1304,9 @@ var SHIPLING_CSS =
   ".kandev-shipling-cardhop{animation:kandev-shipling-cardhop 1.2s ease}" +
   ".kandev-shipling-burst{position:absolute;font-size:12px;color:#ffd166;animation:kandev-shipling-burstpop 1s ease forwards;pointer-events:none}" +
   ".kandev-shipling-namehl{animation:kandev-shipling-namehl 1.4s ease;border-radius:4px;padding:0 2px}" +
+  ".kandev-shipling-heartfloat{position:absolute;font-size:13px;color:#f43f5e;animation:kandev-shipling-heartfloat 1.4s ease forwards;pointer-events:none}" +
   ".kandev-shipling-static,.kandev-shipling-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-shipling-bob,.kandev-shipling-bob-fast,.kandev-shipling-bob-slow,.kandev-shipling-bobsad,.kandev-shipling-blink,.kandev-shipling-wiggle,.kandev-shipling-celebrate,.kandev-shipling-celebrate::after,.kandev-shipling-levelup,.kandev-shipling-levelup::after,.kandev-shipling-cardhop,.kandev-shipling-burst,.kandev-shipling-namehl{animation:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-shipling-bob,.kandev-shipling-bob-fast,.kandev-shipling-bob-slow,.kandev-shipling-bobsad,.kandev-shipling-blink,.kandev-shipling-wiggle,.kandev-shipling-celebrate,.kandev-shipling-celebrate::after,.kandev-shipling-levelup,.kandev-shipling-levelup::after,.kandev-shipling-cardhop,.kandev-shipling-burst,.kandev-shipling-namehl,.kandev-shipling-heartfloat{animation:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -1338,6 +1340,69 @@ var EGG_PLACEHOLDER = {
   flavor: "The egg is warm. Keep working.",
 };
 
+// ---------------------------------------------------------------------------
+// Hearts mood meter + petting overlays.
+// ---------------------------------------------------------------------------
+
+var HEARTS_BY_MOOD = { elated: 5, happy: 5, content: 4, bored: 3, sad: 2, gloomy: 1 };
+var HEART_PATH =
+  "M5 8.8 C2.2 6.6 0.9 4.9 0.9 3.4 C0.9 2 2 1 3.3 1 C4 1 4.7 1.4 5 2 C5.3 1.4 6 1 6.7 1 C8 1 9.1 2 9.1 3.4 C9.1 4.9 7.8 6.6 5 8.8 Z";
+
+// heartsRow — the tamagotchi attention meter: filled hearts by mood tier.
+function heartsRow(h, mood) {
+  var filled = HEARTS_BY_MOOD[mood] || 4;
+  var hearts = [];
+  for (var i = 0; i < 5; i++) {
+    hearts.push(
+      h(
+        "svg",
+        { key: "heart" + i, width: 11, height: 11, viewBox: "0 0 10 10", "aria-hidden": "true" },
+        h("path", {
+          d: HEART_PATH,
+          fill: i < filled ? "#f43f5e" : "none",
+          stroke: "#f43f5e",
+          strokeWidth: 0.9,
+          opacity: i < filled ? 1 : 0.45,
+        }),
+      ),
+    );
+  }
+  return h(
+    "div",
+    {
+      role: "img",
+      "aria-label": "mood: " + mood + ", " + filled + " of 5 hearts",
+      style: { display: "flex", gap: "2px", alignItems: "center" },
+    },
+    hearts,
+  );
+}
+
+// floatingHearts — the petting reaction: hearts drifting up from the being.
+function floatingHearts(h) {
+  var spots = [
+    [44, 46, 0],
+    [55, 40, 120],
+    [38, 36, 240],
+    [60, 52, 360],
+  ];
+  return h(
+    "div",
+    { key: "pethearts", style: { position: "absolute", inset: 0, pointerEvents: "none" } },
+    spots.map(function (s, i) {
+      return h(
+        "span",
+        {
+          key: "petheart" + i,
+          className: "kandev-shipling-heartfloat",
+          style: { left: s[0] + "%", top: s[1] + "%", animationDelay: s[2] + "ms" },
+        },
+        "♥",
+      );
+    }),
+  );
+}
+
 // burstSparkles renders the celebration particle burst over the scene.
 var BURST_SPOTS = [
   [30, 30], [66, 18], [50, 55], [78, 45], [20, 60], [60, 72], [40, 12], [82, 68],
@@ -1368,8 +1433,28 @@ function burstSparkles(h, big) {
 
 // celebration: null, or {kind: "gain"|"levelup"} — joyful hops + sparkles;
 // levelup also highlights the (new) stage name.
-function shiplingCard(h, data, celebration) {
+// pet (dialog only): null, or {fx: bool, onPointerMove: fn, hint: bool} —
+// stroking the creature (pointermove works for mouse and touch-drag) pets
+// it: happy wiggle + floating hearts. Petting never feeds XP.
+function shiplingCard(h, data, celebration, pet) {
   var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0);
+  var creatureProps = {
+    className:
+      "kandev-shipling-wiggle" +
+      (celebration || (pet && pet.fx) ? " kandev-shipling-cardhop" : ""),
+    style: {
+      position: "absolute",
+      left: "50%",
+      bottom: "2px",
+      transform: "translateX(-50%)",
+      padding: pet ? "10px 14px 0" : "0",
+      touchAction: pet ? "none" : "auto",
+    },
+  };
+  if (pet && pet.onPointerMove) {
+    creatureProps.onPointerMove = pet.onPointerMove;
+    creatureProps.id = "kandev-shipling-pet-zone";
+  }
   return h(
     "div",
     { style: { width: "248px" } },
@@ -1395,20 +1480,9 @@ function shiplingCard(h, data, celebration) {
         },
         scene.props,
       ),
-      h(
-        "div",
-        {
-          className: "kandev-shipling-wiggle" + (celebration ? " kandev-shipling-cardhop" : ""),
-          style: {
-            position: "absolute",
-            left: "50%",
-            bottom: "2px",
-            transform: "translateX(-50%)",
-          },
-        },
-        creatureSvg(h, data, 92),
-      ),
+      h("div", creatureProps, creatureSvg(h, data, 92)),
       celebration ? burstSparkles(h, celebration.kind === "levelup") : null,
+      pet && pet.fx ? floatingHearts(h) : null,
     ),
     h(
       "div",
@@ -1438,6 +1512,8 @@ function shiplingCard(h, data, celebration) {
           },
           "Lv " + data.level,
         ),
+        h("span", { style: { flex: 1 } }),
+        heartsRow(h, data.mood || "content"),
       ),
       h(
         "div",
@@ -1468,7 +1544,18 @@ function shiplingCard(h, data, celebration) {
           Math.floor(data.progress_pct) + "% to next evolution",
         ),
       ),
-      h("div", { style: { fontSize: "11px", opacity: 0.7, fontStyle: "italic" } }, data.flavor),
+      h(
+        "div",
+        { style: { fontSize: "11px", opacity: 0.7, fontStyle: "italic" } },
+        pet && pet.fx ? "Your shipling purrs." : data.flavor,
+      ),
+      pet && pet.hint
+        ? h(
+            "div",
+            { style: { fontSize: "10px", opacity: 0.45 } },
+            "psst — stroke your shipling (or press p)",
+          )
+        : null,
     ),
   );
 }
@@ -1496,9 +1583,17 @@ function makeShiplingWidget(host) {
     var celebrationHook = React.useState(null);
     var celebration = celebrationHook[0];
     var setCelebration = celebrationHook[1];
+    // petFx: true while the petting reaction (hearts + wiggle) plays.
+    var petFxHook = React.useState(false);
+    var petFx = petFxHook[0];
+    var setPetFx = petFxHook[1];
     var mountedRef = React.useRef(true);
     var prevRef = React.useRef(null);
     var celebrationTimerRef = React.useRef(null);
+    var petTimerRef = React.useRef(null);
+    // Stroke detector state: an actual rubbing gesture is >300px of
+    // horizontal travel with >=2 direction reversals inside a 2s window.
+    var strokeRef = React.useRef({ lastX: null, lastSign: 0, dist: 0, reversals: 0, windowStart: 0, lastPetAt: 0 });
 
     function celebrate(kind) {
       setCelebration({ kind: kind });
@@ -1538,6 +1633,66 @@ function makeShiplingWidget(host) {
         });
     }
 
+    // triggerPet: local reaction immediately + POST the pet stamp (which
+    // lifts the displayed mood a tier, never XP). Rate-limited ~1 per 3s
+    // so continuous rubbing doesn't spam.
+    function triggerPet() {
+      var m = strokeRef.current;
+      var nowMs = Date.now();
+      if (nowMs - m.lastPetAt < 3000) return;
+      m.lastPetAt = nowMs;
+      setPetFx(true);
+      if (petTimerRef.current) clearTimeout(petTimerRef.current);
+      petTimerRef.current = setTimeout(function () {
+        if (mountedRef.current) setPetFx(false);
+      }, 1600);
+      host.api
+        .fetch("webhooks/pet", { method: "POST" })
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (body) {
+          if (mountedRef.current && body && typeof body.level === "number") {
+            prevRef.current = { level: body.level, award_seq: body.award_seq };
+            setData(body);
+          }
+        })
+        .catch(function () {
+          /* the local purr already played */
+        });
+    }
+
+    // Pointer-event stroke detection (works for mouse and touch-drag).
+    function handlePetMove(e) {
+      var m = strokeRef.current;
+      var nowMs = Date.now();
+      if (nowMs - m.windowStart > 2000) {
+        m.windowStart = nowMs;
+        m.dist = 0;
+        m.reversals = 0;
+        m.lastSign = 0;
+        m.lastX = e.clientX;
+        return;
+      }
+      if (m.lastX == null) {
+        m.lastX = e.clientX;
+        return;
+      }
+      var dx = e.clientX - m.lastX;
+      m.lastX = e.clientX;
+      if (Math.abs(dx) < 1) return;
+      m.dist += Math.abs(dx);
+      var sign = dx > 0 ? 1 : -1;
+      if (m.lastSign !== 0 && sign !== m.lastSign) m.reversals++;
+      m.lastSign = sign;
+      if (m.dist > 300 && m.reversals >= 2) {
+        m.dist = 0;
+        m.reversals = 0;
+        m.windowStart = nowMs;
+        triggerPet();
+      }
+    }
+
     React.useEffect(function () {
       mountedRef.current = true;
       load();
@@ -1547,6 +1702,7 @@ function makeShiplingWidget(host) {
         mountedRef.current = false;
         clearInterval(interval);
         if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
+        if (petTimerRef.current) clearTimeout(petTimerRef.current);
         var i = refreshListeners.indexOf(load);
         if (i >= 0) refreshListeners.splice(i, 1);
       };
@@ -1607,9 +1763,18 @@ function makeShiplingWidget(host) {
             id: "kandev-shipling-dialog",
             className: "w-auto max-w-[280px] p-0 gap-0 overflow-hidden rounded-xl",
             showCloseButton: false,
+            // Keyboard petting path: with the dialog open (Radix focuses
+            // the content), pressing "p" pets the shipling.
+            onKeyDown: function (e) {
+              if (e.key === "p" || e.key === "P") triggerPet();
+            },
           },
           h(DialogTitle, { className: "sr-only" }, "Shipling"),
-          shiplingCard(h, shown, celebration),
+          shiplingCard(h, shown, celebration, {
+            fx: petFx,
+            onPointerMove: handlePetMove,
+            hint: HEARTS_BY_MOOD[shown.mood || "content"] <= 4 && !petFx,
+          }),
         ),
       ),
     );

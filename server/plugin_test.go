@@ -357,6 +357,80 @@ func TestDebugIdleHours_GatedAndOverrides(t *testing.T) {
 	}
 }
 
+func petShipling(t *testing.T, p *plugin) shiplingResponse {
+	t.Helper()
+	resp, err := p.HandleWebhook(context.Background(),
+		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyPet, Method: "POST"})
+	require.NoError(t, err)
+	return shiplingState(t, resp)
+}
+
+func TestPet_StampsFieldWithoutTouchingXP(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	require.NoError(t, p.OnEvent(ctx, busEvent("turn.completed", map[string]any{})))
+	before := fetchShipling(t, p, "")
+
+	petted := petShipling(t, p)
+
+	// XP-derived facts are untouched: petting is never an award.
+	require.Equal(t, before.Level, petted.Level)
+	require.Equal(t, before.ProgressPct, petted.ProgressPct)
+	require.Equal(t, before.AwardSeq, petted.AwardSeq)
+	require.Equal(t, 8.0, persistedXP(t, host))
+	// But the stamp landed.
+	value := host.state[stateMapKey(stateScope, "", stateKey)]
+	stamp, _ := value["last_petted_at"].(string)
+	require.NotEmpty(t, stamp)
+}
+
+func TestPet_LiftsMoodOneTierCappedAtHappy(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	require.NoError(t, p.OnEvent(ctx, busEvent("turn.completed", map[string]any{})))
+	base := p.now()
+
+	// bored (60h idle) + fresh pet => content.
+	p.now = func() time.Time { return base.Add(60 * time.Hour) }
+	require.Equal(t, "bored", fetchShipling(t, p, "").Mood)
+	petted := petShipling(t, p)
+	require.Equal(t, "content", petted.Mood)
+
+	// gloomy petted becomes merely sad, with the hungry-purr flavor.
+	p.now = func() time.Time { return base.Add(300 * time.Hour) }
+	require.Equal(t, "gloomy", fetchShipling(t, p, "").Mood)
+	state := petShipling(t, p)
+	require.Equal(t, "sad", state.Mood)
+	require.Contains(t, state.Flavor, "purrs")
+	require.Contains(t, state.Flavor, "hungry")
+
+	// content + pet => happy; happy/elated never go higher.
+	p.now = func() time.Time { return base.Add(10 * time.Hour) }
+	require.Equal(t, "happy", petShipling(t, p).Mood, "content lifts to happy")
+	p.now = func() time.Time { return base.Add(1 * time.Hour) }
+	require.Equal(t, "happy", petShipling(t, p).Mood, "happy stays happy — petting cannot fake elated")
+	p.now = func() time.Time { return base.Add(time.Minute) }
+	require.Equal(t, "elated", petShipling(t, p).Mood, "elated stays elated")
+}
+
+func TestPet_LiftExpiresAfterAnHour(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	require.NoError(t, p.OnEvent(ctx, busEvent("turn.completed", map[string]any{})))
+	base := p.now()
+
+	p.now = func() time.Time { return base.Add(60 * time.Hour) }
+	require.Equal(t, "content", petShipling(t, p).Mood, "lift active")
+	// 59 minutes after the pet the lift still holds; at 61 it's gone.
+	p.now = func() time.Time { return base.Add(60*time.Hour + 59*time.Minute) }
+	require.Equal(t, "content", fetchShipling(t, p, "").Mood)
+	p.now = func() time.Time { return base.Add(60*time.Hour + 61*time.Minute) }
+	require.Equal(t, "bored", fetchShipling(t, p, "").Mood, "lift expired")
+}
+
 func TestStageNameStableAcrossCalls(t *testing.T) {
 	host := newFakeHost(map[string]any{"debug": true})
 	p := newTestPlugin(t, host)

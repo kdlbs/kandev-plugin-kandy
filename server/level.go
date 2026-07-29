@@ -413,6 +413,28 @@ func moodFor(sinceAward time.Duration) string {
 	return moodGloomy
 }
 
+// petLiftWindow is how long a petting lifts the displayed mood.
+const petLiftWindow = 60 * time.Minute
+
+// moodOrder ranks moods best-to-worst for the pet lift.
+var moodOrder = []string{"elated", "happy", "content", "bored", "sad", moodGloomy}
+
+// liftMood raises a mood one tier, capped at "happy": petting can never
+// fake "elated" (only real shipped work does that), and a gloomy shipling
+// petted becomes merely sad. Presentational only — the base mood still
+// derives from last_award_at.
+func liftMood(mood string) string {
+	for i, name := range moodOrder {
+		if name == mood {
+			if i <= 1 {
+				return mood // elated stays elated; happy stays happy
+			}
+			return moodOrder[i-1]
+		}
+	}
+	return mood
+}
+
 var idleFlavor = []string{
 	"Your shipling hums a tiny tune.",
 	"Something stirs beneath the surface.",

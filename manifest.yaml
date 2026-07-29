@@ -1,6 +1,6 @@
 id: "kandev-plugin-shipling"
 api_version: 1
-version: "0.6.0"
+version: "0.7.0"
 display_name: "Shipling"
 description: "A tiny creature that grows when you ship — it feeds on shipped tasks, agent runs, and turns, and evolves forever in your session top bar."
 author: "kandev"
@@ -31,6 +31,9 @@ webhooks:
   - key: "shipling"
     description: "Current shipling presentation state as JSON (GET; dev-only ?debug_grant=<n> when debug config is on)"
     method: "GET"
+  - key: "pet"
+    description: "Pet the shipling (POST): stamps last_petted_at, which briefly lifts the displayed mood. Never grants XP."
+    method: "POST"
 
 ui:
   bundle: "/ui/bundle.js"
