@@ -777,7 +777,9 @@ function groundParts(h, C, g, sty) {
 }
 
 // creatureParts — the same being at every level, growing steadily.
-function creatureParts(h, data) {
+// portrait mode (top-bar icon): full-grown proportions regardless of stage,
+// no ambient effects and no ground — just the being, framed tight.
+function creatureParts(h, data, portrait) {
   var level = data.level;
   if (level <= 1) return eggSvg(h, makeRand((data.lineage_seed || 1) >>> 0, 7));
 
@@ -800,7 +802,7 @@ function creatureParts(h, data) {
   if (body.grounded) inner = inner.concat(tailPartsFor(h, C, g, sty));
   inner = inner.concat(prestigeInBody(h, C, body.top, g));
 
-  var s = STAGE_SCALE[g.stage];
+  var s = portrait ? 1 : STAGE_SCALE[g.stage];
   var scaled = h(
     "g",
     { key: "being", transform: "translate(" + 50 * (1 - s) + " " + 88 * (1 - s) + ") scale(" + s + ")" },
@@ -808,15 +810,17 @@ function creatureParts(h, data) {
   );
 
   var parts = [];
-  parts = parts.concat(effectParts(h, lineage, C, g, level));
+  if (!portrait) parts = parts.concat(effectParts(h, lineage, C, g, level));
   parts.push(scaled);
-  parts = parts.concat(groundParts(h, C, g, sty));
+  if (!portrait) parts = parts.concat(groundParts(h, C, g, sty));
   return parts;
 }
 
-// isStatic renders a motionless portrait (top-bar icon): no bob wrapper, and
-// the kandev-gotchi-static class kills descendant blink/wiggle animations so
-// the icon sits still — all the life stays in the hover card.
+// isStatic renders a motionless portrait (top-bar icon): no bob wrapper, the
+// kandev-gotchi-static class kills descendant blink/wiggle animations, and the
+// viewBox crops tight to the full-grown body (creatureParts portrait mode) so
+// the icon fills its chip at every growth stage — all the life stays in the
+// hover card.
 function creatureSvg(h, data, size, extraClass, isStatic) {
   var cls = (extraClass || "") + (isStatic ? " kandev-gotchi-static" : "");
   return h(
@@ -824,12 +828,12 @@ function creatureSvg(h, data, size, extraClass, isStatic) {
     {
       width: size,
       height: size,
-      viewBox: "0 0 100 100",
+      viewBox: isStatic ? "14 14 72 78" : "0 0 100 100",
       className: cls.trim(),
       "aria-hidden": "true",
-      style: { overflow: "visible", flexShrink: 0 },
+      style: { overflow: isStatic ? "hidden" : "visible", flexShrink: 0 },
     },
-    h("g", { className: isStatic ? "" : "kandev-gotchi-bob" }, creatureParts(h, data)),
+    h("g", { className: isStatic ? "" : "kandev-gotchi-bob" }, creatureParts(h, data, !!isStatic)),
   );
 }
 
@@ -1309,12 +1313,13 @@ function makeGotchiWidget(host) {
           "div",
           {
             id: "kandev-gotchi-widget",
-            className: "h-7 flex items-center px-1 cursor-default rounded hover:bg-muted/40",
+            className:
+              "h-7 w-7 flex items-center justify-center cursor-default rounded-md border border-border/60 bg-muted/30 hover:bg-muted/60",
             "aria-label": "Kandev Gotchi: level " + shown.level + " " + shown.stage_name,
             onMouseEnter: load,
             onFocus: load,
           },
-          creatureSvg(h, shown, 24, "", true),
+          creatureSvg(h, shown, 22, "", true),
         ),
       ),
       h(

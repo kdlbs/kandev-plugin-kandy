@@ -1,7 +1,7 @@
 .PHONY: build run test fmt vet package package-host clean
 
 BIN := bin/kandev-plugin-gotchi
-VERSION := 0.3.1
+VERSION := 0.3.2
 STAGE := .build/stage
 PKG_OUT := kandev-plugin-gotchi-$(VERSION).tar.gz
 
