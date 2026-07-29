@@ -1690,7 +1690,17 @@ var KANDY_CSS =
   "@keyframes kandev-kandy-flinch{0%,100%{transform:translateX(0) rotate(0)}12%{transform:translateX(-4px) rotate(-4deg)}28%{transform:translateX(3.5px) rotate(2.5deg)}44%{transform:translateX(-2.6px) rotate(-1.5deg)}62%{transform:translateX(1.8px)}80%{transform:translateX(-1px)}}" +
   "@keyframes kandev-kandy-turnaway{0%,100%{transform:rotate(0)}20%,80%{transform:rotate(-9deg) translateX(-4px)}}" +
   "@keyframes kandev-kandy-bonkstar{0%{opacity:0;transform:translateY(0) scale(0.5)}20%{opacity:1;transform:translateY(-7px) scale(1.15)}100%{opacity:0;transform:translateY(-24px) scale(0.9)}}" +
-  "@keyframes kandev-kandy-stickswing{0%{opacity:0;transform:rotate(-80deg)}18%{opacity:1;transform:rotate(30deg)}40%{transform:rotate(8deg)}70%{opacity:1;transform:rotate(14deg)}100%{opacity:0;transform:rotate(14deg)}}" +
+  // stickswing: windup raised over the head, accelerate into the strike —
+  // rotate(0) IS the contact pose (the club tip is drawn on the contact
+  // point), reached at 28% of 0.9s = ~250ms (BONK_IMPACT_MS syncs the
+  // flinch/stars/blood to it), then a drive-through squash and settle.
+  "@keyframes kandev-kandy-stickswing{0%{opacity:0;transform:rotate(118deg);animation-timing-function:cubic-bezier(.55,0,1,.45)}6%{opacity:1;transform:rotate(112deg);animation-timing-function:cubic-bezier(.55,0,1,.45)}28%{transform:rotate(0deg)}34%{transform:rotate(-10deg)}44%{transform:rotate(3deg)}52%{transform:rotate(0deg)}80%{opacity:1;transform:rotate(0deg)}100%{opacity:0;transform:rotate(6deg)}}" +
+  // blooddrop: comic splatter — burst out fast to the peak (--kx/--ky),
+  // then a short gravity fall to (--fx/--fy) while fading. Droplets only.
+  "@keyframes kandev-kandy-blooddrop{0%{opacity:0;transform:translate(0,0) scale(0.4);animation-timing-function:ease-out}12%{opacity:1}55%{opacity:1;transform:translate(var(--kx),var(--ky)) scale(1);animation-timing-function:ease-in}100%{opacity:0;transform:translate(var(--fx),var(--fy)) scale(0.85)}}" +
+  // bonkflash: 1-frame white pop, then a brief red-shifted tint, on the
+  // being's wrapper at the moment of contact.
+  "@keyframes kandev-kandy-bonkflash{0%{filter:brightness(2.1) saturate(0.5)}45%{filter:brightness(1.15) saturate(1.3) hue-rotate(-9deg)}100%{filter:none}}" +
   "@keyframes kandev-kandy-dotsfade{0%{opacity:0;transform:translateY(2px)}25%{opacity:1}75%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}" +
   ".kandev-kandy-bob{animation:kandev-kandy-bob 2.8s ease-in-out infinite}" +
   ".kandev-kandy-bob-fast{animation-duration:1.6s}" +
@@ -1708,13 +1718,21 @@ var KANDY_CSS =
   ".kandev-kandy-heartfloat{position:absolute;font-size:13px;color:#f43f5e;animation:kandev-kandy-heartfloat 1.4s ease forwards;pointer-events:none}" +
   // flinch/turnaway must be declared AFTER wiggle: the animation shorthand
   // of the later single-class rule wins when both classes are present.
-  ".kandev-kandy-flinch{animation:kandev-kandy-flinch 0.55s ease}" +
+  // flinch waits for the stick to land (delay = BONK_IMPACT_MS) and runs
+  // together with the contact flash; fill-mode both holds the rest pose
+  // through the delay. Both animate transform/filter only — the layout
+  // transform stays on the outer positioning div (see kandyCard).
+  ".kandev-kandy-flinch{animation:kandev-kandy-flinch 0.55s ease 0.25s both,kandev-kandy-bonkflash 0.3s ease 0.25s both}" +
   ".kandev-kandy-turnaway{animation:kandev-kandy-turnaway 1.1s ease;transform-origin:50% 85%}" +
-  ".kandev-kandy-bonkstar{position:absolute;font-size:13px;animation:kandev-kandy-bonkstar 1.1s ease forwards;pointer-events:none}" +
-  ".kandev-kandy-stick{transform-origin:50% 92%;animation:kandev-kandy-stickswing 0.8s ease forwards;pointer-events:none}" +
+  // bonkstar/stick/blood: base opacity 0 so nothing shows during their
+  // impact delay — or at all under prefers-reduced-motion (animation:none
+  // leaves the base state).
+  ".kandev-kandy-bonkstar{position:absolute;font-size:13px;opacity:0;animation:kandev-kandy-bonkstar 1.1s ease both;pointer-events:none}" +
+  ".kandev-kandy-stick{position:absolute;opacity:0;animation:kandev-kandy-stickswing 0.9s ease both;pointer-events:none}" +
+  ".kandev-kandy-blood{position:absolute;opacity:0;animation:kandev-kandy-blooddrop 0.6s ease-out both;pointer-events:none}" +
   ".kandev-kandy-dots{position:absolute;font-size:15px;font-weight:700;opacity:0;letter-spacing:2px;animation:kandev-kandy-dotsfade 1.4s ease forwards;pointer-events:none}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-flinch,.kandev-kandy-turnaway,.kandev-kandy-bonkstar,.kandev-kandy-stick,.kandev-kandy-dots{animation:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-flinch,.kandev-kandy-turnaway,.kandev-kandy-bonkstar,.kandev-kandy-stick,.kandev-kandy-blood,.kandev-kandy-dots{animation:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -1831,16 +1849,124 @@ function floatingHearts(h, seq) {
   );
 }
 
-// bonkOverlay — the stick swing + floating bump-stars/anger marks, the
-// mirror image of floatingHearts. Keyed by seq so repeats replay.
+// ---------------------------------------------------------------------------
+// Bonk impact — the stick strikes the creature ON the head, and the whole
+// reaction (flinch, bump-stars, blood splatter, flash) fires at the moment
+// of contact, not at the click.
+// ---------------------------------------------------------------------------
+
+// BONK_IMPACT_MS: when the swing reaches its contact pose — the stickswing
+// keyframes put rotate(0) at 28% of 0.9s. Every impact effect (and the
+// flinch delay in the CSS above) is offset by this.
+var BONK_IMPACT_MS = 250;
+
+// bonkContactFor — the strike's contact point in scene pixels, derived from
+// the SAME values the renderer uses: the archetype builder's `top` anchor
+// (the crown varies per archetype — a serpent's raised head, a sprite's
+// hover height) and STAGE_SCALE scaling about the (50,88) anchor, so the
+// club lands on the head at every metamorphosis stage.
+// Scene: 248x124 px; creature svg: 92px for viewBox 0 0 100 100, bottom-
+// centered ~2px above the scene floor (plus the inline-svg baseline gap).
+var BONK_SCENE = { w: 248, h: 124, svgPx: 92, bottomPx: 5 };
+
+function bonkContactFor(data) {
+  var vx = 50;
+  var vy = 44; // egg: just under the shell's crown (cy 62 - ry 22 = 40)
+  if (data && data.level > 1) {
+    var lineage = (data.lineage_seed || 1) >>> 0;
+    var g = growthForLevel(data.level);
+    var sty = lineageStyle(lineage);
+    var temper = temperFor(data);
+    var C = lineageColors(data.family || 0, data.level, sty, temper);
+    var arch =
+      (((data.archetype || 0) % BODY_BUILDERS.length) + BODY_BUILDERS.length) % BODY_BUILDERS.length;
+    // The builders only push h(...) results into arrays and never read
+    // them back, so a no-op h recovers the geometry without rendering.
+    var noop = function () {
+      return null;
+    };
+    var body = BODY_BUILDERS[arch](noop, makeRand(lineage, 6), C, g);
+    var s = STAGE_SCALE[g.stage];
+    // Aim a touch below the crown so the hit reads "on the head", then
+    // apply the renderer's scale-about-(50,88) transform.
+    vx = 50 + (body.top.x - 50) * s;
+    vy = 88 - (88 - (body.top.y + 3)) * s;
+  }
+  var k = BONK_SCENE.svgPx / 100;
+  return {
+    x: BONK_SCENE.w / 2 + (vx - 50) * k,
+    y: BONK_SCENE.h - BONK_SCENE.bottomPx - (100 - vy) * k,
+  };
+}
+
+// Bump-stars burst FROM the contact point: [dx, dy, extraDelayMs, glyph].
 var BONK_SPOTS = [
-  [40, 38, 0, "✶"],
-  [58, 30, 90, "✷"],
-  [34, 26, 180, "✶"],
-  [63, 46, 270, "✧"],
+  [-18, -8, 0, "✶"],
+  [14, -14, 60, "✷"],
+  [-6, -20, 120, "✶"],
+  [20, 0, 180, "✧"],
 ];
 
-function bonkOverlay(h, seq) {
+// Blood droplets: [peakDx, peakDy, endDx, endDy, sizePx, tear?, color,
+// extraDelayMs]. Mixed teardrop/round, 2-4px, two darker reds for depth;
+// outward/upward burst then a slight gravity fall (end below peak).
+var BLOOD_DROPS = [
+  [-14, -18, -18, -6, 3, 1, "#dc2626", 0],
+  [10, -22, 14, -8, 3.5, 1, "#e11d48", 0],
+  [-22, -8, -27, 4, 2.5, 0, "#991b1b", 20],
+  [18, -12, 24, 2, 3, 1, "#b91c1c", 25],
+  [-4, -26, -6, -12, 4, 1, "#dc2626", 10],
+  [26, -4, 31, 8, 2, 0, "#7f1d1d", 40],
+  [4, -13, 5, 1, 2.5, 0, "#ef4444", 50],
+];
+
+// The stick svg is drawn already in its strike pose: pivot (the unseen
+// hand) at STICK_PIVOT, club-knob tip at STICK_TIP — so placing the svg
+// with the tip on the contact point and rotating about the pivot makes
+// rotate(0) exactly the moment of contact.
+var STICK_PIVOT = { x: 44, y: 12 };
+var STICK_TIP = { x: 20, y: 36 };
+
+function bloodDrop(h, i, c) {
+  var d = BLOOD_DROPS[i];
+  var sz = d[4];
+  // Teardrops point back toward the contact point (opposite the travel
+  // direction): the sharp border-radius corner sits at -45deg, so rotate
+  // it onto the back-vector. Static transform lives on the INNER span —
+  // the animated outer span must carry no base transform.
+  var backDeg = (Math.atan2(-d[1], -d[0]) * 180) / Math.PI + 45;
+  return h(
+    "span",
+    {
+      key: "blood" + i,
+      className: "kandev-kandy-blood",
+      style: {
+        left: c.x - sz / 2 + "px",
+        top: c.y - sz / 2 + "px",
+        width: sz + "px",
+        height: sz + "px",
+        animationDelay: BONK_IMPACT_MS + d[7] + "ms",
+        "--kx": d[0] + "px",
+        "--ky": d[1] + "px",
+        "--fx": d[2] + "px",
+        "--fy": d[3] + "px",
+      },
+    },
+    h("span", {
+      style: {
+        display: "block",
+        width: "100%",
+        height: "100%",
+        background: d[6],
+        borderRadius: d[5] ? "50% 0 50% 50%" : "50%",
+        transform: d[5] ? "rotate(" + backDeg.toFixed(1) + "deg)" : "none",
+      },
+    }),
+  );
+}
+
+function bonkOverlay(h, seq, data) {
+  var c = bonkContactFor(data);
   var kids = BONK_SPOTS.map(function (s, i) {
     return h(
       "span",
@@ -1848,9 +1974,9 @@ function bonkOverlay(h, seq) {
         key: "bstar" + i,
         className: "kandev-kandy-bonkstar",
         style: {
-          left: s[0] + "%",
-          top: s[1] + "%",
-          animationDelay: s[2] + "ms",
+          left: c.x + s[0] - 6 + "px",
+          top: c.y + s[1] - 9 + "px",
+          animationDelay: BONK_IMPACT_MS + s[2] + "ms",
           color: i % 2 ? "#ef4444" : "#f59e0b",
         },
       },
@@ -1863,16 +1989,28 @@ function bonkOverlay(h, seq) {
       {
         key: "stick",
         className: "kandev-kandy-stick",
-        width: 34,
-        height: 34,
-        viewBox: "0 0 34 34",
-        style: { position: "absolute", left: "56%", top: "10%" },
+        width: 56,
+        height: 56,
+        viewBox: "0 0 56 56",
+        style: {
+          // Place the svg so the club tip sits ON the contact point (the
+          // pivot then lands up-right of the head), and rotate about the
+          // pivot. Position via left/top only — no base transform.
+          left: c.x - STICK_TIP.x + "px",
+          top: c.y - STICK_TIP.y + "px",
+          transformOrigin: STICK_PIVOT.x + "px " + STICK_PIVOT.y + "px",
+          overflow: "visible",
+        },
         "aria-hidden": "true",
       },
-      h("rect", { key: "stickb", x: 15, y: 2, width: 4.6, height: 26, rx: 2.3, fill: "#8a5a33", stroke: "#5d3b1e", strokeWidth: 1 }),
-      h("circle", { key: "stickk", cx: 17.3, cy: 4.5, r: 3.4, fill: "#a06c3f", stroke: "#5d3b1e", strokeWidth: 1 }),
+      h("line", { key: "stko", x1: STICK_PIVOT.x, y1: STICK_PIVOT.y, x2: STICK_TIP.x + 2, y2: STICK_TIP.y - 2, stroke: "#5d3b1e", strokeWidth: 7, strokeLinecap: "round" }),
+      h("line", { key: "stki", x1: STICK_PIVOT.x - 0.5, y1: STICK_PIVOT.y + 0.5, x2: STICK_TIP.x + 2.5, y2: STICK_TIP.y - 2.5, stroke: "#8a5a33", strokeWidth: 4, strokeLinecap: "round" }),
+      h("line", { key: "stknub", x1: 33, y1: 23, x2: 37.5, y2: 20, stroke: "#5d3b1e", strokeWidth: 2.6, strokeLinecap: "round" }),
+      h("circle", { key: "stkknob", cx: STICK_TIP.x, cy: STICK_TIP.y, r: 4.5, fill: "#a06c3f", stroke: "#5d3b1e", strokeWidth: 1.4 }),
     ),
   );
+  // Blood mounts after the stick so droplets fly OVER the resting club.
+  for (var i = 0; i < BLOOD_DROPS.length; i++) kids.push(bloodDrop(h, i, c));
   return h("div", { key: "bonkfx" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } }, kids);
 }
 
@@ -2017,7 +2155,7 @@ function kandyCard(h, data, celebration, care) {
       ),
       celebration ? burstSparkles(h, celebration.kind === "levelup") : null,
       care && care.fx ? floatingHearts(h, care.fx) : null,
-      care && care.bonkFx ? bonkOverlay(h, care.bonkFx) : null,
+      care && care.bonkFx ? bonkOverlay(h, care.bonkFx, data) : null,
       care && care.distrustFx ? distrustOverlay(h, care.distrustFx) : null,
     ),
     h(
@@ -2417,6 +2555,8 @@ window.registerKandevPlugin(PLUGIN_ID, {
     sceneFor: sceneFor,
     growthForLevel: growthForLevel,
     kandyCard: kandyCard,
+    bonkOverlay: bonkOverlay,
+    bonkContactFor: bonkContactFor,
     setJsx: function (jsx) {
       h0 = jsx;
     },
