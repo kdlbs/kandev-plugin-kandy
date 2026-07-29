@@ -184,7 +184,7 @@ func TestBonk_DistrustWindowRefusesPets(t *testing.T) {
 
 	state := bonkKandy(t, p)
 	require.True(t, state.RefusingPets)
-	require.Equal(t, "Your kandy flinched.", state.Flavor)
+	require.Equal(t, "Your kandy got drenched.", state.Flavor)
 
 	// 30s later a pet is refused: no stamp, no temperament change.
 	advance(p, base, 30*time.Second)

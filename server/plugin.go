@@ -310,7 +310,7 @@ func (p *plugin) handlePet(ctx context.Context) *pluginsdk.WebhookResponse {
 	return presentResponse(p.presentLedger(l, nil))
 }
 
-// handleBonk hits the kandy with the stick. Like petting it never touches
+// handleBonk dumps a bucket of cold water on the kandy. Like petting it never touches
 // XP/level/award_seq — but unlike petting it pushes the persistent
 // temperament DOWN (rate-limited to one effect per bonkEffectWindow; the
 // stamp always refreshes, so spamming keeps resetting the window instead
@@ -331,7 +331,7 @@ func (p *plugin) handleBonk(ctx context.Context) *pluginsdk.WebhookResponse {
 		l.LastPettedAt = "" // a bonk cancels any active pet lift
 	})
 	view := p.presentLedger(l, nil)
-	view.Flavor = "Your kandy flinched."
+	view.Flavor = "Your kandy got drenched."
 	return presentResponse(view)
 }
 

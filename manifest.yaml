@@ -1,6 +1,6 @@
 id: "kandev-plugin-kandy"
 api_version: 1
-version: "0.3.2"
+version: "0.4.0"
 display_name: "Kandy"
 description: "A tiny creature that grows as your agents work — it feeds on agent runs, turns, and conversation, and evolves forever in your session top bar."
 author: "kandev"
@@ -33,7 +33,7 @@ webhooks:
     description: "Pet the kandy (POST): stamps last_petted_at, which briefly lifts the displayed mood and slowly warms its temperament. Never grants XP. Refused for 60s after a bonk."
     method: "POST"
   - key: "bonk"
-    description: "Bonk the kandy with a stick (POST): darkens its persistent temperament (rate-limited), drops the displayed mood for 30min and makes it refuse pets for 60s. Never touches XP."
+    description: "Bonk the kandy with a bucket of cold water (POST): darkens its persistent temperament (rate-limited), drops the displayed mood for 30min and makes it refuse pets for 60s. Never touches XP."
     method: "POST"
 
 ui:

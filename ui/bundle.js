@@ -14,6 +14,10 @@
 //   matures within one biome (barren -> lively -> lush -> celestial).
 //   Deterministic: no Math.random at render time; a level always renders
 //   identically, and Lv N+1 is always "Lv N plus something new".
+//
+// v0.4.0 — interaction visuals: petting drops a treat the kandy catches
+//   and munches (or sadly ignores while distrusting); bonking is a bucket
+//   of cold water — pour, splash, and a brief soaked shiver.
 
 var PLUGIN_ID = "kandev-plugin-kandy";
 var STYLE_ID = "kandev-kandy-style";
@@ -1684,23 +1688,41 @@ var KANDY_CSS =
   "@keyframes kandev-kandy-burstpop{0%{opacity:0;transform:scale(0.3)}30%{opacity:1;transform:scale(1.2)}100%{opacity:0;transform:scale(1.6) translateY(-9px)}}" +
   "@keyframes kandev-kandy-namehl{0%,100%{background:transparent}30%{background:rgba(255,209,102,0.5)}}" +
   "@keyframes kandev-kandy-heartfloat{0%{opacity:0;transform:translateY(4px) scale(0.6)}25%{opacity:1;transform:translateY(-6px) scale(1.05)}100%{opacity:0;transform:translateY(-26px) scale(1)}}" +
-  // flinch/turnaway animate transform ONLY and live on the same inner
-  // wrapper as wiggle/cardhop — never on the outer positioning div (see
-  // the layering rule at kandyCard).
-  "@keyframes kandev-kandy-flinch{0%,100%{transform:translateX(0) rotate(0)}12%{transform:translateX(-4px) rotate(-4deg)}28%{transform:translateX(3.5px) rotate(2.5deg)}44%{transform:translateX(-2.6px) rotate(-1.5deg)}62%{transform:translateX(1.8px)}80%{transform:translateX(-1px)}}" +
+  // turnaway animates transform ONLY and lives on the same inner wrapper
+  // as wiggle/cardhop — never on the outer positioning div (see the
+  // layering rule at kandyCard).
   "@keyframes kandev-kandy-turnaway{0%,100%{transform:rotate(0)}20%,80%{transform:rotate(-9deg) translateX(-4px)}}" +
-  "@keyframes kandev-kandy-bonkstar{0%{opacity:0;transform:translateY(0) scale(0.5)}20%{opacity:1;transform:translateY(-7px) scale(1.15)}100%{opacity:0;transform:translateY(-24px) scale(0.9)}}" +
-  // stickswing: windup raised over the head, accelerate into the strike —
-  // rotate(0) IS the contact pose (the club tip is drawn on the contact
-  // point), reached at 28% of 0.9s = ~250ms (BONK_IMPACT_MS syncs the
-  // flinch/stars/blood to it), then a drive-through squash and settle.
-  "@keyframes kandev-kandy-stickswing{0%{opacity:0;transform:rotate(118deg);animation-timing-function:cubic-bezier(.55,0,1,.45)}6%{opacity:1;transform:rotate(112deg);animation-timing-function:cubic-bezier(.55,0,1,.45)}28%{transform:rotate(0deg)}34%{transform:rotate(-10deg)}44%{transform:rotate(3deg)}52%{transform:rotate(0deg)}80%{opacity:1;transform:rotate(0deg)}100%{opacity:0;transform:rotate(6deg)}}" +
-  // blooddrop: comic splatter — burst out fast to the peak (--kx/--ky),
-  // then a short gravity fall to (--fx/--fy) while fading. Droplets only.
-  "@keyframes kandev-kandy-blooddrop{0%{opacity:0;transform:translate(0,0) scale(0.4);animation-timing-function:ease-out}12%{opacity:1}55%{opacity:1;transform:translate(var(--kx),var(--ky)) scale(1);animation-timing-function:ease-in}100%{opacity:0;transform:translate(var(--fx),var(--fy)) scale(0.85)}}" +
-  // bonkflash: 1-frame white pop, then a brief red-shifted tint, on the
-  // being's wrapper at the moment of contact.
-  "@keyframes kandev-kandy-bonkflash{0%{filter:brightness(2.1) saturate(0.5)}45%{filter:brightness(1.15) saturate(1.3) hue-rotate(-9deg)}100%{filter:none}}" +
+  // treatfall: gravity drop from above the head onto the contact point —
+  // translateY(0) IS the catch pose (the treat is positioned on the
+  // contact point), reached at 56% of 0.8s = ~450ms (TREAT_CATCH_MS syncs
+  // the munch/crumbs/hearts to it) — then it's gobbled: shrink + fade.
+  "@keyframes kandev-kandy-treatfall{0%{opacity:0;transform:translateY(-52px) rotate(-24deg);animation-timing-function:ease-in}10%{opacity:1;animation-timing-function:ease-in}56%{transform:translateY(0) rotate(6deg)}64%{opacity:1;transform:translateY(1px) rotate(6deg) scale(0.8)}100%{opacity:0;transform:translateY(2px) rotate(6deg) scale(0.15)}}" +
+  // treatbounce (distrust): same fall, but nobody catches it — it hits at
+  // 38% of 1.3s = ~495ms, bounces off the turned-away creature and rolls
+  // aside, fading where it lies. The sad beat is the point.
+  "@keyframes kandev-kandy-treatbounce{0%{opacity:0;transform:translate(0,-52px) rotate(-24deg);animation-timing-function:ease-in}8%{opacity:1;animation-timing-function:ease-in}38%{transform:translate(0,0) rotate(0deg);animation-timing-function:ease-out}56%{transform:translate(13px,-10px) rotate(62deg);animation-timing-function:ease-in}72%{transform:translate(21px,2px) rotate(104deg);animation-timing-function:ease-out}82%{transform:translate(25px,-2px) rotate(116deg);animation-timing-function:ease-in}90%{opacity:1;transform:translate(27px,2px) rotate(122deg)}100%{opacity:0;transform:translate(27px,2px) rotate(122deg)}}" +
+  // munchhop: the happy catch — a quick squash, a hop, a settle. Transform
+  // only, origin bottom-center (set on the class), delayed to the catch.
+  "@keyframes kandev-kandy-munchhop{0%{transform:none}14%{transform:translateY(2px) scale(1.07,0.88)}38%{transform:translateY(-7px) scale(0.97,1.05)}58%{transform:translateY(0) scale(1.05,0.94)}76%{transform:translateY(-3px)}100%{transform:none}}" +
+  // fleck: generic burst particle (treat crumbs, water splash) — out fast
+  // to the peak (--kx/--ky), then a short gravity fall to (--fx/--fy).
+  "@keyframes kandev-kandy-fleck{0%{opacity:0;transform:translate(0,0) scale(0.4);animation-timing-function:ease-out}12%{opacity:1}55%{opacity:1;transform:translate(var(--kx),var(--ky)) scale(1);animation-timing-function:ease-in}100%{opacity:0;transform:translate(var(--fx),var(--fy)) scale(0.85)}}" +
+  // buckettip: swing in above the head, a small anticipation tilt, then
+  // tip hard — rotate(-104deg) IS the pouring pose, reached at 28% of
+  // 1.5s = ~420ms; the pour stream (delay 0.42s) starts exactly then.
+  // Hold the pour, then right the empty bucket and whisk it away.
+  "@keyframes kandev-kandy-buckettip{0%{opacity:0;transform:translateY(-14px) rotate(0deg)}10%{opacity:1;transform:translateY(0) rotate(-6deg)}19%{transform:rotate(-13deg)}28%{transform:rotate(-104deg)}72%{transform:rotate(-110deg)}86%{opacity:1;transform:rotate(-70deg) translateY(-3px)}100%{opacity:0;transform:rotate(-30deg) translateY(-12px)}}" +
+  // pour: the water column grows from the lip to the head (~85ms after the
+  // stream starts — POUR_HIT_MS syncs the splash/soak), holds, trails off.
+  "@keyframes kandev-kandy-pour{0%{opacity:0;transform:scaleY(0)}9%{opacity:0.9;transform:scaleY(1)}72%{opacity:0.9;transform:scaleY(1)}100%{opacity:0;transform:scaleY(0.92) translateY(8px)}}" +
+  "@keyframes kandev-kandy-splat{0%{opacity:0;transform:scale(0.2)}30%{opacity:0.85;transform:scale(1)}100%{opacity:0;transform:scale(1.6)}}" +
+  "@keyframes kandev-kandy-drip{0%{opacity:0;transform:translateY(-2px)}22%{opacity:0.9}100%{opacity:0;transform:translateY(11px)}}" +
+  // wettint: filter ONLY — a quick splash-white pop, then the soaked
+  // state: darkened, slightly cold sheen that dries off. The 0% frame must
+  // be filter:none: fill-mode both holds it through the sync delay.
+  "@keyframes kandev-kandy-wettint{0%{filter:none}3%{filter:brightness(1.5) saturate(0.8)}10%{filter:brightness(0.8) saturate(1.15)}75%{filter:brightness(0.86) saturate(1.05)}100%{filter:none}}" +
+  // shiver: transform ONLY — a decaying cold shudder while soaked.
+  "@keyframes kandev-kandy-shiver{0%,100%{transform:translateX(0)}12%{transform:translateX(-1.7px) rotate(-1.2deg)}28%{transform:translateX(1.5px) rotate(1deg)}44%{transform:translateX(-1.2px)}60%{transform:translateX(1px)}76%{transform:translateX(-0.6px)}88%{transform:translateX(0.3px)}}" +
   "@keyframes kandev-kandy-dotsfade{0%{opacity:0;transform:translateY(2px)}25%{opacity:1}75%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}" +
   ".kandev-kandy-bob{animation:kandev-kandy-bob 2.8s ease-in-out infinite}" +
   ".kandev-kandy-bob-fast{animation-duration:1.6s}" +
@@ -1715,24 +1737,33 @@ var KANDY_CSS =
   ".kandev-kandy-cardhop{animation:kandev-kandy-cardhop 1.2s ease}" +
   ".kandev-kandy-burst{position:absolute;font-size:12px;color:#ffd166;animation:kandev-kandy-burstpop 1s ease forwards;pointer-events:none}" +
   ".kandev-kandy-namehl{animation:kandev-kandy-namehl 1.4s ease;border-radius:4px;padding:0 2px}" +
-  ".kandev-kandy-heartfloat{position:absolute;font-size:13px;color:#f43f5e;animation:kandev-kandy-heartfloat 1.4s ease forwards;pointer-events:none}" +
-  // flinch/turnaway must be declared AFTER wiggle: the animation shorthand
-  // of the later single-class rule wins when both classes are present.
-  // flinch waits for the stick to land (delay = BONK_IMPACT_MS) and runs
-  // together with the contact flash; fill-mode both holds the rest pose
-  // through the delay. Both animate transform/filter only — the layout
-  // transform stays on the outer positioning div (see kandyCard).
-  ".kandev-kandy-flinch{animation:kandev-kandy-flinch 0.55s ease 0.25s both,kandev-kandy-bonkflash 0.3s ease 0.25s both}" +
+  // heartfloat: base opacity 0 + fill both — the hearts now start on a
+  // delay (after the munch), so they must stay hidden until then.
+  ".kandev-kandy-heartfloat{position:absolute;font-size:13px;color:#f43f5e;opacity:0;animation:kandev-kandy-heartfloat 1.4s ease both;pointer-events:none}" +
+  // munch/soaked/turnaway must be declared AFTER wiggle: the animation
+  // shorthand of the later single-class rule wins when both classes are
+  // present. munch waits for the treat to land (delay = TREAT_CATCH_MS);
+  // soaked waits for the water to hit (delay = POUR_HIT_MS); fill-mode
+  // both holds the rest pose through the delay. All animate
+  // transform/filter only — the layout transform stays on the outer
+  // positioning div (see kandyCard).
+  ".kandev-kandy-munch{animation:kandev-kandy-munchhop 0.7s ease 0.45s both;transform-origin:50% 100%}" +
+  ".kandev-kandy-soaked{animation:kandev-kandy-wettint 1.9s ease 0.5s both,kandev-kandy-shiver 1.1s ease-in-out 0.9s both}" +
   ".kandev-kandy-turnaway{animation:kandev-kandy-turnaway 1.1s ease;transform-origin:50% 85%}" +
-  // bonkstar/stick/blood: base opacity 0 so nothing shows during their
-  // impact delay — or at all under prefers-reduced-motion (animation:none
+  // Overlay elements: base opacity 0 so nothing shows during their sync
+  // delays — or at all under prefers-reduced-motion (animation:none
   // leaves the base state).
-  ".kandev-kandy-bonkstar{position:absolute;font-size:13px;opacity:0;animation:kandev-kandy-bonkstar 1.1s ease both;pointer-events:none}" +
-  ".kandev-kandy-stick{position:absolute;opacity:0;animation:kandev-kandy-stickswing 0.9s ease both;pointer-events:none}" +
-  ".kandev-kandy-blood{position:absolute;opacity:0;animation:kandev-kandy-blooddrop 0.6s ease-out both;pointer-events:none}" +
-  ".kandev-kandy-dots{position:absolute;font-size:15px;font-weight:700;opacity:0;letter-spacing:2px;animation:kandev-kandy-dotsfade 1.4s ease forwards;pointer-events:none}" +
+  ".kandev-kandy-treat{position:absolute;opacity:0;animation:kandev-kandy-treatfall 0.8s both;pointer-events:none}" +
+  ".kandev-kandy-treat-ignored{position:absolute;opacity:0;animation:kandev-kandy-treatbounce 1.3s both;pointer-events:none}" +
+  ".kandev-kandy-crumb{position:absolute;opacity:0;animation:kandev-kandy-fleck 0.55s ease-out both;pointer-events:none}" +
+  ".kandev-kandy-bucket{position:absolute;opacity:0;animation:kandev-kandy-buckettip 1.5s ease both;pointer-events:none}" +
+  ".kandev-kandy-pour{position:absolute;opacity:0;animation:kandev-kandy-pour 0.95s ease 0.42s both;transform-origin:50% 0;pointer-events:none}" +
+  ".kandev-kandy-splat{position:absolute;opacity:0;animation:kandev-kandy-splat 0.5s ease 0.5s both;pointer-events:none}" +
+  ".kandev-kandy-splashdrop{position:absolute;opacity:0;animation:kandev-kandy-fleck 0.6s ease-out both;pointer-events:none}" +
+  ".kandev-kandy-drip{position:absolute;opacity:0;animation:kandev-kandy-drip 0.8s ease-in both;pointer-events:none}" +
+  ".kandev-kandy-dots{position:absolute;font-size:15px;font-weight:700;opacity:0;letter-spacing:2px;animation:kandev-kandy-dotsfade 1.4s ease 0.35s both;pointer-events:none}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-flinch,.kandev-kandy-turnaway,.kandev-kandy-bonkstar,.kandev-kandy-stick,.kandev-kandy-blood,.kandev-kandy-dots{animation:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots{animation:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -1822,49 +1853,27 @@ function moodBadge(h, mood) {
   );
 }
 
-// floatingHearts — the petting reaction: hearts drifting up from the being.
-// seq keys the overlay so an in-window repeat click remounts it and the
-// heart animation replays.
-function floatingHearts(h, seq) {
-  var spots = [
-    [44, 46, 0],
-    [55, 40, 120],
-    [38, 36, 240],
-    [60, 52, 360],
-  ];
-  return h(
-    "div",
-    { key: "pethearts" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } },
-    spots.map(function (s, i) {
-      return h(
-        "span",
-        {
-          key: "petheart" + i,
-          className: "kandev-kandy-heartfloat",
-          style: { left: s[0] + "%", top: s[1] + "%", animationDelay: s[2] + "ms" },
-        },
-        "♥",
-      );
-    }),
-  );
-}
-
 // ---------------------------------------------------------------------------
-// Bonk impact — the stick strikes the creature ON the head, and the whole
-// reaction (flinch, bump-stars, blood splatter, flash) fires at the moment
-// of contact, not at the click.
+// Care overlays — the treat drop (pet) and the cold-water bucket (bonk).
+// Both anchor every effect on bonkContactFor(data): the creature's true
+// head/mouth point across stage scales and archetypes.
 // ---------------------------------------------------------------------------
 
-// BONK_IMPACT_MS: when the swing reaches its contact pose — the stickswing
-// keyframes put rotate(0) at 28% of 0.9s. Every impact effect (and the
-// flinch delay in the CSS above) is offset by this.
-var BONK_IMPACT_MS = 250;
+// TREAT_CATCH_MS: when the falling treat reaches the mouth — the treatfall
+// keyframes put translateY(0) at 56% of 0.8s. The munch hop (CSS delay),
+// crumbs, and hearts are all offset by this.
+var TREAT_CATCH_MS = 450;
 
-// bonkContactFor — the strike's contact point in scene pixels, derived from
+// POUR_HIT_MS: when the poured water reaches the head — the bucket tips at
+// 420ms (28% of 1.5s) and the stream takes ~85ms to grow to the head. The
+// splash, splat, soaked tint (CSS delay), and drips are offset by this.
+var POUR_HIT_MS = 500;
+
+// bonkContactFor — the effects' contact point in scene pixels, derived from
 // the SAME values the renderer uses: the archetype builder's `top` anchor
 // (the crown varies per archetype — a serpent's raised head, a sprite's
 // hover height) and STAGE_SCALE scaling about the (50,88) anchor, so the
-// club lands on the head at every metamorphosis stage.
+// treat and the water land on the head at every metamorphosis stage.
 // Scene: 248x124 px; creature svg: 92px for viewBox 0 0 100 100, bottom-
 // centered ~2px above the scene floor (plus the inline-svg baseline gap).
 var BONK_SCENE = { w: 248, h: 124, svgPx: 92, bottomPx: 5 };
@@ -1899,53 +1908,27 @@ function bonkContactFor(data) {
   };
 }
 
-// Bump-stars burst FROM the contact point: [dx, dy, extraDelayMs, glyph].
-var BONK_SPOTS = [
-  [-18, -8, 0, "✶"],
-  [14, -14, 60, "✷"],
-  [-6, -20, 120, "✶"],
-  [20, 0, 180, "✧"],
-];
-
-// Blood droplets: [peakDx, peakDy, endDx, endDy, sizePx, tear?, color,
-// extraDelayMs]. Mixed teardrop/round, 2-4px, two darker reds for depth;
-// outward/upward burst then a slight gravity fall (end below peak).
-var BLOOD_DROPS = [
-  [-14, -18, -18, -6, 3, 1, "#dc2626", 0],
-  [10, -22, 14, -8, 3.5, 1, "#e11d48", 0],
-  [-22, -8, -27, 4, 2.5, 0, "#991b1b", 20],
-  [18, -12, 24, 2, 3, 1, "#b91c1c", 25],
-  [-4, -26, -6, -12, 4, 1, "#dc2626", 10],
-  [26, -4, 31, 8, 2, 0, "#7f1d1d", 40],
-  [4, -13, 5, 1, 2.5, 0, "#ef4444", 50],
-];
-
-// The stick svg is drawn already in its strike pose: pivot (the unseen
-// hand) at STICK_PIVOT, club-knob tip at STICK_TIP — so placing the svg
-// with the tip on the contact point and rotating about the pivot makes
-// rotate(0) exactly the moment of contact.
-var STICK_PIVOT = { x: 44, y: 12 };
-var STICK_TIP = { x: 20, y: 36 };
-
-function bloodDrop(h, i, c) {
-  var d = BLOOD_DROPS[i];
+// fleckSpan — one generic burst particle (treat crumb, water splash).
+// d = [peakDx, peakDy, endDx, endDy, sizePx, tear?, color, extraDelayMs]:
+// outward/upward burst to the peak, then a slight gravity fall (end below
+// peak). Teardrops point back toward the contact point (opposite the
+// travel direction): the sharp border-radius corner sits at -45deg, so
+// rotate it onto the back-vector. Static transform lives on the INNER
+// span — the animated outer span must carry no base transform.
+function fleckSpan(h, key, cls, c, d, baseDelay) {
   var sz = d[4];
-  // Teardrops point back toward the contact point (opposite the travel
-  // direction): the sharp border-radius corner sits at -45deg, so rotate
-  // it onto the back-vector. Static transform lives on the INNER span —
-  // the animated outer span must carry no base transform.
   var backDeg = (Math.atan2(-d[1], -d[0]) * 180) / Math.PI + 45;
   return h(
     "span",
     {
-      key: "blood" + i,
-      className: "kandev-kandy-blood",
+      key: key,
+      className: cls,
       style: {
         left: c.x - sz / 2 + "px",
         top: c.y - sz / 2 + "px",
         width: sz + "px",
         height: sz + "px",
-        animationDelay: BONK_IMPACT_MS + d[7] + "ms",
+        animationDelay: baseDelay + d[7] + "ms",
         "--kx": d[0] + "px",
         "--ky": d[1] + "px",
         "--fx": d[2] + "px",
@@ -1965,62 +1948,217 @@ function bloodDrop(h, i, c) {
   );
 }
 
-function bonkOverlay(h, seq, data) {
+// treatSvg — a cute ~10px berry: warm red-pink body, highlight, green leaf.
+// Drawn centered on the contact point; the fall/bounce animation classes go
+// on the svg itself (position via left/top only — no base transform).
+function treatSvg(h, c, cls) {
+  return h(
+    "svg",
+    {
+      key: "treat",
+      className: cls,
+      width: 12,
+      height: 12,
+      viewBox: "0 0 12 12",
+      style: { left: c.x - 6 + "px", top: c.y - 6.5 + "px", overflow: "visible" },
+      "aria-hidden": "true",
+    },
+    h("circle", { key: "tbody", cx: 6, cy: 7, r: 4.4, fill: "#e05c6e", stroke: "#a63446", strokeWidth: 1.1 }),
+    h("circle", { key: "thi", cx: 4.5, cy: 5.7, r: 1.2, fill: "#ff9aa8", opacity: 0.95 }),
+    h("path", { key: "tleaf", d: "M6 2.8 Q7.6 0.9 9.4 1.8 Q8 3.6 6 2.8 Z", fill: "#5fae53", stroke: "#4c8a3f", strokeWidth: 0.6 }),
+  );
+}
+
+// Treat crumbs + a couple of sparkles at the catch moment.
+var CRUMB_FLECKS = [
+  [-10, -10, -13, -3, 2.5, 0, "#e8b04b", 0],
+  [8, -12, 11, -5, 2, 0, "#c98a3e", 30],
+  [-5, -15, -7, -8, 2, 0, "#f6d27e", 60],
+  [12, -6, 15, 1, 2.5, 0, "#e8b04b", 20],
+  [3, -9, 4, -2, 1.8, 0, "#ffffff", 80],
+];
+
+// 2-3 hearts, AFTER the munch — fewer than before, the treat is the star.
+// [dx, dy, extraDelayMs] from the contact point.
+var PET_HEART_SPOTS = [
+  [-14, -22, 0],
+  [10, -28, 150],
+  [-2, -34, 300],
+];
+
+// petOverlay — the treat-drop reaction: a berry falls onto the mouth
+// (bonkContactFor), the being munch-hops (CSS delay on the wrapper),
+// crumbs pop at the catch, then a few hearts rise. seq keys the overlay so
+// an in-window repeat click remounts it and the animations replay.
+function petOverlay(h, seq, data) {
   var c = bonkContactFor(data);
-  var kids = BONK_SPOTS.map(function (s, i) {
-    return h(
-      "span",
-      {
-        key: "bstar" + i,
-        className: "kandev-kandy-bonkstar",
-        style: {
-          left: c.x + s[0] - 6 + "px",
-          top: c.y + s[1] - 9 + "px",
-          animationDelay: BONK_IMPACT_MS + s[2] + "ms",
-          color: i % 2 ? "#ef4444" : "#f59e0b",
+  var kids = [treatSvg(h, c, "kandev-kandy-treat")];
+  for (var i = 0; i < CRUMB_FLECKS.length; i++) {
+    kids.push(fleckSpan(h, "crumb" + i, "kandev-kandy-crumb", c, CRUMB_FLECKS[i], TREAT_CATCH_MS));
+  }
+  PET_HEART_SPOTS.forEach(function (s, j) {
+    kids.push(
+      h(
+        "span",
+        {
+          key: "petheart" + j,
+          className: "kandev-kandy-heartfloat",
+          style: {
+            left: c.x + s[0] + "px",
+            top: c.y + s[1] + "px",
+            animationDelay: TREAT_CATCH_MS + 200 + s[2] + "ms",
+          },
         },
-      },
-      s[3],
+        "♥",
+      ),
     );
   });
+  return h("div", { key: "petfx" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } }, kids);
+}
+
+// The bucket svg is drawn upright (rim up, handle over the top) and tips
+// about its center. At the pouring pose (rotate(-104deg)) the rim's outer
+// corner ends up at about (-6.4, +15.5) from the center, so BUCKET_OFF
+// places the center so that tipped lip sits exactly on the pour stream's
+// origin, straight above the contact point.
+var BUCKET_OFF = { x: 7, y: -42 };
+
+// Water splash at the pour's contact point: blues + one pale glint.
+var SPLASH_FLECKS = [
+  [-16, -12, -20, -2, 3, 1, "#7fd7ff", 0],
+  [12, -16, 16, -6, 3, 1, "#38bdf8", 30],
+  [-8, -20, -10, -10, 2.5, 1, "#bae6fd", 60],
+  [20, -8, 25, 3, 2.5, 0, "#38bdf8", 40],
+  [-24, -6, -29, 5, 2, 0, "#0ea5e9", 20],
+  [5, -24, 6, -12, 3, 1, "#7fd7ff", 70],
+  [26, -14, 32, -2, 2, 0, "#bae6fd", 90],
+];
+
+// Drips sliding off the soaked body: [halfWidthFrac, heightFrac,
+// delayMs]. x spreads across the body width (scaled per stage), y sits
+// between the head contact point and the scene floor.
+var DRIP_SPOTS = [
+  [-0.85, 0.45, 900],
+  [-0.3, 0.75, 1250],
+  [0.35, 0.55, 1450],
+  [0.8, 0.8, 1650],
+];
+
+// bonkOverlay — the cold-water reaction: the bucket swings in, tips, pours
+// a blue stream onto the head (bonkContactFor), the splash bursts at
+// contact, and the being goes briefly soaked (wet tint + shiver via the
+// CSS-delayed wrapper class) with drips falling off it.
+function bonkOverlay(h, seq, data) {
+  var c = bonkContactFor(data);
+  var kids = [];
   kids.push(
     h(
       "svg",
       {
-        key: "stick",
-        className: "kandev-kandy-stick",
-        width: 56,
-        height: 56,
-        viewBox: "0 0 56 56",
+        key: "bucket",
+        className: "kandev-kandy-bucket",
+        width: 44,
+        height: 44,
+        viewBox: "0 0 44 44",
         style: {
-          // Place the svg so the club tip sits ON the contact point (the
-          // pivot then lands up-right of the head), and rotate about the
-          // pivot. Position via left/top only — no base transform.
-          left: c.x - STICK_TIP.x + "px",
-          top: c.y - STICK_TIP.y + "px",
-          transformOrigin: STICK_PIVOT.x + "px " + STICK_PIVOT.y + "px",
+          left: c.x + BUCKET_OFF.x - 22 + "px",
+          top: c.y + BUCKET_OFF.y - 20 + "px",
+          transformOrigin: "22px 20px",
           overflow: "visible",
         },
         "aria-hidden": "true",
       },
-      h("line", { key: "stko", x1: STICK_PIVOT.x, y1: STICK_PIVOT.y, x2: STICK_TIP.x + 2, y2: STICK_TIP.y - 2, stroke: "#5d3b1e", strokeWidth: 7, strokeLinecap: "round" }),
-      h("line", { key: "stki", x1: STICK_PIVOT.x - 0.5, y1: STICK_PIVOT.y + 0.5, x2: STICK_TIP.x + 2.5, y2: STICK_TIP.y - 2.5, stroke: "#8a5a33", strokeWidth: 4, strokeLinecap: "round" }),
-      h("line", { key: "stknub", x1: 33, y1: 23, x2: 37.5, y2: 20, stroke: "#5d3b1e", strokeWidth: 2.6, strokeLinecap: "round" }),
-      h("circle", { key: "stkknob", cx: STICK_TIP.x, cy: STICK_TIP.y, r: 4.5, fill: "#a06c3f", stroke: "#5d3b1e", strokeWidth: 1.4 }),
+      h("path", { key: "bhandle", d: "M10 12 Q22 -1 34 12", stroke: "#5b7181", strokeWidth: 2, fill: "none" }),
+      h("path", { key: "bbody", d: "M10 12 L34 12 L30 32 L14 32 Z", fill: "#8fa7b8", stroke: "#5b7181", strokeWidth: 1.6 }),
+      h("ellipse", { key: "bwater", cx: 22, cy: 12.5, rx: 10.5, ry: 2.2, fill: "#7fd7ff" }),
+      h("rect", { key: "brim", x: 8.5, y: 10, width: 27, height: 3.6, rx: 1.8, fill: "#a9bfcc", stroke: "#5b7181", strokeWidth: 1.2 }),
+      h("line", { key: "bband", x1: 12.6, y1: 23, x2: 31.4, y2: 23, stroke: "#7d94a5", strokeWidth: 1.4 }),
     ),
   );
-  // Blood mounts after the stick so droplets fly OVER the resting club.
-  for (var i = 0; i < BLOOD_DROPS.length; i++) kids.push(bloodDrop(h, i, c));
+  // Pour stream: from the tipped lip (BUCKET_OFF math above puts it at
+  // ~(c.x, c.y-26.5)) straight down onto the head. Grows from the top
+  // (transform-origin 50% 0), delay synced to the tip pose.
+  kids.push(
+    h("span", {
+      key: "pour",
+      className: "kandev-kandy-pour",
+      style: {
+        left: c.x - 2.5 + "px",
+        top: c.y - 26 + "px",
+        width: "5px",
+        height: "27px",
+        borderRadius: "3px",
+        background: "linear-gradient(180deg,#bae6fd,#38bdf8 55%,#0ea5e9)",
+      },
+    }),
+  );
+  // Splat: a low white flash where the water lands.
+  kids.push(
+    h("span", {
+      key: "splat",
+      className: "kandev-kandy-splat",
+      style: {
+        left: c.x - 9 + "px",
+        top: c.y - 3 + "px",
+        width: "18px",
+        height: "6px",
+        borderRadius: "50%",
+        background: "#e0f2fe",
+      },
+    }),
+  );
+  for (var i = 0; i < SPLASH_FLECKS.length; i++) {
+    kids.push(fleckSpan(h, "splash" + i, "kandev-kandy-splashdrop", c, SPLASH_FLECKS[i], POUR_HIT_MS));
+  }
+  // Drips: spread by the being's actual half-width at its stage scale so
+  // hatchlings don't drip from thin air.
+  var halfW = 15;
+  if (data && data.level > 1) {
+    halfW = 24 * STAGE_SCALE[growthForLevel(data.level).stage];
+  }
+  var floorY = BONK_SCENE.h - BONK_SCENE.bottomPx;
+  DRIP_SPOTS.forEach(function (s, j) {
+    var sz = 3;
+    kids.push(
+      h(
+        "span",
+        {
+          key: "drip" + j,
+          className: "kandev-kandy-drip",
+          style: {
+            left: c.x + s[0] * halfW * (BONK_SCENE.svgPx / 100) - sz / 2 + "px",
+            top: c.y + (floorY - c.y) * s[1] + "px",
+            width: sz + "px",
+            height: sz + 1 + "px",
+            animationDelay: s[2] + "ms",
+          },
+        },
+        h("span", {
+          style: {
+            display: "block",
+            width: "100%",
+            height: "100%",
+            background: "#38bdf8",
+            borderRadius: "50% 0 50% 50%",
+            // Tail up: the square corner (top-right) rotated to 12 o'clock.
+            transform: "rotate(-45deg)",
+          },
+        }),
+      ),
+    );
+  });
   return h("div", { key: "bonkfx" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } }, kids);
 }
 
-// distrustOverlay — the refused-pet reaction: the kandy turns away with a
-// "..." bubble. No hearts, no pet effect.
-function distrustOverlay(h, seq) {
+// distrustOverlay — the refused-pet reaction: the treat still falls, but
+// the kandy turns away (wrapper class) and lets it bounce off, landing
+// ignored. No munch, no crumbs, no hearts — just a "..." bubble.
+function distrustOverlay(h, seq, data) {
   return h(
     "div",
     { key: "distrustfx" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } },
-    h("span", { className: "kandev-kandy-dots", style: { left: "58%", top: "20%" } }, "…"),
+    treatSvg(h, bonkContactFor(data), "kandev-kandy-treat-ignored"),
+    h("span", { key: "dots", className: "kandev-kandy-dots", style: { left: "58%", top: "20%" } }, "…"),
   );
 }
 
@@ -2056,10 +2194,11 @@ function burstSparkles(h, big) {
 // levelup also highlights the (new) stage name.
 // care (dialog only): null, or {fx, onPet, hint, bonkFx, distrustFx,
 // onBonk, onPointerDown} — a plain click/tap on the creature pets it
-// (happy hop + floating hearts); a desktop right-click bonks it with the
-// stick (flinch + bump-stars); a pet during distrust turns it away ("...").
-// fx/bonkFx/distrustFx are nonces so repeats replay their overlay.
-// Petting and bonking NEVER feed or drain XP.
+// (a treat drops, it munch-hops, crumbs + a few hearts); a desktop
+// right-click bonks it with a bucket of cold water (pour + splash +
+// soaked shiver); a pet during distrust turns it away and the treat
+// bounces off ignored ("..."). fx/bonkFx/distrustFx are nonces so repeats
+// replay their overlay. Petting and bonking NEVER feed or drain XP.
 //
 // Layering rule (the v0.7.0 jump-to-center bug): a CSS transform animation
 // REPLACES the element's base transform for its whole duration, so the
@@ -2068,14 +2207,15 @@ function burstSparkles(h, big) {
 // snapped horizontally on every pet/celebration. The outer div now owns the
 // layout transform and carries NO animated class; the inner element (a real
 // pet button in the dialog, a plain div in the tooltip) carries the
-// animated classes and NO base transform. flinch/turnaway follow the same
-// rule: animation classes on the inner wrapper only.
+// animated classes and NO base transform. munch/soaked/turnaway follow the
+// same rule: animation classes on the inner wrapper only.
 function kandyCard(h, data, celebration, care) {
   var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0);
   var animCls = "kandev-kandy-wiggle";
-  if (care && care.bonkFx) animCls += " kandev-kandy-flinch";
+  if (care && care.bonkFx) animCls += " kandev-kandy-soaked";
   else if (care && care.distrustFx) animCls += " kandev-kandy-turnaway";
-  else if (celebration || (care && care.fx)) animCls += " kandev-kandy-cardhop";
+  else if (care && care.fx) animCls += " kandev-kandy-munch";
+  else if (celebration) animCls += " kandev-kandy-cardhop";
   var creature = creatureSvg(h, data, 92);
   var inner;
   if (care && care.onPet) {
@@ -2087,7 +2227,7 @@ function kandyCard(h, data, celebration, care) {
         "aria-label": "Pet your kandy",
         className: animCls,
         onClick: care.onPet,
-        // Right-click = bonk with the stick. contextmenu is desktop-only
+        // Right-click = bonk (cold water). contextmenu is desktop-only
         // by policy: the handler checks the last pointer type and ignores
         // touch long-presses (see triggerBonk). It never also fires pet —
         // onClick only responds to the primary button.
@@ -2114,8 +2254,8 @@ function kandyCard(h, data, celebration, care) {
   }
   var flavorLine = data.flavor;
   if (care && care.distrustFx) flavorLine = "It doesn't trust you right now.";
-  else if (care && care.bonkFx) flavorLine = "Your kandy flinched.";
-  else if (care && care.fx) flavorLine = "Your kandy purrs.";
+  else if (care && care.bonkFx) flavorLine = "Your kandy got drenched.";
+  else if (care && care.fx) flavorLine = "Your kandy munches happily.";
   return h(
     "div",
     { style: { width: "248px" } },
@@ -2154,9 +2294,9 @@ function kandyCard(h, data, celebration, care) {
         inner,
       ),
       celebration ? burstSparkles(h, celebration.kind === "levelup") : null,
-      care && care.fx ? floatingHearts(h, care.fx) : null,
+      care && care.fx ? petOverlay(h, care.fx, data) : null,
       care && care.bonkFx ? bonkOverlay(h, care.bonkFx, data) : null,
-      care && care.distrustFx ? distrustOverlay(h, care.distrustFx) : null,
+      care && care.distrustFx ? distrustOverlay(h, care.distrustFx, data) : null,
     ),
     h(
       "div",
@@ -2281,8 +2421,8 @@ function makeKandyWidget(host) {
     var petFxHook = React.useState(0);
     var petFx = petFxHook[0];
     var setPetFx = petFxHook[1];
-    // bonkFx / distrustFx: same nonce pattern for the stick flinch and the
-    // refused-pet turn-away reactions.
+    // bonkFx / distrustFx: same nonce pattern for the cold-water soaking
+    // and the refused-pet turn-away reactions.
     var bonkFxHook = React.useState(0);
     var bonkFx = bonkFxHook[0];
     var setBonkFx = bonkFxHook[1];
@@ -2351,15 +2491,17 @@ function makeKandyWidget(host) {
       setBonkFx(0);
       setDistrustFx(Date.now());
       if (distrustTimerRef.current) clearTimeout(distrustTimerRef.current);
+      // 1900ms: the ignored treat finishes bouncing at ~1300ms and the
+      // "..." fades out at ~1750ms.
       distrustTimerRef.current = setTimeout(function () {
         if (mountedRef.current) setDistrustFx(0);
-      }, 1600);
+      }, 1900);
     }
 
     // triggerPet (click/tap or Enter/Space on the pet button): local
     // reaction immediately, POST the pet stamp (which lifts the displayed
     // mood a tier, never XP) at most once per 3s. Extra clicks inside the
-    // window replay the hearts/purr locally without hitting the backend.
+    // window replay the treat/munch locally without hitting the backend.
     // Inside the post-bonk distrust window the kandy refuses: turn-away
     // reaction, no POST, no effect.
     function triggerPet() {
@@ -2372,9 +2514,11 @@ function makeKandyWidget(host) {
       setDistrustFx(0);
       setPetFx(nowMs);
       if (petTimerRef.current) clearTimeout(petTimerRef.current);
+      // 2200ms: treat catch at 450ms, munch through ~1150ms, the last
+      // heart fades by ~2050ms.
       petTimerRef.current = setTimeout(function () {
         if (mountedRef.current) setPetFx(0);
-      }, 1600);
+      }, 2200);
       if (nowMs - lastPetPostRef.current < 3000) return;
       lastPetPostRef.current = nowMs;
       host.api
@@ -2399,12 +2543,13 @@ function makeKandyWidget(host) {
         });
     }
 
-    // triggerBonk (desktop right-click on the creature): local flinch +
-    // bump-stars immediately, POST the bonk at most once per 3s, and open
-    // the local distrust window. Touch never bonks — long-press
-    // contextmenu is ignored so accidental long-presses can't traumatize
-    // mobile kandys. Bonking never drains XP: it darkens the persistent
-    // temperament, which only conditions how the creature is drawn.
+    // triggerBonk (desktop right-click on the creature): the bucket of
+    // cold water — local pour/splash/soak immediately, POST the bonk at
+    // most once per 3s, and open the local distrust window. Touch never
+    // bonks — long-press contextmenu is ignored so accidental long-presses
+    // can't traumatize mobile kandys. Bonking never drains XP: it darkens
+    // the persistent temperament, which only conditions how the creature
+    // is drawn.
     function triggerBonk() {
       if (pointerTypeRef.current === "touch") return;
       var nowMs = Date.now();
@@ -2412,9 +2557,10 @@ function makeKandyWidget(host) {
       setDistrustFx(0);
       setBonkFx(nowMs);
       if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);
+      // 2600ms: water hits at 500ms, the soaked tint dries off at ~2400ms.
       bonkTimerRef.current = setTimeout(function () {
         if (mountedRef.current) setBonkFx(0);
-      }, 1600);
+      }, 2600);
       distrustUntilRef.current = nowMs + 60000;
       if (nowMs - lastBonkPostRef.current < 3000) return;
       lastBonkPostRef.current = nowMs;
@@ -2430,7 +2576,7 @@ function makeKandyWidget(host) {
           }
         })
         .catch(function () {
-          /* the local flinch already played */
+          /* the local soaking already played */
         });
     }
 
@@ -2555,7 +2701,9 @@ window.registerKandevPlugin(PLUGIN_ID, {
     sceneFor: sceneFor,
     growthForLevel: growthForLevel,
     kandyCard: kandyCard,
+    petOverlay: petOverlay,
     bonkOverlay: bonkOverlay,
+    distrustOverlay: distrustOverlay,
     bonkContactFor: bonkContactFor,
     setJsx: function (jsx) {
       h0 = jsx;
