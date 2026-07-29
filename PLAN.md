@@ -255,3 +255,42 @@ seed, shown forever. Metamorphosis conditioning: at stage ≥ 2 (levels
 (soft warm sheen around the head) vs wary (scruffy crown spikes) — so
 redemption visibly softens the creature. Band flavor lines; a bonk answers
 "Your kandy flinched."
+
+## 11. Day/night cycle + sleep (v0.5.0 — pure presentation)
+
+The browser's local clock drives a `timeOfDay` hour float (0-24) threaded
+explicitly through `sceneFor(biome, level, seed, timeOfDay)` and
+`kandyCard(h, data, celebration, care, timeOfDay)`. Wherever it isn't
+supplied it defaults to a fixed mid-day value (13:00), so 3-/4-arg callers
+— the evolution posters and older harnesses — keep producing byte-identical
+renders (verified old-bundle-vs-new DOM comparison). The widget re-reads
+the clock every 60s, so dusk and bedtime arrive without a refetch. The
+server is untouched: pet/bonk POSTs and all mechanics behave exactly as
+before; only visuals differ.
+
+Day phases: dawn 06:00-08:00 (warm golden wash), day 08:00-18:00 (exactly
+the v0.4.x scenes), dusk 18:00-20:00 (orange/pink wash), night otherwise
+(deep-blue darkening, the sun suppressed and a glowing cratered moon +
+14 extra stars layered ON TOP of the tint). Implemented as one composable
+`skyOverlayFor` layer — a CSS gradient prepended onto the biome background
+plus an SVG wash rect over the props — so every biome/phase works without
+per-biome rewrites. Celestial phases (4-5) are already dark/starry: they
+get only a subtle shift and no moon.
+
+Sleep: each kandy has a lineage-seeded schedule (rand stream 21) — a DNA
+quirk fixed for the install's lifetime:
+
+| Knob | Range |
+|---|---|
+| bedtime | 21:30-23:30 (`21.5 + r(0, 2)`) |
+| wake | 06:30-08:00 (`6.5 + r(0, 1.5)`) |
+
+While asleep (render-only `sleep_state`, never from the server): eyes
+become soft closed lids, a looping zzz bubble floats by the crown (reduced
+motion: a static single z), the idle bob and card wiggle stop, and the
+static chip portrait sleeps too (aria-label gains ", sleeping"). Petting a
+sleeping kandy half-wakes it: a grumpy half-lidded squint for ~2.6s, the
+treat still falls, one subdued heart, flavor "Your kandy blinks at you
+sleepily." — the pet POST fires exactly as awake. The water bucket wakes
+it fully: the existing drench choreography plays unchanged (the rude
+awakening). Celebrations are not special-cased and still play over sleep.

@@ -18,6 +18,17 @@
 // v0.4.0 — interaction visuals: petting drops a treat the kandy catches
 //   and munches (or sadly ignores while distrusting); bonking is a bucket
 //   of cold water — pour, splash, and a brief soaked shiver.
+//
+// v0.5.0 — day/night + sleep: sceneFor/kandyCard take an explicit
+//   timeOfDay hour float (default: a fixed mid-day, so offline tooling and
+//   old callers render byte-identically); dawn/dusk/night arrive as
+//   composable sky washes over the existing biome scenes, with the sun
+//   swapped for a glowing moon + extra stars at night. Each kandy sleeps
+//   on a lineage-seeded schedule (bedtime 21:30-23:30, wake 06:30-08:00):
+//   eyes closed, a floating zzz bubble, idle bob stopped — the chip
+//   portrait sleeps too. Pets while asleep get a half-woken grumpy squint
+//   (one subdued heart); the water bucket is the rude awakening it already
+//   looks like. Pure presentation: the server is untouched.
 
 var PLUGIN_ID = "kandev-plugin-kandy";
 var STYLE_ID = "kandev-kandy-style";
@@ -34,6 +45,15 @@ var WS_ACTIONS = [
 // the WS notification to the browser. Debounce so a burst of events costs one
 // refetch, and so the refetch happens after the award has settled.
 var WS_DEBOUNCE_MS = 1500;
+
+// The widget re-reads the local clock on this tick so dusk (and bedtime)
+// arrive on their own, without needing a refetch or a page interaction.
+var TIME_TICK_MS = 60000;
+
+function localHour() {
+  var d = new Date();
+  return d.getHours() + d.getMinutes() / 60;
+}
 
 // Mounted widgets subscribe here; the WS handlers ping them.
 var refreshListeners = [];
@@ -79,6 +99,47 @@ function hsl(h, s, l) {
 }
 
 var FAMILY_HUES = [130, 280, 45, 210, 5, 175, 320, 90, 250, 25, 190, 340];
+
+// ---------------------------------------------------------------------------
+// Day/night cycle + seeded sleep schedule (v0.5.0) — pure presentation.
+// timeOfDay is an hour float 0-24 from the browser's local clock, threaded
+// explicitly through sceneFor/kandyCard. Anywhere it isn't supplied it
+// defaults to a fixed mid-day value, so offline tooling (the evolution
+// posters, old harnesses) keeps producing today's exact renders.
+// ---------------------------------------------------------------------------
+
+var TIME_OF_DAY_DEFAULT = 13; // fixed mid-day: "day" phase, zero overlays
+
+function dayPhaseFor(timeOfDay) {
+  var t =
+    typeof timeOfDay === "number" && isFinite(timeOfDay) ? timeOfDay : TIME_OF_DAY_DEFAULT;
+  t = ((t % 24) + 24) % 24;
+  if (t >= 6 && t < 8) return "dawn";
+  if (t >= 8 && t < 18) return "day";
+  if (t >= 18 && t < 20) return "dusk";
+  return "night";
+}
+
+// Every kandy has its own bedtime and wake time seeded from the lineage —
+// a DNA quirk fixed for the install's lifetime: bedtime lands in
+// 21:30-23:30, wake in 06:30-08:00 (rand stream 21 is reserved for the
+// sleep schedule).
+function sleepScheduleFor(seed) {
+  var r = makeRand(seed, 21);
+  return { bedtime: 21.5 + r(0, 2), wake: 6.5 + r(0, 1.5) };
+}
+
+function isAsleep(seed, timeOfDay) {
+  if (typeof timeOfDay !== "number" || !isFinite(timeOfDay)) return false;
+  var s = sleepScheduleFor(seed);
+  var t = ((timeOfDay % 24) + 24) % 24;
+  return t >= s.bedtime || t < s.wake;
+}
+
+// currentDayPhase is set by sceneFor around building props so the shared
+// sun helpers can swap themselves out at night without every biome knowing
+// about the clock. Default "day" keeps every legacy call byte-identical.
+var currentDayPhase = "day";
 
 // ---------------------------------------------------------------------------
 // Growth ladder — mirrors the backend's growthUnlocks/growthFlags exactly.
@@ -564,7 +625,57 @@ function eyeAt(h, rand, cx, cy, r, style, key, temper) {
   return out;
 }
 
-function faceParts(h, lineage, C, head, g, sty, mood, temper) {
+// sleepFaceParts — the asleep face: eyes as soft closed lids (no whites,
+// no pupils — so there is no blink animation to suppress), a tiny relaxed
+// mouth, the usual blush. Replaces the whole awake face while sleeping.
+function sleepFaceParts(h, C, head, g, sty) {
+  var out = [];
+  var eyeR = (sty.eyeStyle === "wide" ? 4.8 : 3.9) * Math.min(head.r / 10, 1.4);
+  function closedLid(cx, key) {
+    return h("path", {
+      key: key,
+      d:
+        "M" + (cx - eyeR) + " " + head.cy + " Q" + cx + " " + (head.cy + eyeR * 0.9) + " " + (cx + eyeR) + " " + head.cy,
+      stroke: "#26232e",
+      strokeWidth: 1.7,
+      strokeLinecap: "round",
+      fill: "none",
+    });
+  }
+  var count = head.alien && g.stage >= 2 ? sty.alienEyes : 2;
+  if (count === 2) {
+    var dx = head.r * 0.5;
+    out.push(closedLid(head.cx - dx, "slpL"), closedLid(head.cx + dx, "slpR"));
+  } else {
+    for (var i = 0; i < count; i++) {
+      var t = i / (count - 1) - 0.5;
+      out.push(closedLid(head.cx + t * head.r * 1.3, "slp" + i));
+    }
+  }
+  if (g.mouth) {
+    out.push(
+      h("ellipse", {
+        key: "mouth",
+        cx: head.cx,
+        cy: head.cy + head.r * 0.55,
+        rx: 1.7,
+        ry: 1.1,
+        fill: C.dark,
+        opacity: 0.85,
+      }),
+    );
+  }
+  if (g.blush) {
+    out.push(
+      h("circle", { key: "blushL", cx: head.cx - head.r * 0.85, cy: head.cy + head.r * 0.35, r: 2.4, fill: "#ff8fa3", opacity: 0.5 }),
+      h("circle", { key: "blushR", cx: head.cx + head.r * 0.85, cy: head.cy + head.r * 0.35, r: 2.4, fill: "#ff8fa3", opacity: 0.5 }),
+    );
+  }
+  return out;
+}
+
+function faceParts(h, lineage, C, head, g, sty, mood, temper, sleep) {
+  if (sleep === "asleep") return sleepFaceParts(h, C, head, g, sty);
   var rand = makeRand(lineage, 30);
   var out = [];
   // Mood + temperament overlays are render-time only: they restyle the
@@ -582,17 +693,49 @@ function faceParts(h, lineage, C, head, g, sty, mood, temper) {
     (mood === "bored" || droopy ? 0.85 : 1) *
     (temper.sign < 0 ? (temper.strong ? 0.8 : 0.9) : 1);
   var count = head.alien && g.stage >= 2 ? sty.alienEyes : 2;
+  var eyeSpots = [];
   if (count === 2) {
     var dx = head.r * 0.5;
-    out = out.concat(eyeAt(h, rand, head.cx - dx, head.cy, eyeR, style, "eyeL", temper));
-    out = out.concat(eyeAt(h, rand, head.cx + dx, head.cy, eyeR, style, "eyeR", temper));
+    eyeSpots.push({ cx: head.cx - dx, cy: head.cy, r: eyeR, key: "eyeL" });
+    eyeSpots.push({ cx: head.cx + dx, cy: head.cy, r: eyeR, key: "eyeR" });
+    out = out.concat(eyeAt(h, rand, eyeSpots[0].cx, head.cy, eyeR, style, "eyeL", temper));
+    out = out.concat(eyeAt(h, rand, eyeSpots[1].cx, head.cy, eyeR, style, "eyeR", temper));
   } else {
     for (var i = 0; i < count; i++) {
       var t = i / (count - 1) - 0.5;
-      out = out.concat(
-        eyeAt(h, rand, head.cx + t * head.r * 1.3, head.cy - Math.abs(t) * 3 - (i % 2) * 2, eyeR * (0.7 + rand(0, 0.4)), style, "eye" + i, temper),
-      );
+      var spot = {
+        cx: head.cx + t * head.r * 1.3,
+        cy: head.cy - Math.abs(t) * 3 - (i % 2) * 2,
+        r: eyeR * (0.7 + rand(0, 0.4)),
+        key: "eye" + i,
+      };
+      eyeSpots.push(spot);
+      out = out.concat(eyeAt(h, rand, spot.cx, spot.cy, spot.r, style, spot.key, temper));
     }
+  }
+
+  if (sleep === "grumpy") {
+    // Half-woken grumpy squint: a heavy body-colored upper lid sags over
+    // each eye, its dark edge drooping across most of the pupil.
+    eyeSpots.forEach(function (sp) {
+      out.push(
+        h("path", {
+          key: sp.key + "gdome",
+          d:
+            "M" + (sp.cx - sp.r) + " " + (sp.cy + sp.r * 0.05) + " Q" + sp.cx + " " + (sp.cy - sp.r * 1.4) + " " + (sp.cx + sp.r) + " " + (sp.cy + sp.r * 0.05) + " Z",
+          fill: C.body,
+        }),
+        h("path", {
+          key: sp.key + "gedge",
+          d:
+            "M" + (sp.cx - sp.r) + " " + (sp.cy + sp.r * 0.05) + " Q" + sp.cx + " " + (sp.cy + sp.r * 0.4) + " " + (sp.cx + sp.r) + " " + (sp.cy + sp.r * 0.05),
+          stroke: "#26232e",
+          strokeWidth: 1.5,
+          strokeLinecap: "round",
+          fill: "none",
+        }),
+      );
+    });
   }
 
   if (droopy) {
@@ -612,8 +755,9 @@ function faceParts(h, lineage, C, head, g, sty, mood, temper) {
   if (g.mouth) {
     var mouthY = head.cy + head.r * 0.55;
     var mw = head.r * 0.55;
-    // Wary/fearful default to a slight frown even in an okay mood.
-    var mouth = droopy || temper.sign < 0 ? "frown" : sty.mouthStyle;
+    // Wary/fearful default to a slight frown even in an okay mood; so does
+    // a kandy grumpily half-woken from its sleep.
+    var mouth = droopy || temper.sign < 0 || sleep === "grumpy" ? "frown" : sty.mouthStyle;
     if (mouth === "frown") {
       out.push(
         h("path", {
@@ -1062,6 +1206,10 @@ function creatureParts(h, data, portrait) {
   var body = BODY_BUILDERS[arch](h, makeRand(lineage, 6), C, g);
 
   var mood = data.mood || "content";
+  // sleep_state is a render-only field the widget/card layer sets from the
+  // seeded schedule + local clock: "asleep" (closed eyes, zzz) or "grumpy"
+  // (half-woken squint). Never comes from the server.
+  var sleep = data.sleep_state || null;
   var inner = [];
   if (!portrait) inner = inner.concat(contactShadow(h, body.grounded, 89));
   inner = inner.concat(wingParts(h, C, body.top, g));
@@ -1069,7 +1217,7 @@ function creatureParts(h, data, portrait) {
   inner = inner.concat(temperVariant(h, lineage, C, body, g, temper));
   inner = inner.concat(markingParts(h, lineage, C, body.mark, g, sty));
   inner = inner.concat(temperScar(h, lineage, C, body, temper));
-  inner = inner.concat(faceParts(h, lineage, C, body.head, g, sty, mood, temper));
+  inner = inner.concat(faceParts(h, lineage, C, body.head, g, sty, mood, temper, sleep));
   inner = inner.concat(hornParts(h, lineage, C, body.top, g, sty, mood, temper));
   if (body.grounded) inner = inner.concat(tailPartsFor(h, C, g, sty, temper));
   inner = inner.concat(prestigeInBody(h, C, body.top, g));
@@ -1101,7 +1249,51 @@ function creatureParts(h, data, portrait) {
   if (!portrait) parts = parts.concat(effectParts(h, lineage, C, g, level));
   parts.push(scaled);
   if (!portrait) parts = parts.concat(groundParts(h, C, g, sty));
+  if (!portrait && sleep === "asleep") {
+    // The floating zzz bubble, anchored just beside the (stage-scaled)
+    // crown. Unscaled coordinates so the zzz stays readable on hatchlings.
+    var zx = 50 + (body.top.x - 50) * s + 11;
+    var zy = 88 - (88 - body.top.y) * s - 2;
+    parts.push(
+      h(
+        "g",
+        { key: "zzz" },
+        zzzText(h, "z1", zx, zy, 8, "kandev-kandy-zzz kandev-kandy-zzz-lead", "0ms"),
+        zzzText(h, "z2", zx + 5, zy - 7, 6.2, "kandev-kandy-zzz", "900ms"),
+        zzzText(h, "z3", zx + 9.5, zy - 13.5, 5, "kandev-kandy-zzz", "1800ms"),
+      ),
+    );
+  }
   return parts;
+}
+
+// zzzText — one floating "z" of the sleep bubble. The animated class sits
+// directly on a text element positioned by x/y attributes with no layout
+// transform (the layering rule), so the float loop is safe. Reduced motion:
+// animation:none leaves the lead z visible at its base opacity and the
+// trailing ones hidden — a static single z.
+function zzzText(h, key, x, y, size, cls, delay) {
+  return h(
+    "text",
+    {
+      key: key,
+      x: x,
+      y: y,
+      fontSize: size,
+      fontStyle: "italic",
+      fontWeight: 700,
+      fontFamily: "system-ui, sans-serif",
+      // Pale fill + thin dark outline (painted under the fill) so the zzz
+      // reads on both the night sky and a bright dawn scene.
+      fill: "#e8eefc",
+      stroke: "#3d4a66",
+      strokeWidth: 0.5,
+      paintOrder: "stroke",
+      className: cls,
+      style: { animationDelay: delay, transformBox: "fill-box", transformOrigin: "center" },
+    },
+    "z",
+  );
 }
 
 // isStatic renders a motionless portrait (top-bar icon): no bob wrapper, the
@@ -1118,6 +1310,8 @@ function creatureSvg(h, data, size, extraClass, isStatic) {
   if (mood === "elated") bobCls += " kandev-kandy-bob-fast";
   else if (mood === "bored") bobCls += " kandev-kandy-bob-slow";
   else if (mood === "sad" || mood === "gloomy") bobCls = "kandev-kandy-bobsad";
+  // Asleep (or grumpily half-woken): the idle bob stops — it's lying still.
+  if (data.sleep_state) bobCls = "";
   return h(
     "svg",
     {
@@ -1336,10 +1530,27 @@ function earlyGround(rand, far, near, haze) {
   ];
 }
 
+// At night the sun simply isn't drawn — sceneFor layers the moon on top of
+// the night wash instead, so it glows over the tint rather than under it.
 function sunDisc(cx, cy, r, core, halo) {
+  if (currentDayPhase === "night") return [];
   return [
     h0("circle", { key: "sunhalo", cx: cx, cy: cy, r: r * 2.1, fill: halo, opacity: 0.35 }),
     h0("circle", { key: "sundisc", cx: cx, cy: cy, r: r, fill: core, opacity: 0.95 }),
+  ];
+}
+
+// moonDisc — the night sky's sun replacement: a soft-glow full moon with a
+// few craters, drawn in the same top-right region the suns occupy.
+function moonDisc(cx, cy, r) {
+  return [
+    h0("circle", { key: "moonhalo", cx: cx, cy: cy, r: r * 2.6, fill: "#cfe0ff", opacity: 0.1 }),
+    h0("circle", { key: "moonhalo2", cx: cx, cy: cy, r: r * 1.9, fill: "#d8e4ff", opacity: 0.14 }),
+    h0("circle", { key: "moonhalo3", cx: cx, cy: cy, r: r * 1.4, fill: "#e2ebff", opacity: 0.2 }),
+    h0("circle", { key: "moondisc", cx: cx, cy: cy, r: r, fill: "#eef3fb", opacity: 0.98 }),
+    h0("circle", { key: "crater1", cx: cx - r * 0.35, cy: cy - r * 0.18, r: r * 0.22, fill: "#c9d4e8", opacity: 0.9 }),
+    h0("circle", { key: "crater2", cx: cx + r * 0.3, cy: cy + r * 0.3, r: r * 0.16, fill: "#cfd9ea", opacity: 0.85 }),
+    h0("circle", { key: "crater3", cx: cx + r * 0.14, cy: cy - r * 0.44, r: r * 0.11, fill: "#d6dfee", opacity: 0.8 }),
   ];
 }
 
@@ -1626,7 +1837,12 @@ function biomeProps(biome, phase, rand, level) {
           cactusPebble("cac", 40 + rand(-10, 10), 106),
           emberSpark("emb", 188 + rand(-8, 8), 96),
         );
-      if (phase === 2) return mesas(rand, 4).concat([h0("circle", { key: "csun", cx: 205, cy: 20, r: 11, fill: "#ffddaa", opacity: 0.9 })]);
+      if (phase === 2)
+        return mesas(rand, 4).concat(
+          currentDayPhase === "night"
+            ? []
+            : [h0("circle", { key: "csun", cx: 205, cy: 20, r: 11, fill: "#ffddaa", opacity: 0.9 })],
+        );
       if (phase === 3) return volcanoProps(rand, 4 + Math.floor(density / 10));
       return volcanoProps(rand, 6).concat(stars(rand, Math.min(12 + Math.max(level - 40, 0), 50)));
     default: // 0 verdant: dawn field -> meadow -> woods -> lush -> enchanted
@@ -1650,20 +1866,69 @@ function biomeProps(biome, phase, rand, level) {
   }
 }
 
-// sceneFor(biome, level, lineageSeed) — the lineage's habitat at this
-// maturity. Layout re-rolls only at phase boundaries.
-function sceneFor(biome, level, seed) {
+// skyOverlayFor — the composable day/night layer: a CSS gradient prepended
+// onto the biome background plus an SVG wash rect laid over the props, so
+// every biome and phase gets tinted without any biome rewrite. Celestial
+// phases (4-5) are already dark/starry, so they only get a subtle shift.
+function skyOverlayFor(dayPhase, phase) {
+  if (dayPhase === "day") return null;
+  var dim = phase >= 4;
+  function wash(fill, opacity) {
+    return h0("rect", { key: "skywash", x: -10, y: -10, width: 260, height: 140, fill: fill, opacity: opacity });
+  }
+  if (dayPhase === "dawn") {
+    return {
+      bg:
+        "linear-gradient(to bottom, rgba(255,196,110," + (dim ? 0.08 : 0.3) + ") 0%, rgba(255,172,118," + (dim ? 0.03 : 0.1) + ") 55%, rgba(255,152,92," + (dim ? 0.05 : 0.16) + ") 100%)",
+      wash: wash("#ffb75e", dim ? 0.05 : 0.13),
+    };
+  }
+  if (dayPhase === "dusk") {
+    return {
+      bg:
+        "linear-gradient(to bottom, rgba(255,122,70," + (dim ? 0.08 : 0.3) + ") 0%, rgba(226,92,150," + (dim ? 0.05 : 0.2) + ") 55%, rgba(122,62,142," + (dim ? 0.05 : 0.18) + ") 100%)",
+      wash: wash("#ff8a6b", dim ? 0.06 : 0.15),
+    };
+  }
+  return {
+    bg: dim
+      ? "linear-gradient(to bottom, rgba(10,16,50,0.22) 0%, rgba(6,10,34,0.2) 100%)"
+      : "linear-gradient(to bottom, rgba(11,16,52,0.62) 0%, rgba(9,13,44,0.5) 55%, rgba(4,8,28,0.6) 100%)",
+    wash: wash("#0b1238", dim ? 0.1 : 0.3),
+  };
+}
+
+// sceneFor(biome, level, lineageSeed, timeOfDay) — the lineage's habitat at
+// this maturity and hour. Layout re-rolls only at phase boundaries; the
+// day/night layer composes on top and defaults to mid-day ("day": no
+// overlay at all), so 3-arg callers keep today's exact renders.
+function sceneFor(biome, level, seed, timeOfDay) {
   var phase = scenePhase(level);
   var b = ((biome % BIOME_BGS.length) + BIOME_BGS.length) % BIOME_BGS.length;
+  var dayPhase = dayPhaseFor(timeOfDay);
   var rand = makeRand((seed ^ (phase * 0x9e3779b9)) >>> 0, 11);
   // Phase 5 ("transcendent", 80+) is the celestial scene drifting further
   // out: same biome props with a golden star field layered on top.
+  currentDayPhase = dayPhase;
   var props = biomeProps(b, Math.min(phase, 4), rand, level);
   if (phase === 5) {
     props = props.concat(stars(rand, Math.min(10 + (level - 79), 40), "#ffe9a3"));
   }
+  currentDayPhase = "day";
+  var bg = BIOME_BGS[b][phase];
+  var overlay = skyOverlayFor(dayPhase, phase);
+  if (overlay) {
+    bg = overlay.bg + ", " + bg;
+    props = props.concat([overlay.wash]);
+    if (dayPhase === "night" && phase < 4) {
+      // Above the wash so they glow: extra stars (own rand stream, so the
+      // base scene layout is untouched) and the moon where the sun was.
+      var nrand = makeRand((seed ^ (phase * 0x9e3779b9)) >>> 0, 13);
+      props = props.concat(stars(nrand, 14), moonDisc(203, 20, 8.5));
+    }
+  }
   return {
-    bg: BIOME_BGS[b][phase],
+    bg: bg,
     props: props,
   };
 }
@@ -1724,6 +1989,10 @@ var KANDY_CSS =
   // shiver: transform ONLY — a decaying cold shudder while soaked.
   "@keyframes kandev-kandy-shiver{0%,100%{transform:translateX(0)}12%{transform:translateX(-1.7px) rotate(-1.2deg)}28%{transform:translateX(1.5px) rotate(1deg)}44%{transform:translateX(-1.2px)}60%{transform:translateX(1px)}76%{transform:translateX(-0.6px)}88%{transform:translateX(0.3px)}}" +
   "@keyframes kandev-kandy-dotsfade{0%{opacity:0;transform:translateY(2px)}25%{opacity:1}75%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}" +
+  // zzz: a gentle looping rise-and-fade for the sleep bubble. Transform +
+  // opacity only, on text elements positioned by x/y attributes (no layout
+  // transform to clobber).
+  "@keyframes kandev-kandy-zzz{0%,100%{opacity:0;transform:translateY(3px)}22%{opacity:0.9;transform:translateY(0)}60%{opacity:0.75;transform:translateY(-4px)}88%{opacity:0;transform:translateY(-7px)}}" +
   ".kandev-kandy-bob{animation:kandev-kandy-bob 2.8s ease-in-out infinite}" +
   ".kandev-kandy-bob-fast{animation-duration:1.6s}" +
   ".kandev-kandy-bob-slow{animation-duration:5.5s}" +
@@ -1762,8 +2031,12 @@ var KANDY_CSS =
   ".kandev-kandy-splashdrop{position:absolute;opacity:0;animation:kandev-kandy-fleck 0.6s ease-out both;pointer-events:none}" +
   ".kandev-kandy-drip{position:absolute;opacity:0;animation:kandev-kandy-drip 0.8s ease-in both;pointer-events:none}" +
   ".kandev-kandy-dots{position:absolute;font-size:15px;font-weight:700;opacity:0;letter-spacing:2px;animation:kandev-kandy-dotsfade 1.4s ease 0.35s both;pointer-events:none}" +
+  // zzz base opacity 0 (they fade in through the loop); the lead z carries
+  // a visible base opacity so reduced motion shows a static single z.
+  ".kandev-kandy-zzz{opacity:0;animation:kandev-kandy-zzz 2.7s ease-in-out infinite}" +
+  ".kandev-kandy-zzz-lead{opacity:0.85}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots{animation:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz{animation:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -2162,6 +2435,34 @@ function distrustOverlay(h, seq, data) {
   );
 }
 
+// sleepyPetOverlay — petting a sleeping kandy: the treat still falls (the
+// POST and mechanics behave exactly as awake — server untouched), but the
+// reaction is a half-woken grumpy squint on the creature (sleep_state
+// "grumpy" via kandyCard) with no munch hop, no crumbs, and one subdued
+// heart. It's asleep, not delighted.
+function sleepyPetOverlay(h, seq, data) {
+  var c = bonkContactFor(data);
+  return h(
+    "div",
+    { key: "sleepyfx" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } },
+    treatSvg(h, c, "kandev-kandy-treat"),
+    h(
+      "span",
+      {
+        key: "sleepyheart",
+        className: "kandev-kandy-heartfloat",
+        style: {
+          left: c.x - 4 + "px",
+          top: c.y - 26 + "px",
+          fontSize: "11px",
+          animationDelay: TREAT_CATCH_MS + 250 + "ms",
+        },
+      },
+      "♥",
+    ),
+  );
+}
+
 // burstSparkles renders the celebration particle burst over the scene.
 var BURST_SPOTS = [
   [30, 30], [66, 18], [50, 55], [78, 45], [20, 60], [60, 72], [40, 12], [82, 68],
@@ -2209,14 +2510,26 @@ function burstSparkles(h, big) {
 // pet button in the dialog, a plain div in the tooltip) carries the
 // animated classes and NO base transform. munch/soaked/turnaway follow the
 // same rule: animation classes on the inner wrapper only.
-function kandyCard(h, data, celebration, care) {
-  var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0);
-  var animCls = "kandev-kandy-wiggle";
+function kandyCard(h, data, celebration, care, timeOfDay) {
+  // Sleep is computed here from the seeded schedule + the passed clock so
+  // every card (tooltip and dialog) agrees. The bucket wakes it (the
+  // existing drench choreography IS the rude awakening); a pet only
+  // half-wakes it into the grumpy squint.
+  var sleepState = null;
+  if (data.level > 1 && isAsleep((data.lineage_seed || 1) >>> 0, timeOfDay)) {
+    if (care && care.bonkFx) sleepState = null;
+    else if (care && care.sleepyFx) sleepState = "grumpy";
+    else sleepState = "asleep";
+  }
+  var shownData = sleepState ? Object.assign({}, data, { sleep_state: sleepState }) : data;
+  var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0, timeOfDay);
+  var animCls = sleepState === "asleep" ? "" : "kandev-kandy-wiggle";
   if (care && care.bonkFx) animCls += " kandev-kandy-soaked";
   else if (care && care.distrustFx) animCls += " kandev-kandy-turnaway";
   else if (care && care.fx) animCls += " kandev-kandy-munch";
   else if (celebration) animCls += " kandev-kandy-cardhop";
-  var creature = creatureSvg(h, data, 92);
+  animCls = animCls.trim();
+  var creature = creatureSvg(h, shownData, 92);
   var inner;
   if (care && care.onPet) {
     inner = h(
@@ -2255,7 +2568,9 @@ function kandyCard(h, data, celebration, care) {
   var flavorLine = data.flavor;
   if (care && care.distrustFx) flavorLine = "It doesn't trust you right now.";
   else if (care && care.bonkFx) flavorLine = "Your kandy got drenched.";
+  else if (care && care.sleepyFx) flavorLine = "Your kandy blinks at you sleepily.";
   else if (care && care.fx) flavorLine = "Your kandy munches happily.";
+  else if (sleepState === "asleep") flavorLine = "Your kandy is fast asleep.";
   return h(
     "div",
     { style: { width: "248px" } },
@@ -2297,6 +2612,7 @@ function kandyCard(h, data, celebration, care) {
       care && care.fx ? petOverlay(h, care.fx, data) : null,
       care && care.bonkFx ? bonkOverlay(h, care.bonkFx, data) : null,
       care && care.distrustFx ? distrustOverlay(h, care.distrustFx, data) : null,
+      care && care.sleepyFx ? sleepyPetOverlay(h, care.sleepyFx, data) : null,
     ),
     h(
       "div",
@@ -2383,7 +2699,10 @@ function kandyCard(h, data, celebration, care) {
               style: {
                 fontSize: "10px",
                 opacity: 0.45,
-                visibility: care.hint && !care.fx && !care.bonkFx && !care.distrustFx ? "visible" : "hidden",
+                visibility:
+                  care.hint && !care.fx && !care.bonkFx && !care.distrustFx && !care.sleepyFx && !sleepState
+                    ? "visible"
+                    : "hidden",
               },
             },
             "psst — click your kandy",
@@ -2429,12 +2748,23 @@ function makeKandyWidget(host) {
     var distrustFxHook = React.useState(0);
     var distrustFx = distrustFxHook[0];
     var setDistrustFx = distrustFxHook[1];
+    // sleepyFx: nonce for the half-woken grumpy reaction to petting a
+    // sleeping kandy.
+    var sleepyFxHook = React.useState(0);
+    var sleepyFx = sleepyFxHook[0];
+    var setSleepyFx = sleepyFxHook[1];
+    // timeOfDay: local-clock hour float driving the day/night scene and
+    // the seeded sleep schedule; re-read every TIME_TICK_MS.
+    var timeHook = React.useState(localHour());
+    var timeOfDay = timeHook[0];
+    var setTimeOfDay = timeHook[1];
     var mountedRef = React.useRef(true);
     var prevRef = React.useRef(null);
     var celebrationTimerRef = React.useRef(null);
     var petTimerRef = React.useRef(null);
     var bonkTimerRef = React.useRef(null);
     var distrustTimerRef = React.useRef(null);
+    var sleepyTimerRef = React.useRef(null);
     // lastPetPostRef/lastBonkPostRef rate-limit the POSTs to ~1 per 3s;
     // in-window clicks still get the local reaction.
     var lastPetPostRef = React.useRef(0);
@@ -2489,6 +2819,7 @@ function makeKandyWidget(host) {
     function showDistrust() {
       setPetFx(0);
       setBonkFx(0);
+      setSleepyFx(0);
       setDistrustFx(Date.now());
       if (distrustTimerRef.current) clearTimeout(distrustTimerRef.current);
       // 1900ms: the ignored treat finishes bouncing at ~1300ms and the
@@ -2512,13 +2843,29 @@ function makeKandyWidget(host) {
       }
       setBonkFx(0);
       setDistrustFx(0);
-      setPetFx(nowMs);
-      if (petTimerRef.current) clearTimeout(petTimerRef.current);
-      // 2200ms: treat catch at 450ms, munch through ~1150ms, the last
-      // heart fades by ~2050ms.
-      petTimerRef.current = setTimeout(function () {
-        if (mountedRef.current) setPetFx(0);
-      }, 2200);
+      var shownNow = data || EGG_PLACEHOLDER;
+      if (shownNow.level > 1 && isAsleep((shownNow.lineage_seed || 1) >>> 0, timeOfDay)) {
+        // Asleep: the POST below is untouched (mechanics behave exactly as
+        // awake) — only the reaction differs: a half-woken grumpy squint
+        // and one subdued heart instead of the munch, then back to sleep.
+        setPetFx(0);
+        setSleepyFx(nowMs);
+        if (sleepyTimerRef.current) clearTimeout(sleepyTimerRef.current);
+        // 2600ms: treat lands at 450ms, the lone heart fades by ~2100ms,
+        // then it drifts back to sleep.
+        sleepyTimerRef.current = setTimeout(function () {
+          if (mountedRef.current) setSleepyFx(0);
+        }, 2600);
+      } else {
+        setSleepyFx(0);
+        setPetFx(nowMs);
+        if (petTimerRef.current) clearTimeout(petTimerRef.current);
+        // 2200ms: treat catch at 450ms, munch through ~1150ms, the last
+        // heart fades by ~2050ms.
+        petTimerRef.current = setTimeout(function () {
+          if (mountedRef.current) setPetFx(0);
+        }, 2200);
+      }
       if (nowMs - lastPetPostRef.current < 3000) return;
       lastPetPostRef.current = nowMs;
       host.api
@@ -2555,6 +2902,7 @@ function makeKandyWidget(host) {
       var nowMs = Date.now();
       setPetFx(0);
       setDistrustFx(0);
+      setSleepyFx(0);
       setBonkFx(nowMs);
       if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);
       // 2600ms: water hits at 500ms, the soaked tint dries off at ~2400ms.
@@ -2584,14 +2932,20 @@ function makeKandyWidget(host) {
       mountedRef.current = true;
       load();
       var interval = setInterval(load, REFRESH_MS);
+      // Clock tick: dusk (and bedtime) arrive without a refetch.
+      var timeTick = setInterval(function () {
+        setTimeOfDay(localHour());
+      }, TIME_TICK_MS);
       refreshListeners.push(load);
       return function () {
         mountedRef.current = false;
         clearInterval(interval);
+        clearInterval(timeTick);
         if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
         if (petTimerRef.current) clearTimeout(petTimerRef.current);
         if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);
         if (distrustTimerRef.current) clearTimeout(distrustTimerRef.current);
+        if (sleepyTimerRef.current) clearTimeout(sleepyTimerRef.current);
         var i = refreshListeners.indexOf(load);
         if (i >= 0) refreshListeners.splice(i, 1);
       };
@@ -2601,6 +2955,12 @@ function makeKandyWidget(host) {
     // While celebrating, the face is happy regardless of prior mood — it
     // just got fed. Render-time override only; state stays untouched.
     if (celebration) shown = Object.assign({}, shown, { mood: "elated" });
+    // The chip portrait sleeps too: closed eyes on the static icon while
+    // the seeded schedule says it's bedtime (celebrations still play their
+    // chip hop over it — no special-casing).
+    var chipShown = shown;
+    var chipAsleep = shown.level > 1 && isAsleep((shown.lineage_seed || 1) >>> 0, timeOfDay);
+    if (chipAsleep) chipShown = Object.assign({}, shown, { sleep_state: "asleep" });
 
     // The chip is a real button: hover/focus gives the desktop quick-peek
     // tooltip, tap/click opens the same card as a dialog (touch devices
@@ -2619,7 +2979,13 @@ function makeKandyWidget(host) {
           "relative h-7 w-7 flex items-center justify-center cursor-pointer rounded-md border border-border/60 bg-muted/30 hover:bg-muted/60" +
           chipCelebrateCls,
         "aria-label":
-          "Kandy: level " + shown.level + " " + shown.stage_name + ", " + (shown.mood || "content"),
+          "Kandy: level " +
+          shown.level +
+          " " +
+          shown.stage_name +
+          ", " +
+          (shown.mood || "content") +
+          (chipAsleep ? ", sleeping" : ""),
         onMouseEnter: load,
         onFocus: load,
         onClick: function () {
@@ -2627,7 +2993,7 @@ function makeKandyWidget(host) {
           setDialogOpen(true);
         },
       },
-      creatureSvg(h, shown, 22, "", true),
+      creatureSvg(h, chipShown, 22, "", true),
     );
 
     return h(
@@ -2640,7 +3006,7 @@ function makeKandyWidget(host) {
         h(
           TooltipContent,
           { side: "bottom", align: "end", className: "p-0 overflow-hidden" },
-          kandyCard(h, shown, celebration),
+          kandyCard(h, shown, celebration, null, timeOfDay),
         ),
       ),
       h(
@@ -2654,19 +3020,26 @@ function makeKandyWidget(host) {
             showCloseButton: false,
           },
           h(DialogTitle, { className: "sr-only" }, "Kandy"),
-          kandyCard(h, shown, celebration, {
-            fx: petFx,
-            onPet: triggerPet,
-            bonkFx: bonkFx,
-            distrustFx: distrustFx,
-            onBonk: triggerBonk,
-            onPointerDown: function (e) {
-              pointerTypeRef.current = (e && e.pointerType) || "mouse";
+          kandyCard(
+            h,
+            shown,
+            celebration,
+            {
+              fx: petFx,
+              onPet: triggerPet,
+              bonkFx: bonkFx,
+              distrustFx: distrustFx,
+              sleepyFx: sleepyFx,
+              onBonk: triggerBonk,
+              onPointerDown: function (e) {
+                pointerTypeRef.current = (e && e.pointerType) || "mouse";
+              },
+              // Hint presence follows the underlying mood (not the celebration
+              // override) so the row doesn't pop in/out mid-celebration.
+              hint: HEARTS_BY_MOOD[(data || EGG_PLACEHOLDER).mood || "content"] <= 4,
             },
-            // Hint presence follows the underlying mood (not the celebration
-            // override) so the row doesn't pop in/out mid-celebration.
-            hint: HEARTS_BY_MOOD[(data || EGG_PLACEHOLDER).mood || "content"] <= 4,
-          }),
+            timeOfDay,
+          ),
         ),
       ),
     );
@@ -2704,7 +3077,11 @@ window.registerKandevPlugin(PLUGIN_ID, {
     petOverlay: petOverlay,
     bonkOverlay: bonkOverlay,
     distrustOverlay: distrustOverlay,
+    sleepyPetOverlay: sleepyPetOverlay,
     bonkContactFor: bonkContactFor,
+    dayPhaseFor: dayPhaseFor,
+    sleepScheduleFor: sleepScheduleFor,
+    isAsleep: isAsleep,
     setJsx: function (jsx) {
       h0 = jsx;
     },
