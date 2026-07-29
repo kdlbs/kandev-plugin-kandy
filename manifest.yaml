@@ -1,6 +1,6 @@
 id: "kandev-plugin-kandy"
 api_version: 1
-version: "0.4.0"
+version: "0.4.1"
 display_name: "Kandy"
 description: "A tiny creature that grows as your agents work — it feeds on agent runs, turns, and conversation, and evolves forever in your session top bar."
 author: "kandev"
@@ -39,11 +39,3 @@ webhooks:
 ui:
   bundle: "/ui/bundle.js"
 
-config_schema:
-  type: object
-  properties:
-    debug:
-      type: boolean
-      title: "Debug mode"
-      description: "Enables the ?debug_grant dev/demo knob on the kandy webhook. Leave off in normal use."
-      default: false
