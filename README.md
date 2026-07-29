@@ -24,7 +24,7 @@ forms, scenes, and stage names. It starts as an egg. It never stops.
 
 The first week — an egg hatches and starts to grow:
 
-![Your first week](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/673d6f4355c5b28120782b730ff4b7a5f9c0b17a/first-week-light.png)
+![Your first week](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/608efdec3580ef0fb3bb0c92c843bba20f81450e/first-week-light.png)
 
 What it grows into — the species your install rolls, the places it lives,
 what it looks like months from now — is yours to find out. Ship and see.
