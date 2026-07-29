@@ -51,10 +51,3 @@ participates in kandev backups, survives plugin upgrades, and is removed on
 uninstall. Uninstalling the plugin is, in the kindest possible terms, the end
 of that kandy's story.
 
-## Changelog notes
-
-- **0.5.0** — renamed from `kandev-plugin-gotchi` to `kandev-plugin-kandy`.
-  The plugin id changed, so existing installs start over with a fresh egg
-  (a new lineage) — intended. Tapping/clicking the top-bar chip now opens
-  the card as a dialog (mobile/touch support); hover keeps the quick-peek
-  tooltip on desktop.
