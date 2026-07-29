@@ -1,7 +1,7 @@
 .PHONY: build run test fmt vet package package-host clean
 
 BIN := bin/kandev-plugin-shipling
-VERSION := 0.5.1
+VERSION := 0.5.2
 STAGE := .build/stage
 PKG_OUT := kandev-plugin-shipling-$(VERSION).tar.gz
 

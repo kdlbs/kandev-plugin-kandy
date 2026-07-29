@@ -74,6 +74,9 @@ func shiplingState(t *testing.T, resp *pluginsdk.WebhookResponse) shiplingRespon
 	t.Helper()
 	require.Equal(t, int32(200), resp.Status)
 	require.Equal(t, "application/json", resp.Headers["Content-Type"])
+	// Level/XP change as work lands — a cacheable body would show a stale
+	// creature until the page is reloaded.
+	require.Equal(t, "no-store", resp.Headers["Cache-Control"])
 	var out shiplingResponse
 	require.NoError(t, json.Unmarshal(resp.Body, &out))
 	return out

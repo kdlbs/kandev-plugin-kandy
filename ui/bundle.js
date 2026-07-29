@@ -17,7 +17,35 @@
 
 var PLUGIN_ID = "kandev-plugin-shipling";
 var STYLE_ID = "kandev-shipling-style";
+// Backstop poll. The live path is the WS bridge below — these actions mirror
+// the bus events the backend awards XP for, so the creature updates as work
+// happens instead of on the next poll (or a page reload).
 var REFRESH_MS = 60000;
+var WS_ACTIONS = [
+  "session.turn.completed",
+  "session.message.added",
+  "session.state_changed",
+  "task.updated",
+  "task.state_changed",
+];
+// The plugin backend awards XP when its own event delivery lands, which races
+// the WS notification to the browser. Debounce so a burst of events costs one
+// refetch, and so the refetch happens after the award has settled.
+var WS_DEBOUNCE_MS = 1500;
+
+// Mounted widgets subscribe here; the WS handlers ping them.
+var refreshListeners = [];
+var refreshTimer = null;
+
+function scheduleRefresh() {
+  if (refreshTimer !== null) return;
+  refreshTimer = setTimeout(function () {
+    refreshTimer = null;
+    refreshListeners.slice().forEach(function (fn) {
+      fn();
+    });
+  }, WS_DEBOUNCE_MS);
+}
 
 // ---------------------------------------------------------------------------
 // Deterministic PRNG (mulberry32) — consumed in a fixed order per render.
@@ -1357,9 +1385,12 @@ function makeShiplingWidget(host) {
       mountedRef.current = true;
       load();
       var interval = setInterval(load, REFRESH_MS);
+      refreshListeners.push(load);
       return function () {
         mountedRef.current = false;
         clearInterval(interval);
+        var i = refreshListeners.indexOf(load);
+        if (i >= 0) refreshListeners.splice(i, 1);
       };
     }, []);
 
@@ -1422,9 +1453,19 @@ window.registerKandevPlugin(PLUGIN_ID, {
     h0 = host.jsx;
     injectStyles();
     registry.registerComponent("chat-top-bar", makeShiplingWidget(host));
+    // Live updates: refetch when work happens, instead of waiting for the
+    // backstop poll (or a page reload).
+    WS_ACTIONS.forEach(function (action) {
+      registry.registerWsHandler(action, scheduleRefresh);
+    });
   },
   destroy: function () {
     removeStyles();
+    if (refreshTimer !== null) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
+    refreshListeners.length = 0;
   },
   // Pure, deterministic render helpers exposed for offline tooling (the
   // evolution posters in demo/). Harmless in production: kandev's plugin

@@ -363,10 +363,15 @@ func ledgerFromMap(m map[string]any) *ledger {
 	return l
 }
 
+// jsonResponse marks every reply no-store: the shipling's level and XP change
+// as work lands, so a cached body would show a stale creature until reload.
 func jsonResponse(status int32, body []byte) *pluginsdk.WebhookResponse {
 	return &pluginsdk.WebhookResponse{
-		Status:  status,
-		Headers: map[string]string{"Content-Type": "application/json"},
-		Body:    body,
+		Status: status,
+		Headers: map[string]string{
+			"Content-Type":  "application/json",
+			"Cache-Control": "no-store",
+		},
+		Body: body,
 	}
 }
