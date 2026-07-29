@@ -27,9 +27,6 @@ The first week — an egg hatches and starts to grow:
 What it grows into — the species your install rolls, the places it lives,
 what it looks like months from now — is yours to find out. Ship and see.
 
-*(Screenshots live on the `media/readme-screenshots` orphan branch,
-referenced by pinned commit.)*
-
 ## Install
 
 Build a package (`make package-host` for your platform, `make package` for
