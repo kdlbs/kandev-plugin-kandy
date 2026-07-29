@@ -22,6 +22,7 @@ import (
 const (
 	webhookKeyKandy = "kandy"
 	webhookKeyPet   = "pet"
+	webhookKeyBonk  = "bonk"
 
 	stateScope = "instance" // one kandy per kandev instance
 	stateKey   = "kandy"
@@ -70,6 +71,20 @@ type ledger struct {
 	// LastPettedAt (RFC3339): petting briefly lifts the displayed mood
 	// (one tier, capped at happy, for petLiftWindow). It never touches XP.
 	LastPettedAt string `json:"last_petted_at,omitempty"`
+	// Care system (v0.3.0): pets and bonks shape a persistent temperament
+	// in [-100, +100] that conditions presentation only — see
+	// temperament.go for the constants and invariants. None of these
+	// fields may ever influence XP, level, award_seq or last_award_at.
+	PetsGiven   int64   `json:"pets_given,omitempty"`
+	BonksGiven  int64   `json:"bonks_given,omitempty"`
+	Temperament float64 `json:"temperament,omitempty"`
+	// Scarred latches true forever once temperament reaches scarThreshold.
+	Scarred bool `json:"scarred,omitempty"`
+	// LastBonkedAt (RFC3339) drives the distrust window (pets refused),
+	// the 30min displayed-mood drop, and the bonk-effect rate limit.
+	LastBonkedAt string `json:"last_bonked_at,omitempty"`
+	// LastPetEffectAt (RFC3339) rate-limits pets' temperament effect.
+	LastPetEffectAt string `json:"last_pet_effect_at,omitempty"`
 }
 
 // kandyResponse is everything the UI is allowed to know. Archetype,
@@ -90,8 +105,14 @@ type kandyResponse struct {
 	Mood        string `json:"mood"`
 	AwardSeq    int64  `json:"award_seq"`
 	LastAwardAt string `json:"last_award_at,omitempty"`
-	Flavor      string `json:"flavor"`
-	AliveSince  string `json:"alive_since"`
+	// TemperamentBand is the ONLY temperament shape the UI ever sees —
+	// never the raw score. Scarred and RefusingPets condition rendering
+	// and the pet interaction respectively.
+	TemperamentBand string `json:"temperament_band"`
+	Scarred         bool   `json:"scarred"`
+	RefusingPets    bool   `json:"refusing_pets"`
+	Flavor          string `json:"flavor"`
+	AliveSince      string `json:"alive_since"`
 }
 
 type plugin struct {
@@ -215,6 +236,9 @@ func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookReques
 	if req.WebhookKey == webhookKeyPet {
 		return p.handlePet(ctx), nil
 	}
+	if req.WebhookKey == webhookKeyBonk {
+		return p.handleBonk(ctx), nil
+	}
 	if req.WebhookKey != webhookKeyKandy {
 		return jsonResponse(404, []byte(`{"error":"unknown webhook"}`)), nil
 	}
@@ -257,12 +281,62 @@ func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookReques
 func (p *plugin) handlePet(ctx context.Context) *pluginsdk.WebhookResponse {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	l := p.loadLedger(ctx)
+	// Distrust: freshly bonked, the kandy refuses pets entirely — no
+	// stamp, no lift, no temperament change. The UI mirrors this with a
+	// turn-away reaction.
+	if p.within(l.LastBonkedAt, distrustWindow) {
+		view := p.presentLedger(l, nil)
+		view.Flavor = "It doesn't trust you right now."
+		return presentResponse(view)
+	}
 	// Plain mutateLedger, not awardXP: no XP, no award_seq bump, no
-	// last_award_at change.
-	l := p.mutateLedger(ctx, func(l *ledger) {
+	// last_award_at change. The temperament effect is rate-limited to one
+	// per petEffectWindow, gains nothing within careCalmWindow of a bonk,
+	// and heals negative scores at only petHealGain (see temperament.go).
+	l = p.mutateLedger(ctx, func(l *ledger) {
+		l.PetsGiven++
 		l.LastPettedAt = p.now().UTC().Format(time.RFC3339)
+		if p.within(l.LastPetEffectAt, petEffectWindow) || p.within(l.LastBonkedAt, careCalmWindow) {
+			return
+		}
+		gain := petTemperamentGain
+		if l.Temperament < 0 {
+			gain = petHealGain
+		}
+		l.Temperament = clampTemperament(l.Temperament + gain)
+		l.LastPetEffectAt = p.now().UTC().Format(time.RFC3339)
 	})
-	body, err := json.Marshal(p.presentLedger(l, nil))
+	return presentResponse(p.presentLedger(l, nil))
+}
+
+// handleBonk hits the kandy with the stick. Like petting it never touches
+// XP/level/award_seq — but unlike petting it pushes the persistent
+// temperament DOWN (rate-limited to one effect per bonkEffectWindow; the
+// stamp always refreshes, so spamming keeps resetting the window instead
+// of stacking trauma), cancels any active pet lift, drops the displayed
+// mood one tier for bonkMoodWindow, and opens the distrust window.
+func (p *plugin) handleBonk(ctx context.Context) *pluginsdk.WebhookResponse {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	l := p.mutateLedger(ctx, func(l *ledger) {
+		l.BonksGiven++
+		if !p.within(l.LastBonkedAt, bonkEffectWindow) {
+			l.Temperament = clampTemperament(l.Temperament - bonkTemperamentDelta)
+			if l.Temperament <= scarThreshold {
+				l.Scarred = true // permanent — never cleared
+			}
+		}
+		l.LastBonkedAt = p.now().UTC().Format(time.RFC3339)
+		l.LastPettedAt = "" // a bonk cancels any active pet lift
+	})
+	view := p.presentLedger(l, nil)
+	view.Flavor = "Your kandy flinched."
+	return presentResponse(view)
+}
+
+func presentResponse(view kandyResponse) *pluginsdk.WebhookResponse {
+	body, err := json.Marshal(view)
 	if err != nil {
 		return jsonResponse(500, []byte(`{"error":"encoding state"}`))
 	}
@@ -315,6 +389,13 @@ func (p *plugin) debugEnabled(ctx context.Context) bool {
 	return enabled
 }
 
+// within reports whether the RFC3339 stamp is less than window old. An
+// empty or unparsable stamp is never "within" anything.
+func (p *plugin) within(stamp string, window time.Duration) bool {
+	t, err := time.Parse(time.RFC3339, stamp)
+	return err == nil && p.now().UTC().Sub(t) < window
+}
+
 // sinceLastAward computes how long ago the kandy was last fed.
 // Migration-safe: pre-0.6 state has no last_award_at, so fall back to
 // updated_at (every award touched it); a fully unknown timestamp counts as
@@ -343,28 +424,51 @@ func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) kandyResp
 	// A recent petting lifts the displayed mood one tier (capped at happy)
 	// — presentational only; the base mood keeps decaying from
 	// last_award_at underneath.
-	if petted, err := time.Parse(time.RFC3339, l.LastPettedAt); err == nil &&
-		p.now().UTC().Sub(petted) < petLiftWindow {
+	if p.within(l.LastPettedAt, petLiftWindow) {
 		if lifted := liftMood(mood); lifted != mood {
 			mood = lifted
 			flavor = "Your kandy purrs — but it's still hungry for shipped work."
 		}
 	}
+	// A recent bonk drops the displayed mood one tier for bonkMoodWindow.
+	// (Any pet lift active at bonk time was cancelled by the bonk handler;
+	// a post-distrust pet's lift and this drop simply cancel out.)
+	if p.within(l.LastBonkedAt, bonkMoodWindow) {
+		mood = lowerMood(mood)
+	}
+	// Band flavor: trauma dominates the idle/mood lines; adoration only
+	// speaks up when nothing more urgent (hunger, purring) is on screen.
+	band := temperamentBand(l.Temperament)
+	if level > 1 {
+		switch band {
+		case "fearful":
+			flavor = "Your kandy trembles when you reach out."
+		case "wary":
+			flavor = "Your kandy watches your hands warily."
+		case "beloved":
+			if mood == "content" {
+				flavor = "Your kandy adores you."
+			}
+		}
+	}
 	return kandyResponse{
-		Level:          level,
-		Stage:          stageForLevel(level),
-		Archetype:      archetypeForLineage(l.Salt),
-		Family:         paletteFamilyForLineage(l.Salt),
-		Biome:          biomeForLineage(l.Salt),
-		LineageSeed:    lineageSeed(l.Salt),
-		StageName:      stageName(l.Salt, level),
-		ProgressPct:    roundDownToTenth(progressPct(l.XP)),
-		AppearanceSeed: appearanceSeed(l.Salt, level),
-		Mood:           mood,
-		AwardSeq:       l.AwardSeq,
-		LastAwardAt:    l.LastAwardAt,
-		Flavor:         flavor,
-		AliveSince:     l.CreatedAt,
+		Level:           level,
+		Stage:           stageForLevel(level),
+		Archetype:       archetypeForLineage(l.Salt),
+		Family:          paletteFamilyForLineage(l.Salt),
+		Biome:           biomeForLineage(l.Salt),
+		LineageSeed:     lineageSeed(l.Salt),
+		StageName:       stageName(l.Salt, level),
+		ProgressPct:     roundDownToTenth(progressPct(l.XP)),
+		AppearanceSeed:  appearanceSeed(l.Salt, level),
+		Mood:            mood,
+		AwardSeq:        l.AwardSeq,
+		LastAwardAt:     l.LastAwardAt,
+		TemperamentBand: band,
+		Scarred:         l.Scarred,
+		RefusingPets:    p.within(l.LastBonkedAt, distrustWindow),
+		Flavor:          flavor,
+		AliveSince:      l.CreatedAt,
 	}
 }
 

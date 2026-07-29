@@ -221,3 +221,37 @@ Never touch the real backend/DB; no broad pkill; spec deleted afterwards and
    (egg), 2–3 progressively evolved levels (creature + scene + stage name +
    XP bar), one full page; light + dark (toggle `documentElement.classList`,
    no reload; tooltip located via `[data-slot="tooltip-content"]`).
+
+## 10. Care system — pet or bonk (v0.3.0)
+
+The pet zone in the open card gains a dark twin: **left-click pets, desktop
+right-click bonks with a stick** (`contextmenu`, preventDefault; touch stays
+pet-only — long-press contextmenu is ignored so accidental long-presses
+can't traumatize mobile kandys). Both are presentation/temperament only:
+**neither ever touches xp, level, progress_pct, award_seq or last_award_at**
+(tested byte-identical across arbitrary pet/bonk sequences).
+
+Persistent ledger additions: `pets_given`, `bonks_given`, `last_bonked_at`,
+`last_pet_effect_at`, `temperament` (float in [-100, +100]), `scarred`.
+
+Constants (server-side, `temperament.go`):
+
+| Knob | Value | Meaning |
+|---|---|---|
+| bonk effect | −8, max 1 effect / 10s | every bonk re-stamps `last_bonked_at`, so spam keeps resetting the window and never stacks trauma; deliberate spaced cruelty does (0 → scar = 8 bonks ≥ 10s apart) |
+| bonk fallout | mood −1 tier for 30min; pet lift cancelled; pets refused for 60s ("it doesn't trust you right now") | displayed-mood only |
+| pet effect | +1 (≥0) / +0.5 (<0), max 1 effect / 10min, none within 24h of a bonk | extra pets still stamp the mood lift; **no passive decay** — negative temperament heals only through consistent care, and slowly: −60 → 0 needs 120 effective pets (2.5 days of petting every 10 minutes; weeks at a casual pace) |
+| scar latch | temperament ≤ −60 ⇒ `scarred: true` forever | never clears, even fully redeemed |
+| bands | beloved ≥ +30, content ≥ +10, neutral (−10, +10), wary ≤ −10, fearful ≤ −40 | webhook exposes only `temperament_band` / `scarred` / `refusing_pets`, never the raw score |
+
+Rendering (render-time conditioning; DNA/growth/unlock tables untouched,
+fully deterministic): beloved = rosier bigger cheeks, brighter eye
+highlights, perkier horns/tail; wary = guarded flattened eyes (straight
+upper lid), slight default frown, drooped tufts/wilted antenna, accents
+desaturated −15; fearful = the same, stronger (lids lower, −30 sat);
+scarred = one small stitch-mark placed deterministically from the lineage
+seed, shown forever. Metamorphosis conditioning: at stage ≥ 2 (levels
+12/30/55/80 styling) the CURRENT temperament sign picks a variant — kind
+(soft warm sheen around the head) vs wary (scruffy crown spikes) — so
+redemption visibly softens the creature. Band flavor lines; a bonk answers
+"Your kandy flinched."

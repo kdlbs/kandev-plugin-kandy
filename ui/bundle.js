@@ -118,6 +118,25 @@ function growthForLevel(level) {
 
 var STAGE_SCALE = [1, 0.55, 0.68, 0.8, 0.9, 1.0];
 
+// temperFor — the care system's (v0.3.0) render conditioning. The band and
+// scarred flags come from the server (never a raw score); sign selects the
+// kind-vs-wary variant styling at metamorphosis stages. Render-time only:
+// DNA, growth and unlock tables are untouched, and a redeemed kandy
+// visibly softens because the sign is read at render time.
+function temperFor(data) {
+  var band = data.temperament_band || "neutral";
+  var neg = band === "wary" || band === "fearful";
+  return {
+    band: band,
+    sign: band === "beloved" || band === "content" ? 1 : neg ? -1 : 0,
+    strong: band === "fearful",
+    beloved: band === "beloved",
+    scarred: !!data.scarred,
+  };
+}
+
+var TEMPER_NEUTRAL = { band: "neutral", sign: 0, strong: false, beloved: false, scarred: false };
+
 // lineageStyle — the per-install identity picks, fixed for a lifetime.
 function lineageStyle(seed) {
   var r = makeRand(seed, 5);
@@ -134,16 +153,19 @@ function lineageStyle(seed) {
 }
 
 // Colors ramp dull -> vivid with level; the hue (family) never changes.
-function lineageColors(family, level, sty) {
+// A wary/fearful temperament desaturates the accent tints slightly.
+function lineageColors(family, level, sty, temper) {
   var hue = FAMILY_HUES[((family % 12) + 12) % 12] + sty.hueJitter;
   var sat = Math.min(24 + level * 1.15, 74);
   var light = 70 - Math.min(level, 50) * 0.25;
+  var accSat = Math.min(sat + 10, 84);
+  if (temper && temper.sign < 0) accSat = Math.max(accSat - (temper.strong ? 30 : 15), 10);
   return {
     hue: hue,
     body: hsl(hue, sat, light * 0.86),
     dark: hsl(hue, Math.max(sat - 10, 12), 34),
     light: hsl(hue, sat, Math.min(light + 14, 86)),
-    accent: hsl(hue + 150, Math.min(sat + 10, 84), 62),
+    accent: hsl(hue + 150, accSat, 62),
   };
 }
 
@@ -480,7 +502,7 @@ var BODY_BUILDERS = [
 // put when marking #2 appears.
 // ---------------------------------------------------------------------------
 
-function eyeAt(h, rand, cx, cy, r, style, key) {
+function eyeAt(h, rand, cx, cy, r, style, key, temper) {
   var out = [];
   if (style !== "dot") {
     out.push(h("circle", { key: key + "w", cx: cx, cy: cy, r: r, fill: "#ffffff" }));
@@ -496,6 +518,34 @@ function eyeAt(h, rand, cx, cy, r, style, key) {
       style: { transformBox: "fill-box", transformOrigin: "center" },
     }),
   );
+  if (temper && temper.beloved) {
+    // Beloved: brighter eye highlights — a little extra sparkle.
+    out.push(
+      h("circle", {
+        key: key + "gl",
+        cx: cx - r * 0.22,
+        cy: cy - r * 0.26,
+        r: Math.max(r * 0.22, 0.7),
+        fill: "#ffffff",
+        opacity: 0.95,
+      }),
+    );
+  }
+  if (temper && temper.sign < 0 && style !== "sleepy") {
+    // Wary/fearful: guarded, flattened eyes — a straight upper lid.
+    var lidY = cy - r * (temper.strong ? 0.15 : 0.4);
+    out.push(
+      h("line", {
+        key: key + "guard",
+        x1: cx - r,
+        y1: lidY,
+        x2: cx + r,
+        y2: lidY,
+        stroke: "#26232e",
+        strokeWidth: 1.4,
+      }),
+    );
+  }
   if (style === "sleepy") {
     out.push(
       h("path", {
@@ -510,29 +560,33 @@ function eyeAt(h, rand, cx, cy, r, style, key) {
   return out;
 }
 
-function faceParts(h, lineage, C, head, g, sty, mood) {
+function faceParts(h, lineage, C, head, g, sty, mood, temper) {
   var rand = makeRand(lineage, 30);
   var out = [];
-  // Mood overlays are render-time only: they restyle the face, they never
-  // touch DNA or growth. bored = half-lowered lids; sad/gloomy = lids +
-  // frown + a single teardrop.
+  // Mood + temperament overlays are render-time only: they restyle the
+  // face, they never touch DNA or growth. bored = half-lowered lids;
+  // sad/gloomy = lids + frown + a single teardrop; wary/fearful =
+  // guarded eyes + default frown + drooped tufts; beloved = rosier
+  // cheeks + brighter highlights.
+  temper = temper || TEMPER_NEUTRAL;
   var droopy = mood === "sad" || mood === "gloomy";
   var style = g.stage <= 1 ? "dot" : sty.eyeStyle;
   if (mood === "bored" || droopy) style = "sleepy";
   var eyeR =
     (style === "wide" ? 4.8 : 3.9) *
     Math.min(head.r / 10, 1.4) *
-    (mood === "bored" || droopy ? 0.85 : 1);
+    (mood === "bored" || droopy ? 0.85 : 1) *
+    (temper.sign < 0 ? (temper.strong ? 0.8 : 0.9) : 1);
   var count = head.alien && g.stage >= 2 ? sty.alienEyes : 2;
   if (count === 2) {
     var dx = head.r * 0.5;
-    out = out.concat(eyeAt(h, rand, head.cx - dx, head.cy, eyeR, style, "eyeL"));
-    out = out.concat(eyeAt(h, rand, head.cx + dx, head.cy, eyeR, style, "eyeR"));
+    out = out.concat(eyeAt(h, rand, head.cx - dx, head.cy, eyeR, style, "eyeL", temper));
+    out = out.concat(eyeAt(h, rand, head.cx + dx, head.cy, eyeR, style, "eyeR", temper));
   } else {
     for (var i = 0; i < count; i++) {
       var t = i / (count - 1) - 0.5;
       out = out.concat(
-        eyeAt(h, rand, head.cx + t * head.r * 1.3, head.cy - Math.abs(t) * 3 - (i % 2) * 2, eyeR * (0.7 + rand(0, 0.4)), style, "eye" + i),
+        eyeAt(h, rand, head.cx + t * head.r * 1.3, head.cy - Math.abs(t) * 3 - (i % 2) * 2, eyeR * (0.7 + rand(0, 0.4)), style, "eye" + i, temper),
       );
     }
   }
@@ -554,7 +608,8 @@ function faceParts(h, lineage, C, head, g, sty, mood) {
   if (g.mouth) {
     var mouthY = head.cy + head.r * 0.55;
     var mw = head.r * 0.55;
-    var mouth = droopy ? "frown" : sty.mouthStyle;
+    // Wary/fearful default to a slight frown even in an okay mood.
+    var mouth = droopy || temper.sign < 0 ? "frown" : sty.mouthStyle;
     if (mouth === "frown") {
       out.push(
         h("path", {
@@ -579,18 +634,24 @@ function faceParts(h, lineage, C, head, g, sty, mood) {
       out.push(h("path", { key: "mouth", d: "M" + (head.cx - mw) + " " + (mouthY + 1) + " q" + mw / 3 + " 3 " + (mw * 2) / 3 + " 0 q" + mw / 3 + " -3 " + (mw * 2) / 3 + " 0", stroke: C.dark, strokeWidth: 1.8, strokeLinecap: "round", fill: "none" }));
     }
   }
-  if (g.blush) {
+  if (g.blush || temper.beloved) {
+    // Beloved kandys get rosier, bigger cheeks — even before the blush
+    // growth unlock.
+    var blushR = temper.beloved ? 3.1 : 2.4;
+    var blushO = temper.beloved ? 0.72 : 0.5;
+    var blushFill = temper.beloved ? "#ff7f9c" : "#ff8fa3";
     out.push(
-      h("circle", { key: "blushL", cx: head.cx - head.r * 0.85, cy: head.cy + head.r * 0.35, r: 2.4, fill: "#ff8fa3", opacity: 0.5 }),
-      h("circle", { key: "blushR", cx: head.cx + head.r * 0.85, cy: head.cy + head.r * 0.35, r: 2.4, fill: "#ff8fa3", opacity: 0.5 }),
+      h("circle", { key: "blushL", cx: head.cx - head.r * 0.85, cy: head.cy + head.r * 0.35, r: blushR, fill: blushFill, opacity: blushO }),
+      h("circle", { key: "blushR", cx: head.cx + head.r * 0.85, cy: head.cy + head.r * 0.35, r: blushR, fill: blushFill, opacity: blushO }),
     );
   }
   if (g.tufts) {
-    // Droopy ears when sad/gloomy: the tufts point downward.
-    var tuftDy = droopy ? 3 : -3;
+    // Droopy ears when sad/gloomy — or when the kandy is wary/fearful.
+    var tuftDown = droopy || temper.sign < 0;
+    var tuftDy = tuftDown ? 3 : -3;
     out.push(
-      h("path", { key: "tuftL", d: "M" + (head.cx - head.r) + " " + (head.cy - head.r * 0.6) + " l-4 " + tuftDy + " l1.5 " + (droopy ? -4.5 : 4.5) + " Z", fill: C.light, stroke: C.dark, strokeWidth: 0.8 }),
-      h("path", { key: "tuftR", d: "M" + (head.cx + head.r) + " " + (head.cy - head.r * 0.6) + " l4 " + tuftDy + " l-1.5 " + (droopy ? -4.5 : 4.5) + " Z", fill: C.light, stroke: C.dark, strokeWidth: 0.8 }),
+      h("path", { key: "tuftL", d: "M" + (head.cx - head.r) + " " + (head.cy - head.r * 0.6) + " l-4 " + tuftDy + " l1.5 " + (tuftDown ? -4.5 : 4.5) + " Z", fill: C.light, stroke: C.dark, strokeWidth: 0.8 }),
+      h("path", { key: "tuftR", d: "M" + (head.cx + head.r) + " " + (head.cy - head.r * 0.6) + " l4 " + tuftDy + " l-1.5 " + (tuftDown ? -4.5 : 4.5) + " Z", fill: C.light, stroke: C.dark, strokeWidth: 0.8 }),
     );
   }
   return out;
@@ -623,11 +684,13 @@ function markingParts(h, lineage, C, region, g, sty) {
   return out;
 }
 
-function hornParts(h, lineage, C, top, g, sty, mood) {
+function hornParts(h, lineage, C, top, g, sty, mood, temper) {
   if (g.horns <= 0) return [];
+  temper = temper || TEMPER_NEUTRAL;
   var rand = makeRand(lineage, 32);
-  var s = 0.7 + g.horns * 0.3; // horns grow at each unlock
-  var droopy = mood === "sad" || mood === "gloomy";
+  // Horns grow at each unlock; a beloved kandy carries them perkier.
+  var s = (0.7 + g.horns * 0.3) * (temper.beloved ? 1.18 : 1);
+  var droopy = mood === "sad" || mood === "gloomy" || temper.sign < 0;
   var out = [];
   var x = top.x;
   var y = top.y;
@@ -667,9 +730,10 @@ function hornParts(h, lineage, C, top, g, sty, mood) {
   return out;
 }
 
-function tailPartsFor(h, C, g, sty) {
+function tailPartsFor(h, C, g, sty, temper) {
   if (g.tail <= 0) return [];
-  var s = 0.6 + g.tail * 0.35; // tail grows at each unlock
+  // Tail grows at each unlock; beloved kandys hold it perkier.
+  var s = (0.6 + g.tail * 0.35) * (temper && temper.beloved ? 1.15 : 1);
   if (sty.tailStyle === "curl") {
     return [
       h("path", {
@@ -688,6 +752,76 @@ function tailPartsFor(h, C, g, sty) {
   return [
     h("circle", { key: "tail1", cx: 79, cy: 74, r: 3.4 + 1.6 * s, fill: C.light, stroke: C.dark, strokeWidth: 1.2 }),
     h("circle", { key: "tail2", cx: 79 + 6 * s, cy: 74 - 4 * s, r: 2.2 + 1.2 * s, fill: C.light, stroke: C.dark, strokeWidth: 1 }),
+  ];
+}
+
+// temperVariant — the metamorphosis conditioning: at maturity stages
+// (levels 12/30/55/80) the stage-styled details pick a "kind" (softer,
+// rounder) or "wary" (sharper, scruffier) variant from the CURRENT
+// temperament sign at render time. Redemption visibly softens the
+// creature; neglect roughens it. Sits above the body, under markings/face.
+function temperVariant(h, lineage, C, body, g, temper) {
+  if (g.stage < 2 || temper.sign === 0) return [];
+  var out = [];
+  if (temper.sign < 0) {
+    // Wary variant: scruffy spikes along the crown.
+    var rs = makeRand(lineage, 78);
+    var n = temper.strong ? 4 : 3;
+    for (var i = 0; i < n; i++) {
+      var px = body.top.x - 8 + (i * 16) / (n - 1) + rs(-1.5, 1.5);
+      var py = body.top.y + 2 + rs(0, 1.5);
+      out.push(
+        h("path", {
+          key: "scruff" + i,
+          d: "M" + (px - 2.2) + " " + py + " L" + px + " " + (py - 4.6 - rs(0, 2)) + " L" + (px + 2.2) + " " + py + " Z",
+          fill: C.dark,
+          opacity: 0.8,
+        }),
+      );
+    }
+  } else {
+    // Kind variant: a soft, rounder warm sheen around the head.
+    out.push(
+      h("ellipse", {
+        key: "kindsheen",
+        cx: body.head.cx,
+        cy: body.head.cy - body.head.r * 0.3,
+        rx: body.head.r * 1.5,
+        ry: body.head.r * 1.1,
+        fill: C.light,
+        opacity: 0.16,
+      }),
+      h("ellipse", {
+        key: "kindsheen2",
+        cx: body.head.cx - body.head.r * 0.4,
+        cy: body.head.cy - body.head.r * 0.6,
+        rx: body.head.r * 0.5,
+        ry: body.head.r * 0.28,
+        fill: "#ffffff",
+        opacity: 0.28,
+      }),
+    );
+  }
+  return out;
+}
+
+// temperScar — one small permanent mark, placed deterministically from the
+// lineage seed, shown forever regardless of the current band.
+function temperScar(h, lineage, C, body, temper) {
+  if (!temper.scarred) return [];
+  var r = makeRand(lineage, 77);
+  var sx = body.mark.cx + r(-0.5, 0.5) * body.mark.rx;
+  var sy = body.mark.cy + r(-0.5, 0.5) * body.mark.ry;
+  var rot = (r(-0.5, 0.5) * 44).toFixed(1);
+  return [
+    h(
+      "g",
+      { key: "scar", transform: "rotate(" + rot + " " + sx + " " + sy + ")", opacity: 0.85 },
+      h("line", { key: "scarline", x1: sx - 3.4, y1: sy, x2: sx + 3.4, y2: sy, stroke: C.dark, strokeWidth: 1.3, strokeLinecap: "round" }),
+      h("line", { key: "scart1", x1: sx - 1.8, y1: sy - 1.6, x2: sx - 1.8, y2: sy + 1.6, stroke: C.dark, strokeWidth: 1 }),
+      h("line", { key: "scart2", x1: sx, y1: sy - 1.6, x2: sx, y2: sy + 1.6, stroke: C.dark, strokeWidth: 1 }),
+      h("line", { key: "scart3", x1: sx + 1.8, y1: sy - 1.6, x2: sx + 1.8, y2: sy + 1.6, stroke: C.dark, strokeWidth: 1 }),
+    ),
   ];
 }
 
@@ -915,7 +1049,8 @@ function creatureParts(h, data, portrait) {
   var lineage = (data.lineage_seed || 1) >>> 0;
   var g = growthForLevel(level);
   var sty = lineageStyle(lineage);
-  var C = lineageColors(data.family || 0, level, sty);
+  var temper = temperFor(data);
+  var C = lineageColors(data.family || 0, level, sty, temper);
   var arch = (((data.archetype || 0) % BODY_BUILDERS.length) + BODY_BUILDERS.length) % BODY_BUILDERS.length;
 
   // Lineage-stable geometry: the SAME rand stream at every level, so the
@@ -927,10 +1062,12 @@ function creatureParts(h, data, portrait) {
   if (!portrait) inner = inner.concat(contactShadow(h, body.grounded, 89));
   inner = inner.concat(wingParts(h, C, body.top, g));
   inner = inner.concat(body.parts);
+  inner = inner.concat(temperVariant(h, lineage, C, body, g, temper));
   inner = inner.concat(markingParts(h, lineage, C, body.mark, g, sty));
-  inner = inner.concat(faceParts(h, lineage, C, body.head, g, sty, mood));
-  inner = inner.concat(hornParts(h, lineage, C, body.top, g, sty, mood));
-  if (body.grounded) inner = inner.concat(tailPartsFor(h, C, g, sty));
+  inner = inner.concat(temperScar(h, lineage, C, body, temper));
+  inner = inner.concat(faceParts(h, lineage, C, body.head, g, sty, mood, temper));
+  inner = inner.concat(hornParts(h, lineage, C, body.top, g, sty, mood, temper));
+  if (body.grounded) inner = inner.concat(tailPartsFor(h, C, g, sty, temper));
   inner = inner.concat(prestigeInBody(h, C, body.top, g));
   if (mood === "gloomy") {
     // A tiny personal rain cloud — archetype-agnostic, above the head.
@@ -1547,6 +1684,14 @@ var KANDY_CSS =
   "@keyframes kandev-kandy-burstpop{0%{opacity:0;transform:scale(0.3)}30%{opacity:1;transform:scale(1.2)}100%{opacity:0;transform:scale(1.6) translateY(-9px)}}" +
   "@keyframes kandev-kandy-namehl{0%,100%{background:transparent}30%{background:rgba(255,209,102,0.5)}}" +
   "@keyframes kandev-kandy-heartfloat{0%{opacity:0;transform:translateY(4px) scale(0.6)}25%{opacity:1;transform:translateY(-6px) scale(1.05)}100%{opacity:0;transform:translateY(-26px) scale(1)}}" +
+  // flinch/turnaway animate transform ONLY and live on the same inner
+  // wrapper as wiggle/cardhop — never on the outer positioning div (see
+  // the layering rule at kandyCard).
+  "@keyframes kandev-kandy-flinch{0%,100%{transform:translateX(0) rotate(0)}12%{transform:translateX(-4px) rotate(-4deg)}28%{transform:translateX(3.5px) rotate(2.5deg)}44%{transform:translateX(-2.6px) rotate(-1.5deg)}62%{transform:translateX(1.8px)}80%{transform:translateX(-1px)}}" +
+  "@keyframes kandev-kandy-turnaway{0%,100%{transform:rotate(0)}20%,80%{transform:rotate(-9deg) translateX(-4px)}}" +
+  "@keyframes kandev-kandy-bonkstar{0%{opacity:0;transform:translateY(0) scale(0.5)}20%{opacity:1;transform:translateY(-7px) scale(1.15)}100%{opacity:0;transform:translateY(-24px) scale(0.9)}}" +
+  "@keyframes kandev-kandy-stickswing{0%{opacity:0;transform:rotate(-80deg)}18%{opacity:1;transform:rotate(30deg)}40%{transform:rotate(8deg)}70%{opacity:1;transform:rotate(14deg)}100%{opacity:0;transform:rotate(14deg)}}" +
+  "@keyframes kandev-kandy-dotsfade{0%{opacity:0;transform:translateY(2px)}25%{opacity:1}75%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}" +
   ".kandev-kandy-bob{animation:kandev-kandy-bob 2.8s ease-in-out infinite}" +
   ".kandev-kandy-bob-fast{animation-duration:1.6s}" +
   ".kandev-kandy-bob-slow{animation-duration:5.5s}" +
@@ -1561,8 +1706,15 @@ var KANDY_CSS =
   ".kandev-kandy-burst{position:absolute;font-size:12px;color:#ffd166;animation:kandev-kandy-burstpop 1s ease forwards;pointer-events:none}" +
   ".kandev-kandy-namehl{animation:kandev-kandy-namehl 1.4s ease;border-radius:4px;padding:0 2px}" +
   ".kandev-kandy-heartfloat{position:absolute;font-size:13px;color:#f43f5e;animation:kandev-kandy-heartfloat 1.4s ease forwards;pointer-events:none}" +
+  // flinch/turnaway must be declared AFTER wiggle: the animation shorthand
+  // of the later single-class rule wins when both classes are present.
+  ".kandev-kandy-flinch{animation:kandev-kandy-flinch 0.55s ease}" +
+  ".kandev-kandy-turnaway{animation:kandev-kandy-turnaway 1.1s ease;transform-origin:50% 85%}" +
+  ".kandev-kandy-bonkstar{position:absolute;font-size:13px;animation:kandev-kandy-bonkstar 1.1s ease forwards;pointer-events:none}" +
+  ".kandev-kandy-stick{transform-origin:50% 92%;animation:kandev-kandy-stickswing 0.8s ease forwards;pointer-events:none}" +
+  ".kandev-kandy-dots{position:absolute;font-size:15px;font-weight:700;opacity:0;letter-spacing:2px;animation:kandev-kandy-dotsfade 1.4s ease forwards;pointer-events:none}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat{animation:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-flinch,.kandev-kandy-turnaway,.kandev-kandy-bonkstar,.kandev-kandy-stick,.kandev-kandy-dots{animation:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -1663,6 +1815,61 @@ function floatingHearts(h, seq) {
   );
 }
 
+// bonkOverlay — the stick swing + floating bump-stars/anger marks, the
+// mirror image of floatingHearts. Keyed by seq so repeats replay.
+var BONK_SPOTS = [
+  [40, 38, 0, "✶"],
+  [58, 30, 90, "✷"],
+  [34, 26, 180, "✶"],
+  [63, 46, 270, "✧"],
+];
+
+function bonkOverlay(h, seq) {
+  var kids = BONK_SPOTS.map(function (s, i) {
+    return h(
+      "span",
+      {
+        key: "bstar" + i,
+        className: "kandev-kandy-bonkstar",
+        style: {
+          left: s[0] + "%",
+          top: s[1] + "%",
+          animationDelay: s[2] + "ms",
+          color: i % 2 ? "#ef4444" : "#f59e0b",
+        },
+      },
+      s[3],
+    );
+  });
+  kids.push(
+    h(
+      "svg",
+      {
+        key: "stick",
+        className: "kandev-kandy-stick",
+        width: 34,
+        height: 34,
+        viewBox: "0 0 34 34",
+        style: { position: "absolute", left: "56%", top: "10%" },
+        "aria-hidden": "true",
+      },
+      h("rect", { key: "stickb", x: 15, y: 2, width: 4.6, height: 26, rx: 2.3, fill: "#8a5a33", stroke: "#5d3b1e", strokeWidth: 1 }),
+      h("circle", { key: "stickk", cx: 17.3, cy: 4.5, r: 3.4, fill: "#a06c3f", stroke: "#5d3b1e", strokeWidth: 1 }),
+    ),
+  );
+  return h("div", { key: "bonkfx" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } }, kids);
+}
+
+// distrustOverlay — the refused-pet reaction: the kandy turns away with a
+// "..." bubble. No hearts, no pet effect.
+function distrustOverlay(h, seq) {
+  return h(
+    "div",
+    { key: "distrustfx" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } },
+    h("span", { className: "kandev-kandy-dots", style: { left: "58%", top: "20%" } }, "…"),
+  );
+}
+
 // burstSparkles renders the celebration particle burst over the scene.
 var BURST_SPOTS = [
   [30, 30], [66, 18], [50, 55], [78, 45], [20, 60], [60, 72], [40, 12], [82, 68],
@@ -1693,9 +1900,12 @@ function burstSparkles(h, big) {
 
 // celebration: null, or {kind: "gain"|"levelup"} — joyful hops + sparkles;
 // levelup also highlights the (new) stage name.
-// pet (dialog only): null, or {fx: seq|0, onPet: fn, hint: bool} — a plain
-// click/tap on the creature pets it: happy hop + floating hearts. fx is a
-// nonce so repeat clicks replay the hearts. Petting never feeds XP.
+// care (dialog only): null, or {fx, onPet, hint, bonkFx, distrustFx,
+// onBonk, onPointerDown} — a plain click/tap on the creature pets it
+// (happy hop + floating hearts); a desktop right-click bonks it with the
+// stick (flinch + bump-stars); a pet during distrust turns it away ("...").
+// fx/bonkFx/distrustFx are nonces so repeats replay their overlay.
+// Petting and bonking NEVER feed or drain XP.
 //
 // Layering rule (the v0.7.0 jump-to-center bug): a CSS transform animation
 // REPLACES the element's base transform for its whole duration, so the
@@ -1704,15 +1914,17 @@ function burstSparkles(h, big) {
 // snapped horizontally on every pet/celebration. The outer div now owns the
 // layout transform and carries NO animated class; the inner element (a real
 // pet button in the dialog, a plain div in the tooltip) carries the
-// animated classes and NO base transform.
-function kandyCard(h, data, celebration, pet) {
+// animated classes and NO base transform. flinch/turnaway follow the same
+// rule: animation classes on the inner wrapper only.
+function kandyCard(h, data, celebration, care) {
   var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0);
-  var animCls =
-    "kandev-kandy-wiggle" +
-    (celebration || (pet && pet.fx) ? " kandev-kandy-cardhop" : "");
+  var animCls = "kandev-kandy-wiggle";
+  if (care && care.bonkFx) animCls += " kandev-kandy-flinch";
+  else if (care && care.distrustFx) animCls += " kandev-kandy-turnaway";
+  else if (celebration || (care && care.fx)) animCls += " kandev-kandy-cardhop";
   var creature = creatureSvg(h, data, 92);
   var inner;
-  if (pet && pet.onPet) {
+  if (care && care.onPet) {
     inner = h(
       "button",
       {
@@ -1720,7 +1932,16 @@ function kandyCard(h, data, celebration, pet) {
         type: "button",
         "aria-label": "Pet your kandy",
         className: animCls,
-        onClick: pet.onPet,
+        onClick: care.onPet,
+        // Right-click = bonk with the stick. contextmenu is desktop-only
+        // by policy: the handler checks the last pointer type and ignores
+        // touch long-presses (see triggerBonk). It never also fires pet —
+        // onClick only responds to the primary button.
+        onContextMenu: function (e) {
+          if (e && e.preventDefault) e.preventDefault();
+          if (care.onBonk) care.onBonk();
+        },
+        onPointerDown: care.onPointerDown,
         style: {
           display: "block",
           background: "transparent",
@@ -1737,6 +1958,10 @@ function kandyCard(h, data, celebration, pet) {
   } else {
     inner = h("div", { className: animCls }, creature);
   }
+  var flavorLine = data.flavor;
+  if (care && care.distrustFx) flavorLine = "It doesn't trust you right now.";
+  else if (care && care.bonkFx) flavorLine = "Your kandy flinched.";
+  else if (care && care.fx) flavorLine = "Your kandy purrs.";
   return h(
     "div",
     { style: { width: "248px" } },
@@ -1775,7 +2000,9 @@ function kandyCard(h, data, celebration, pet) {
         inner,
       ),
       celebration ? burstSparkles(h, celebration.kind === "levelup") : null,
-      pet && pet.fx ? floatingHearts(h, pet.fx) : null,
+      care && care.fx ? floatingHearts(h, care.fx) : null,
+      care && care.bonkFx ? bonkOverlay(h, care.bonkFx) : null,
+      care && care.distrustFx ? distrustOverlay(h, care.distrustFx) : null,
     ),
     h(
       "div",
@@ -1848,21 +2075,21 @@ function kandyCard(h, data, celebration, pet) {
       h(
         "div",
         { style: { fontSize: "11px", opacity: 0.7, fontStyle: "italic" } },
-        pet && pet.fx ? "Your kandy purrs." : data.flavor,
+        flavorLine,
       ),
       // The hint row is ALWAYS mounted in the dialog and hides via
       // visibility, never unmount: removing the row (petting can lift the
       // mood past the hint threshold mid-animation) would shrink the card
       // and the vertically-centered dialog would recenter — a layout jump
       // right in the middle of the pet reaction.
-      pet
+      care
         ? h(
             "div",
             {
               style: {
                 fontSize: "10px",
                 opacity: 0.45,
-                visibility: pet.hint && !pet.fx ? "visible" : "hidden",
+                visibility: care.hint && !care.fx && !care.bonkFx && !care.distrustFx ? "visible" : "hidden",
               },
             },
             "psst — click your kandy",
@@ -1900,13 +2127,30 @@ function makeKandyWidget(host) {
     var petFxHook = React.useState(0);
     var petFx = petFxHook[0];
     var setPetFx = petFxHook[1];
+    // bonkFx / distrustFx: same nonce pattern for the stick flinch and the
+    // refused-pet turn-away reactions.
+    var bonkFxHook = React.useState(0);
+    var bonkFx = bonkFxHook[0];
+    var setBonkFx = bonkFxHook[1];
+    var distrustFxHook = React.useState(0);
+    var distrustFx = distrustFxHook[0];
+    var setDistrustFx = distrustFxHook[1];
     var mountedRef = React.useRef(true);
     var prevRef = React.useRef(null);
     var celebrationTimerRef = React.useRef(null);
     var petTimerRef = React.useRef(null);
-    // lastPetPostRef rate-limits the POST to ~1 per 3s; in-window clicks
-    // still get the local hearts/purr reaction.
+    var bonkTimerRef = React.useRef(null);
+    var distrustTimerRef = React.useRef(null);
+    // lastPetPostRef/lastBonkPostRef rate-limit the POSTs to ~1 per 3s;
+    // in-window clicks still get the local reaction.
     var lastPetPostRef = React.useRef(0);
+    var lastBonkPostRef = React.useRef(0);
+    // distrustUntilRef mirrors the server's 60s distrust window locally so
+    // a post-bonk pet click gets the turn-away without even POSTing.
+    var distrustUntilRef = React.useRef(0);
+    // pointerTypeRef remembers the last pointer type: touch long-presses
+    // fire contextmenu on some mobile browsers and must NOT bonk.
+    var pointerTypeRef = React.useRef("mouse");
 
     function celebrate(kind) {
       setCelebration({ kind: kind });
@@ -1946,12 +2190,32 @@ function makeKandyWidget(host) {
         });
     }
 
+    // showDistrust plays the turn-away/"..." reaction: no hearts, no pet
+    // POST, and the card says "It doesn't trust you right now."
+    function showDistrust() {
+      setPetFx(0);
+      setBonkFx(0);
+      setDistrustFx(Date.now());
+      if (distrustTimerRef.current) clearTimeout(distrustTimerRef.current);
+      distrustTimerRef.current = setTimeout(function () {
+        if (mountedRef.current) setDistrustFx(0);
+      }, 1600);
+    }
+
     // triggerPet (click/tap or Enter/Space on the pet button): local
     // reaction immediately, POST the pet stamp (which lifts the displayed
     // mood a tier, never XP) at most once per 3s. Extra clicks inside the
     // window replay the hearts/purr locally without hitting the backend.
+    // Inside the post-bonk distrust window the kandy refuses: turn-away
+    // reaction, no POST, no effect.
     function triggerPet() {
       var nowMs = Date.now();
+      if (nowMs < distrustUntilRef.current) {
+        showDistrust();
+        return;
+      }
+      setBonkFx(0);
+      setDistrustFx(0);
       setPetFx(nowMs);
       if (petTimerRef.current) clearTimeout(petTimerRef.current);
       petTimerRef.current = setTimeout(function () {
@@ -1968,10 +2232,51 @@ function makeKandyWidget(host) {
           if (mountedRef.current && body && typeof body.level === "number") {
             prevRef.current = { level: body.level, award_seq: body.award_seq };
             setData(body);
+            if (body.refusing_pets) {
+              // Bonked from elsewhere (another tab/client): mirror the
+              // refusal locally and switch the reaction to the turn-away.
+              distrustUntilRef.current = Date.now() + 60000;
+              showDistrust();
+            }
           }
         })
         .catch(function () {
           /* the local purr already played */
+        });
+    }
+
+    // triggerBonk (desktop right-click on the creature): local flinch +
+    // bump-stars immediately, POST the bonk at most once per 3s, and open
+    // the local distrust window. Touch never bonks — long-press
+    // contextmenu is ignored so accidental long-presses can't traumatize
+    // mobile kandys. Bonking never drains XP: it darkens the persistent
+    // temperament, which only conditions how the creature is drawn.
+    function triggerBonk() {
+      if (pointerTypeRef.current === "touch") return;
+      var nowMs = Date.now();
+      setPetFx(0);
+      setDistrustFx(0);
+      setBonkFx(nowMs);
+      if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);
+      bonkTimerRef.current = setTimeout(function () {
+        if (mountedRef.current) setBonkFx(0);
+      }, 1600);
+      distrustUntilRef.current = nowMs + 60000;
+      if (nowMs - lastBonkPostRef.current < 3000) return;
+      lastBonkPostRef.current = nowMs;
+      host.api
+        .fetch("webhooks/bonk", { method: "POST" })
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (body) {
+          if (mountedRef.current && body && typeof body.level === "number") {
+            prevRef.current = { level: body.level, award_seq: body.award_seq };
+            setData(body);
+          }
+        })
+        .catch(function () {
+          /* the local flinch already played */
         });
     }
 
@@ -1985,6 +2290,8 @@ function makeKandyWidget(host) {
         clearInterval(interval);
         if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
         if (petTimerRef.current) clearTimeout(petTimerRef.current);
+        if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);
+        if (distrustTimerRef.current) clearTimeout(distrustTimerRef.current);
         var i = refreshListeners.indexOf(load);
         if (i >= 0) refreshListeners.splice(i, 1);
       };
@@ -2050,6 +2357,12 @@ function makeKandyWidget(host) {
           kandyCard(h, shown, celebration, {
             fx: petFx,
             onPet: triggerPet,
+            bonkFx: bonkFx,
+            distrustFx: distrustFx,
+            onBonk: triggerBonk,
+            onPointerDown: function (e) {
+              pointerTypeRef.current = (e && e.pointerType) || "mouse";
+            },
             // Hint presence follows the underlying mood (not the celebration
             // override) so the row doesn't pop in/out mid-celebration.
             hint: HEARTS_BY_MOOD[(data || EGG_PLACEHOLDER).mood || "content"] <= 4,
