@@ -43,8 +43,14 @@ const (
 	eventTurnCompleted    = "turn.completed"
 	eventAgentCompleted   = "agent.completed"
 	eventTaskStateChanged = "task.state_changed"
+	eventTaskUpdated      = "task.updated"
 
 	taskStateCompleted = "COMPLETED"
+
+	// maxAwardedTasks bounds the once-per-task completion ledger (a ring:
+	// oldest ids fall off). ~500 covers two months at the measured ~8.4
+	// archived tasks/active day.
+	maxAwardedTasks = 500
 )
 
 // ledger is the whole persisted gotchi: lifetime XP plus private counters.
@@ -60,6 +66,27 @@ type ledger struct {
 	Salt      uint32 `json:"salt"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+	// AwardedTasks is a bounded ring of task ids that already received
+	// completion XP — a task never awards twice, whether it completes,
+	// archives, or both. (In real production use tasks end at REVIEW and
+	// get archived; new_state=="COMPLETED" never fires there.)
+	AwardedTasks []string `json:"awarded_tasks,omitempty"`
+}
+
+func (l *ledger) hasAwardedTask(taskID string) bool {
+	for _, id := range l.AwardedTasks {
+		if id == taskID {
+			return true
+		}
+	}
+	return false
+}
+
+func (l *ledger) markTaskAwarded(taskID string) {
+	l.AwardedTasks = append(l.AwardedTasks, taskID)
+	if len(l.AwardedTasks) > maxAwardedTasks {
+		l.AwardedTasks = l.AwardedTasks[len(l.AwardedTasks)-maxAwardedTasks:]
+	}
 }
 
 // gotchiResponse is everything the UI is allowed to know. Archetype,
@@ -155,6 +182,10 @@ func (p *plugin) OnEvent(ctx context.Context, e *pluginsdk.Event) error {
 	if e == nil {
 		return nil
 	}
+	if taskID, done := taskCompletionFromEvent(e); done {
+		p.awardTaskCompletion(ctx, taskID)
+		return nil
+	}
 	delta, apply := xpForEvent(e)
 	if delta <= 0 {
 		return nil
@@ -168,8 +199,51 @@ func (p *plugin) OnEvent(ctx context.Context, e *pluginsdk.Event) error {
 	return nil
 }
 
-// xpForEvent maps a bus event to its XP award and counter bump. Unknown
-// subjects and malformed payloads award nothing.
+// taskCompletionFromEvent reports whether the event marks a task as
+// finished, covering both real-world endings:
+//   - task.state_changed with new_state == "COMPLETED" (workflows that end
+//     in a COMPLETED state), and
+//   - task.updated with archived_at set (the measured production flow:
+//     tasks end at REVIEW and are archived — COMPLETED never fires there).
+//
+// A task id is required so the once-per-task guard can hold across both
+// paths; malformed payloads award nothing.
+func taskCompletionFromEvent(e *pluginsdk.Event) (string, bool) {
+	taskID, _ := e.Payload["task_id"].(string)
+	if taskID == "" {
+		return "", false
+	}
+	switch e.EventType {
+	case eventTaskStateChanged:
+		newState, _ := e.Payload["new_state"].(string)
+		return taskID, newState == taskStateCompleted
+	case eventTaskUpdated:
+		archivedAt, _ := e.Payload["archived_at"].(string)
+		return taskID, archivedAt != ""
+	default:
+		return "", false
+	}
+}
+
+// awardTaskCompletion grants the big task XP exactly once per task id,
+// whether the task completed, archived, or both (retries and repeated
+// task.updated deliveries included).
+func (p *plugin) awardTaskCompletion(ctx context.Context, taskID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.loadLedger(ctx).hasAwardedTask(taskID) {
+		return
+	}
+	p.mutateLedger(ctx, func(l *ledger) {
+		l.XP += xpTaskCompleted
+		l.TasksDone++
+		l.markTaskAwarded(taskID)
+	})
+}
+
+// xpForEvent maps a per-activity bus event to its XP award and counter
+// bump. Unknown subjects award nothing (task completion is handled by
+// taskCompletionFromEvent above).
 func xpForEvent(e *pluginsdk.Event) (float64, func(*ledger)) {
 	switch e.EventType {
 	case eventMessageAdded:
@@ -178,12 +252,6 @@ func xpForEvent(e *pluginsdk.Event) (float64, func(*ledger)) {
 		return xpTurnCompleted, func(l *ledger) { l.Turns++ }
 	case eventAgentCompleted:
 		return xpAgentCompleted, func(l *ledger) { l.AgentRuns++ }
-	case eventTaskStateChanged:
-		newState, _ := e.Payload["new_state"].(string)
-		if newState != taskStateCompleted {
-			return 0, nil
-		}
-		return xpTaskCompleted, func(l *ledger) { l.TasksDone++ }
 	default:
 		return 0, nil
 	}

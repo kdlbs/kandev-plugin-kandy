@@ -30,12 +30,18 @@ import (
 )
 
 const (
-	levelK = 400.0
-	levelB = 1.32
+	// v0.4.0 retune against the user's MEASURED production pace (~129
+	// turns + ~8.4 archived tasks per active day, 18 active days/30 =>
+	// ~2,860 XP/active day, ~51.5k XP/month): level 2 still lands inside
+	// the first light day (147 XP), roughly a level per 1-2 days through
+	// month one, ~weekly cadence in the 60s-70s, ~monthly at 90+, and
+	// level 100 in ~2.75 years.
+	levelK = 2100.0
+	levelB = 1.07
 
 	// bandMax is the last level of the designed dull->awesome arc; beyond
 	// it the infinite prestige ladder (names, celestial scenes) continues.
-	bandMax = 40
+	bandMax = 100
 
 	numArchetypes = 10 // body silhouettes (per-lineage identity)
 	numFamilies   = 12 // palette families (per-lineage identity)
@@ -46,10 +52,11 @@ const (
 // proportioned — while carrying its palette and signature parts forward.
 const (
 	stageEgg      = 0 // level 1
-	stageHatch    = 1 // levels 2..7
-	stageJuvenile = 2 // levels 8..17
-	stageAdult    = 3 // levels 18..29
-	stageMajestic = 4 // levels 30+
+	stageHatch    = 1 // levels 2..11
+	stageJuvenile = 2 // levels 12..29
+	stageAdult    = 3 // levels 30..54
+	stageMajestic = 4 // levels 55..79
+	stageMythic   = 5 // levels 80+
 )
 
 // thresholdXP returns the lifetime XP needed to reach the given level.
@@ -174,44 +181,53 @@ func stageForLevel(level int) int {
 	switch {
 	case level <= 1:
 		return stageEgg
-	case level < 8:
+	case level < 12:
 		return stageHatch
-	case level < 18:
-		return stageJuvenile
 	case level < 30:
+		return stageJuvenile
+	case level < 55:
 		return stageAdult
-	default:
+	case level < 80:
 		return stageMajestic
+	default:
+		return stageMythic
 	}
 }
 
 // growthUnlocks lists, per additive element, the levels at which it appears
-// or upgrades. The union of all entries (plus the stage boundaries
-// 2/8/18/30) covers every level 2..40 with no gaps.
+// or upgrades — spread over the 1..100 band. Together with the stage
+// boundaries (2/12/30/55/80), the flags below, and the saturation ramp
+// (levels 2..50), the richness score gains at least every 2 levels across
+// the whole band (verified by the monotonic-awesomeness test).
 var growthUnlocks = map[string][]int{
-	"markings":   {4, 9, 14, 19, 26, 34},
-	"sparkles":   {17, 24, 32, 37, 40},
-	"tail":       {6, 12, 23},
-	"horns":      {7, 16, 28},
-	"wings":      {21, 27, 39},
-	"aura":       {31, 36},
-	"companions": {13, 22},
-	"crown":      {15, 38},
+	"markings":   {4, 9, 17, 23, 27, 34, 43, 53, 62, 72, 83, 93},
+	"sparkles":   {40, 47, 52, 59, 67, 75, 81, 88, 95, 98},
+	"tail":       {6, 20, 35, 57},
+	"horns":      {8, 26, 42, 66},
+	"wings":      {45, 54, 63, 86},
+	"aura":       {60, 69, 77},
+	"companions": {28, 49, 74},
+	"crown":      {25, 82},
+	"orbitstars": {64, 79, 90},
 }
 
 // growthFlags are one-shot unlocks (level at which the element appears).
+// starDiadem / lightPillars / constellation are the 85+ top-shelf prestige
+// pieces — endgame gear nobody sees in the lower band.
 var growthFlags = map[string]int{
-	"mouth":      3,
-	"blush":      5,
-	"held":       10,
-	"tufts":      11,
-	"flag":       20,
-	"glow":       25,
-	"gem":        29,
-	"halo":       30,
-	"orbitstars": 33,
-	"rays":       35,
-	"burst":      40,
+	"mouth":         3,
+	"blush":         5,
+	"tufts":         7,
+	"held":          15,
+	"flag":          22,
+	"glow":          32,
+	"gem":           38,
+	"halo":          50,
+	"rays":          70,
+	"stardiadem":    85,
+	"lightpillars":  91,
+	"constellation": 97,
+	"burst":         100,
 }
 
 func countUnlocked(levels []int, level int) int {
@@ -242,7 +258,7 @@ func richnessScore(level int) int {
 	}
 	// Saturation/detail ramp: colors desaturate at hatch and grow vivid.
 	if level > 1 {
-		score += minInt(level, 25)
+		score += minInt(level, 50)
 	}
 	return score
 }
@@ -283,19 +299,37 @@ var epithetBands = [][]string{
 	{"Resplendent", "Sovereign", "Transcendent", "Celestial", "Astral", "Empyrean", "Eternal", "Supreme"},
 }
 
+// Band boundaries spread across the 1..100 arc.
+var epithetBandStarts = []int{2, 15, 35, 55, 80}
+
 func epithetBand(level int) int {
-	switch {
-	case level < 8:
-		return 0
-	case level < 15:
-		return 1
-	case level < 25:
-		return 2
-	case level < 33:
-		return 3
-	default:
-		return 4
+	band := 0
+	for i, start := range epithetBandStarts {
+		if level >= start {
+			band = i
+		}
 	}
+	return band
+}
+
+// epithetFor picks the level's epithet with deterministic adjacent-level
+// collision avoidance: within a band, a level that would repeat the
+// previous level's word skips to the next one. Computed by walking from
+// the band's first level so the whole chain stays deterministic.
+func epithetFor(salt uint32, level int) string {
+	band := epithetBand(level)
+	words := epithetBands[band]
+	prev := ""
+	cur := ""
+	for l := epithetBandStarts[band]; l <= level; l++ {
+		idx := seededIndex(appearanceSeed(salt, l), 1, len(words))
+		cur = words[idx]
+		if cur == prev {
+			cur = words[(idx+1)%len(words)]
+		}
+		prev = cur
+	}
+	return cur
 }
 
 var mythicLadder = []string{"Cosmic", "Elder", "Mythic", "Eternal", "Transcendent"}
@@ -307,9 +341,7 @@ func stageName(salt uint32, level int) string {
 	if level <= 1 {
 		return "Egg"
 	}
-	seed := appearanceSeed(salt, level)
-	band := epithetBands[epithetBand(level)]
-	epithet := band[seededIndex(seed, 1, len(band))]
+	epithet := epithetFor(salt, level)
 	species := speciesByArchetype[archetypeForLineage(salt)]
 	if level <= bandMax {
 		return epithet + " " + species

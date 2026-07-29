@@ -30,12 +30,25 @@ func genLevels(w io.Writer, args []string) error {
 	fs := flag.NewFlagSet("genlevels", flag.ContinueOnError)
 	salt := fs.Uint("salt", 20260728, "lineage salt (fixed for reproducible posters)")
 	levelsCSV := fs.String("levels", "1,2,3,4,5,10,20,50,100", "comma-separated levels")
+	xpsCSV := fs.String("xps", "", "comma-separated lifetime XP values (levels derived via the real curve; overrides -levels)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
+	levels := strings.Split(*levelsCSV, ",")
+	if *xpsCSV != "" {
+		levels = nil
+		for _, part := range strings.Split(*xpsCSV, ",") {
+			xp, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
+			if err != nil || xp < 0 {
+				return fmt.Errorf("genlevels: bad xp %q", part)
+			}
+			levels = append(levels, strconv.Itoa(levelForXP(xp)))
+		}
+	}
+
 	var out []levelInfo
-	for _, part := range strings.Split(*levelsCSV, ",") {
+	for _, part := range levels {
 		level, err := strconv.Atoi(strings.TrimSpace(part))
 		if err != nil || level < 1 {
 			return fmt.Errorf("genlevels: bad level %q", part)

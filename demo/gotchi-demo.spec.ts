@@ -11,7 +11,7 @@ import { expect, test } from "../fixtures/test-base";
 import { SessionPage } from "../pages/session-page";
 
 const PLUGIN_ID = "kandev-plugin-gotchi";
-const PACKAGE_PATH = "/home/jcfs/kandev-plugins/kandev-plugin-gotchi/kandev-plugin-gotchi-0.3.0.tar.gz";
+const PACKAGE_PATH = "/home/jcfs/kandev-plugins/kandev-plugin-gotchi/kandev-plugin-gotchi-0.4.0.tar.gz";
 const SHOT_DIR = "/tmp/kandev-gotchi-demo/screenshots";
 
 type GotchiState = {

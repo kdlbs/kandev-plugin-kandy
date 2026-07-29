@@ -63,30 +63,34 @@ function countUnlocked(levels, level) {
 
 function growthForLevel(level) {
   return {
-    stage: level <= 1 ? 0 : level < 8 ? 1 : level < 18 ? 2 : level < 30 ? 3 : 4,
-    markings: countUnlocked([4, 9, 14, 19, 26, 34], level),
-    sparkles: countUnlocked([17, 24, 32, 37, 40], level),
-    tail: countUnlocked([6, 12, 23], level),
-    horns: countUnlocked([7, 16, 28], level),
-    wings: countUnlocked([21, 27, 39], level),
-    aura: countUnlocked([31, 36], level),
-    companions: countUnlocked([13, 22], level),
-    crown: countUnlocked([15, 38], level),
+    stage:
+      level <= 1 ? 0 : level < 12 ? 1 : level < 30 ? 2 : level < 55 ? 3 : level < 80 ? 4 : 5,
+    markings: countUnlocked([4, 9, 17, 23, 27, 34, 43, 53, 62, 72, 83, 93], level),
+    sparkles: countUnlocked([40, 47, 52, 59, 67, 75, 81, 88, 95, 98], level),
+    tail: countUnlocked([6, 20, 35, 57], level),
+    horns: countUnlocked([8, 26, 42, 66], level),
+    wings: countUnlocked([45, 54, 63, 86], level),
+    aura: countUnlocked([60, 69, 77], level),
+    companions: countUnlocked([28, 49, 74], level),
+    crown: countUnlocked([25, 82], level),
+    orbitStars: countUnlocked([64, 79, 90], level),
     mouth: level >= 3,
     blush: level >= 5,
-    held: level >= 10,
-    tufts: level >= 11,
-    flag: level >= 20,
-    glow: level >= 25,
-    gem: level >= 29,
-    halo: level >= 30,
-    orbitStars: level >= 33,
-    rays: level >= 35,
-    burst: level >= 40,
+    tufts: level >= 7,
+    held: level >= 15,
+    flag: level >= 22,
+    glow: level >= 32,
+    gem: level >= 38,
+    halo: level >= 50,
+    rays: level >= 70,
+    starDiadem: level >= 85,
+    lightPillars: level >= 91,
+    constellation: level >= 97,
+    burst: level >= 100,
   };
 }
 
-var STAGE_SCALE = [1, 0.55, 0.74, 0.9, 1.0];
+var STAGE_SCALE = [1, 0.55, 0.68, 0.8, 0.9, 1.0];
 
 // lineageStyle — the per-install identity picks, fixed for a lifetime.
 function lineageStyle(seed) {
@@ -106,8 +110,8 @@ function lineageStyle(seed) {
 // Colors ramp dull -> vivid with level; the hue (family) never changes.
 function lineageColors(family, level, sty) {
   var hue = FAMILY_HUES[((family % 12) + 12) % 12] + sty.hueJitter;
-  var sat = Math.min(18 + level * 2, 74);
-  var light = 70 - Math.min(level, 25) * 0.5;
+  var sat = Math.min(18 + level * 1.15, 74);
+  var light = 70 - Math.min(level, 50) * 0.25;
   return {
     hue: hue,
     body: hsl(hue, sat, light * 0.86),
@@ -658,6 +662,16 @@ function prestigeInBody(h, C, top, g) {
   if (g.halo) {
     out.push(h("ellipse", { key: "halo", cx: top.x, cy: top.y - (g.crown >= 2 ? 19 : 15), rx: 11, ry: 3.2, fill: "none", stroke: "#ffe9a3", strokeWidth: 2, opacity: 0.95 }));
   }
+  if (g.starDiadem) {
+    // Endgame prestige: an arc of floating stars above the halo.
+    var dy = top.y - (g.crown >= 2 ? 27 : 23);
+    for (var dIdx = 0; dIdx < 5; dIdx++) {
+      var dAng = Math.PI * (0.2 + (0.6 * dIdx) / 4);
+      out.push(
+        sparkleShape(h, "diadem" + dIdx, top.x - Math.cos(dAng) * 14, dy - Math.sin(dAng) * 6, dIdx === 2 ? 2.6 : 1.8, "#ffffff", 0.95),
+      );
+    }
+  }
   return out;
 }
 
@@ -714,10 +728,41 @@ function effectParts(h, lineage, C, g, level) {
       sparkleShape(h, "sp" + sIdx, 50 + Math.cos(ang2) * dist, 56 + Math.sin(ang2) * dist * 0.8, r(1.6, 3.2), sIdx % 3 === 0 ? "#ffffff" : C.accent, r(0.55, 0.95)),
     );
   }
-  if (g.orbitStars) {
-    for (var oIdx = 0; oIdx < 3; oIdx++) {
-      var oAng = (oIdx * 2 * Math.PI) / 3 + 0.6;
+  if (g.orbitStars > 0) {
+    var orbitCount = 2 + g.orbitStars; // ring grows: 3, 4, 5 stars
+    for (var oIdx = 0; oIdx < orbitCount; oIdx++) {
+      var oAng = (oIdx * 2 * Math.PI) / orbitCount + 0.6;
       out.push(sparkleShape(h, "orbit" + oIdx, 50 + Math.cos(oAng) * 43, 58 + Math.sin(oAng) * 38, 2.6, "#ffe9a3", 0.9));
+    }
+  }
+  if (g.lightPillars) {
+    // Endgame prestige: vertical light pillars rising behind the being.
+    for (var pIdx = 0; pIdx < 3; pIdx++) {
+      out.push(
+        h("rect", {
+          key: "pillar" + pIdx,
+          x: 28 + pIdx * 20,
+          y: 4,
+          width: 5,
+          height: 84,
+          rx: 2.5,
+          fill: "#ffe9a3",
+          opacity: pIdx === 1 ? 0.16 : 0.1,
+        }),
+      );
+    }
+  }
+  if (g.constellation) {
+    // Endgame prestige: a personal constellation, linked stars overhead.
+    var cPts = [];
+    for (var cIdx = 0; cIdx < 5; cIdx++) {
+      var cr = makeRand(lineage, 90 + cIdx);
+      cPts.push([16 + cIdx * 16 + cr(-4, 4), 8 + cr(0, 14)]);
+    }
+    var lineD = "M" + cPts.map(function (pt) { return pt[0] + " " + pt[1]; }).join(" L");
+    out.push(h("path", { key: "constline", d: lineD, stroke: "#ffe9a3", strokeWidth: 0.8, fill: "none", opacity: 0.55 }));
+    for (var cj = 0; cj < cPts.length; cj++) {
+      out.push(sparkleShape(h, "conststar" + cj, cPts[cj][0], cPts[cj][1], 1.8, "#ffffff", 0.9));
     }
   }
   return out;
@@ -839,17 +884,18 @@ function creatureSvg(h, data, size, extraClass, isStatic) {
 
 // ---------------------------------------------------------------------------
 // Scenes — one biome per lineage, maturing with level:
-// phase 0 barren (lv1-3), 1 sparse (4-9), 2 lively (10-17), 3 lush (18-29),
-// 4 celestial (30+). Layout is stable within a phase; density grows with
-// level; past Lv40 star density keeps rising.
+// phase 0 barren (lv1-5), 1 sparse (6-17), 2 lively (18-34), 3 lush
+// (35-55), 4 celestial (56-79), 5 transcendent (80+). Layout is stable
+// within a phase; density grows with level; past Lv100 stars keep rising.
 // ---------------------------------------------------------------------------
 
 function scenePhase(level) {
-  if (level <= 3) return 0;
-  if (level <= 9) return 1;
-  if (level <= 17) return 2;
-  if (level <= 29) return 3;
-  return 4;
+  if (level <= 5) return 0;
+  if (level <= 17) return 1;
+  if (level <= 34) return 2;
+  if (level <= 55) return 3;
+  if (level <= 79) return 4;
+  return 5;
 }
 
 // h0 is bound at initialize time so scene helpers can stay top-level.
@@ -1056,6 +1102,7 @@ var BIOME_BGS = [
     "linear-gradient(to bottom, #a5ddf2 0%, #b7e39a 62%, #7fbf6a 100%)",
     "linear-gradient(to bottom, #7cc9a0 0%, #2f8f5e 60%, #14532d 100%)",
     "linear-gradient(to bottom, #0e2b38 0%, #14532d 60%, #052e16 100%)",
+    "linear-gradient(to bottom, #1a0f3d 0%, #0f4f3a 55%, #020d08 100%)",
   ],
   [
     "linear-gradient(to bottom, #d8d3c4 0%, #c2baa6 68%, #a89f88 100%)",
@@ -1063,6 +1110,7 @@ var BIOME_BGS = [
     "linear-gradient(to bottom, #a8d8ea 0%, #5ca8d8 55%, #2f6f9f 100%)",
     "linear-gradient(to bottom, #4fa3c7 0%, #23648f 60%, #123c5c 100%)",
     "linear-gradient(to bottom, #0b2c4a 0%, #0e4a6e 60%, #04121f 100%)",
+    "linear-gradient(to bottom, #150a3d 0%, #0e4a6e 55%, #02060f 100%)",
   ],
   [
     "linear-gradient(to bottom, #d6d2ca 0%, #b9b4ab 68%, #8f8a80 100%)",
@@ -1070,6 +1118,7 @@ var BIOME_BGS = [
     "linear-gradient(to bottom, #cdd7e8 0%, #8fa3c4 60%, #5c6f96 100%)",
     "linear-gradient(to bottom, #b8c8ea 0%, #6d83b8 60%, #3a4c7c 100%)",
     "linear-gradient(to bottom, #0a1a33 0%, #16305e 60%, #050d1f 100%)",
+    "linear-gradient(to bottom, #1b0a3d 0%, #1c3a72 55%, #03040c 100%)",
   ],
   [
     "linear-gradient(to bottom, #d8cfc4 0%, #bfae9c 68%, #98826c 100%)",
@@ -1077,6 +1126,7 @@ var BIOME_BGS = [
     "linear-gradient(to bottom, #f0b878 0%, #cc7a4a 60%, #8a4a2e 100%)",
     "linear-gradient(to bottom, #3a1414 0%, #6e2b1c 60%, #251010 100%)",
     "linear-gradient(to bottom, #1c0f2e 0%, #4a1c3f 60%, #12060f 100%)",
+    "linear-gradient(to bottom, #0f0a3d 0%, #571f4a 55%, #070310 100%)",
   ],
 ];
 
@@ -1116,9 +1166,15 @@ function sceneFor(biome, level, seed) {
   var phase = scenePhase(level);
   var b = ((biome % BIOME_BGS.length) + BIOME_BGS.length) % BIOME_BGS.length;
   var rand = makeRand((seed ^ (phase * 0x9e3779b9)) >>> 0, 11);
+  // Phase 5 ("transcendent", 80+) is the celestial scene drifting further
+  // out: same biome props with a golden star field layered on top.
+  var props = biomeProps(b, Math.min(phase, 4), rand, level);
+  if (phase === 5) {
+    props = props.concat(stars(rand, Math.min(10 + (level - 79), 40), "#ffe9a3"));
+  }
   return {
     bg: BIOME_BGS[b][phase],
-    props: biomeProps(b, phase, rand, level),
+    props: props,
   };
 }
 

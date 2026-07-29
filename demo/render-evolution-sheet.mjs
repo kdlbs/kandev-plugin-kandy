@@ -35,6 +35,16 @@ const COMPARE_SALTS = [20260728, 424242, 90210, 777001]; // comparison rows
 const heroArg = process.argv.indexOf("--hero-level");
 const HERO_LEVEL = heroArg >= 0 ? Number.parseInt(process.argv[heroArg + 1], 10) : null;
 const COMPARE = process.argv.includes("--compare");
+const FIRST_MONTH = process.argv.includes("--first-month");
+
+// Measured production pace: ~2,860 XP/active day, 18 active days / 30
+// calendar days. The strip shows the level reached after day 1..30.
+const XP_PER_ACTIVE_DAY = 2860;
+const ACTIVE_DAYS_RATIO = 18 / 30;
+const FIRST_MONTH_DAYS = [1, 3, 7, 14, 21, 30];
+function xpAtDay(day) {
+  return Math.round(XP_PER_ACTIVE_DAY * Math.max(1, Math.round(day * ACTIVE_DAYS_RATIO)));
+}
 
 const bin = path.join(REPO, "bin", "kandev-plugin-gotchi");
 if (!fs.existsSync(bin)) {
@@ -48,11 +58,21 @@ function genLevels(salt, levels) {
   );
 }
 
+function genLevelsForXPs(salt, xps) {
+  return JSON.parse(
+    execFileSync(bin, ["genlevels", "-salt", String(salt), "-xps", xps.join(",")]).toString(),
+  );
+}
+
 let LEVELS = [];
 let ROWS = null; // compare mode: [{salt, infos}]
+let DAY_LABELS = null; // first-month mode: per-cell "Day N" labels
 if (COMPARE) {
   const cols = [1, 10, 20, 30, 40];
   ROWS = COMPARE_SALTS.map((salt) => ({ salt, infos: genLevels(salt, cols) }));
+} else if (FIRST_MONTH) {
+  LEVELS = genLevelsForXPs(SALT, FIRST_MONTH_DAYS.map(xpAtDay));
+  DAY_LABELS = FIRST_MONTH_DAYS.map((d) => "Day " + d);
 } else if (HERO_LEVEL != null) {
   if (!Number.isInteger(HERO_LEVEL) || HERO_LEVEL < 1) {
     console.error("--hero-level must be a positive integer");
@@ -60,8 +80,10 @@ if (COMPARE) {
   }
   LEVELS = genLevels(SALT, [HERO_LEVEL]);
 } else {
+  // v0.4 band is 1..100: every level through 10, then every 5.
   const all = [];
-  for (let l = 1; l <= 40; l++) all.push(l);
+  for (let l = 1; l <= 10; l++) all.push(l);
+  for (let l = 15; l <= 100; l += 5) all.push(l);
   LEVELS = genLevels(SALT, all);
 }
 
@@ -71,6 +93,7 @@ const bundleSrc = fs.readFileSync(path.join(REPO, "ui", "bundle.js"), "utf8");
 const harnessScript = `
 var LEVELS = ${JSON.stringify(LEVELS)};
 var ROWS = ${JSON.stringify(ROWS)};
+var DAY_LABELS = ${JSON.stringify(DAY_LABELS)};
 var R = window.__plugins["kandev-plugin-gotchi"].__render;
 
 var SVG_TAGS = { svg: 1, g: 1, circle: 1, ellipse: 1, path: 1, rect: 1, line: 1, polygon: 1, text: 1 };
@@ -138,7 +161,7 @@ function makeCell(info, sceneW, sceneH, creatureSize, hero) {
   var label = domH(
     "div",
     { className: "label" + (hero ? " hero-label" : "") },
-    domH("span", { className: "lv" }, "Lv " + info.level),
+    domH("span", { className: "lv" }, (info.dayLabel ? info.dayLabel + " — " : "") + "Lv " + info.level),
     domH("span", { className: "name" }, info.stage_name),
   );
   return domH(
@@ -169,7 +192,8 @@ if (ROWS) {
   });
 } else {
   var grid = document.getElementById("grid");
-  LEVELS.forEach(function (info) {
+  LEVELS.forEach(function (info, i) {
+    if (DAY_LABELS) info.dayLabel = DAY_LABELS[i];
     grid.appendChild(makeCell(info, 176, 108, 84, false));
   });
   var last = LEVELS[LEVELS.length - 1];
@@ -180,10 +204,14 @@ document.title = "kandev gotchi evolution sheet";
 
 const title = COMPARE
   ? "Kandev Gotchi — four lineages, growing up"
-  : `Kandev Gotchi — evolution, Lv ${LEVELS[0] ? LEVELS[0].level : 1} → ${LEVELS.length ? LEVELS[LEVELS.length - 1].level : 40}`;
+  : FIRST_MONTH
+    ? "Kandev Gotchi — your first month, at your real pace"
+    : `Kandev Gotchi — evolution, Lv ${LEVELS[0] ? LEVELS[0].level : 1} → ${LEVELS.length ? LEVELS[LEVELS.length - 1].level : 100}`;
 const subtitle = COMPARE
   ? "Different seeds are different beings; each one grows coherently. Rendered by the shipped plugin code."
-  : `One lineage (salt ${SALT}), the same being at every level — it only ever grows. Rendered by the shipped plugin code.`;
+  : FIRST_MONTH
+    ? `Measured pace: ~2,860 XP per active day, 18 active days / 30. Salt ${SALT}, rendered by the shipped plugin code.`
+    : `One lineage (salt ${SALT}), the same being at every level — it only ever grows. Rendered by the shipped plugin code.`;
 
 const html = `<!DOCTYPE html>
 <html>
@@ -256,7 +284,11 @@ try {
 
   if (COMPARE) {
     await page.locator("#sheet").screenshot({
-      path: path.join(OUT_DIR, "lineages-comparison-v3.png"),
+      path: path.join(OUT_DIR, "lineages-comparison-v4.png"),
+    });
+  } else if (FIRST_MONTH) {
+    await page.locator("#sheet").screenshot({
+      path: path.join(OUT_DIR, "first-month-v4.png"),
     });
   } else if (HERO_LEVEL != null) {
     await page.locator("#hero-wrap").screenshot({
@@ -264,10 +296,10 @@ try {
     });
   } else {
     await page.locator("#sheet").screenshot({
-      path: path.join(OUT_DIR, "evolution-sheet-v3-1-40.png"),
+      path: path.join(OUT_DIR, "evolution-sheet-v4-1-100.png"),
     });
     await page.locator("#hero-wrap").screenshot({
-      path: path.join(OUT_DIR, "evolution-hero-lv40-v3.png"),
+      path: path.join(OUT_DIR, "evolution-hero-lv100-v4.png"),
     });
   }
   console.log("wrote evolution renders to " + OUT_DIR);

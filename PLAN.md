@@ -44,21 +44,25 @@ progress     = (xp - threshold(L)) / (threshold(L+1) - threshold(L)) * 100
 K = 400, B = 1.32                          // v0.2.0 retune
 ```
 
-- v0.1.0 shipped K=200, B=1.75; reality check showed a heavy user's whole
-  first year fit in ~level 17 — the real game lives in levels 1..~40, so
-  v0.2.0 flattens the base: level 2 at 128 XP (first day of light use, the
-  hook), then ~1.32x per level forever.
-- Expected levels (heavy ≈ 6,600 XP/day: ~20 finished tasks + turns/msgs/
-  completions; solo dev ≈ 800 XP/day):
+- History: v0.1 K=200/B=1.75 (year one ≈ Lv17); v0.2 K=400/B=1.32 with a
+  40-level band. A simulation against the user's REAL production database
+  then showed (a) tasks never reach COMPLETED — the actual workflow ends at
+  REVIEW and tasks get ARCHIVED, so task XP never fired (fixed in v0.4:
+  archive awards it, once per task), and (b) at the measured pace (18
+  active days/30, ~129 turns + ~8.4 archived tasks + ~2 msgs/turn per
+  active day => ~2,860 XP/active day, ~51.5k/month) Lv40 was ~33 years out.
+- v0.4.0: **K=2100, B=1.07, band 1..100.** Expected levels at the measured
+  pace (~51.5k XP/month):
 
-  | Usage | 1 month | 1 year |
-  |---|---|---|
-  | Solo dev (~800 XP/day) | ~Lv 15 | ~Lv 24 |
-  | Heavy multi-agent (~6,600 XP/day) | ~Lv 23 | ~Lv 32 |
+  | After | 1 month | 6 months | 12 months | 30 months | ~33 months |
+  |---|---|---|---|---|---|
+  | Level | ~48 | ~74 | ~85 | ~98 | **100** |
 
-  Level 40 ≈ 20M XP (~8 heavy years); beyond it only the infinite prestige
-  ladder continues. Geometric growth stretches forever; float64 log stays
-  finite and monotonic for any realistic xp, so there is no cap.
+  First month moves a level every 1-2 days; cadence stretches to ~weekly
+  in the 60s-70s and ~monthly past 90; "max" (Lv100) lands at ~2.75 years.
+  Beyond it only the infinite prestige ladder continues. Geometric growth
+  stretches forever; float64 log stays finite and monotonic for any
+  realistic xp, so there is no cap.
 - Unit-tested properties: monotonic in xp, never NaN/Inf, `level(0) == 1`,
   progress always in `[0, 100)`, thresholds strictly increasing, and the
   month/year expectations above.

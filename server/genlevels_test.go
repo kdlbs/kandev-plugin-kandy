@@ -31,4 +31,16 @@ func TestGenLevels_RejectsJunk(t *testing.T) {
 	var buf bytes.Buffer
 	require.Error(t, genLevels(&buf, []string{"-levels", "1,zero"}))
 	require.Error(t, genLevels(&buf, []string{"-levels", "0"}))
+	require.Error(t, genLevels(&buf, []string{"-xps", "abc"}))
+}
+
+func TestGenLevels_XPsUseRealCurve(t *testing.T) {
+	var buf bytes.Buffer
+	require.NoError(t, genLevels(&buf, []string{"-salt", "7", "-xps", "0,2860,51480"}))
+	var out []levelInfo
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+	require.Len(t, out, 3)
+	require.Equal(t, 1, out[0].Level)
+	require.Equal(t, levelForXP(2860), out[1].Level)
+	require.Equal(t, levelForXP(51480), out[2].Level)
 }

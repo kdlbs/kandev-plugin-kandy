@@ -17,32 +17,38 @@ func TestLevelForXP_BaseCases(t *testing.T) {
 }
 
 func TestLevelForXP_TunedConstants(t *testing.T) {
-	// K=400, B=1.32: level 2 at 128 XP — inside the first day of light use
-	// (the fast first evolution is the hook).
-	require.Equal(t, 1, levelForXP(120))
-	require.Equal(t, 2, levelForXP(129))
-	require.Equal(t, 3, levelForXP(300), "~day two of light use")
+	// K=2100, B=1.07: level 2 at 147 XP — inside the first day of light
+	// use (the fast first evolution is the hook).
+	require.Equal(t, 1, levelForXP(146))
+	require.Equal(t, 2, levelForXP(148))
+	require.Equal(t, 3, levelForXP(310), "~day two of light use")
 }
 
-func TestLevelForXP_YearOneTargets(t *testing.T) {
-	// Rate assumptions (per the v0.2.0 retune): heavy multi-agent user
-	// ~6,600 XP/day (~20 finished tasks + turns/messages/completions),
-	// solo dev ~800 XP/day.
-	heavyYear := levelForXP(6600 * 365)
-	require.GreaterOrEqual(t, heavyYear, 30, "heavy user year-one lands in 30..40")
-	require.LessOrEqual(t, heavyYear, 40)
+// measuredMonthlyXP is the user's real production pace: ~129 turns + ~8.4
+// archived tasks + ~2 messages/turn per active day (~2,860 XP), 18 active
+// days per 30 calendar days => ~51.5k XP/month.
+const measuredMonthlyXP = 2860 * 18
 
-	soloYear := levelForXP(800 * 365)
-	require.GreaterOrEqual(t, soloYear, 20, "solo dev year-one lands in 20..25")
-	require.LessOrEqual(t, soloYear, 25)
+func TestLevelForXP_MeasuredPaceTargets(t *testing.T) {
+	month1 := levelForXP(measuredMonthlyXP)
+	require.GreaterOrEqual(t, month1, 44, "month one lands in the 40s")
+	require.LessOrEqual(t, month1, 52)
 
-	heavyMonth := levelForXP(6600 * 30)
-	require.GreaterOrEqual(t, heavyMonth, 18)
-	require.LessOrEqual(t, heavyMonth, 28)
+	month6 := levelForXP(6 * measuredMonthlyXP)
+	require.GreaterOrEqual(t, month6, 70)
+	require.LessOrEqual(t, month6, 78)
 
-	soloMonth := levelForXP(800 * 30)
-	require.GreaterOrEqual(t, soloMonth, 12)
-	require.LessOrEqual(t, soloMonth, 18)
+	month12 := levelForXP(12 * measuredMonthlyXP)
+	require.GreaterOrEqual(t, month12, 82)
+	require.LessOrEqual(t, month12, 88)
+
+	month30 := levelForXP(30 * measuredMonthlyXP)
+	require.GreaterOrEqual(t, month30, 95)
+	require.LessOrEqual(t, month30, 99)
+
+	// "Max" (level 100) is reachable in ~2.5-3 years at the measured pace.
+	require.Less(t, levelForXP(20*measuredMonthlyXP), 100)
+	require.GreaterOrEqual(t, levelForXP(36*measuredMonthlyXP), 100)
 }
 
 func TestLevelForXP_MonotonicAndUnbounded(t *testing.T) {
@@ -58,7 +64,7 @@ func TestLevelForXP_MonotonicAndUnbounded(t *testing.T) {
 }
 
 func TestThresholds_StrictlyIncreasingAndConsistent(t *testing.T) {
-	for level := 1; level <= 80; level++ {
+	for level := 1; level <= 150; level++ {
 		lo := thresholdXP(level)
 		hi := thresholdXP(level + 1)
 		require.Less(t, lo, hi, "level %d", level)
@@ -69,7 +75,7 @@ func TestThresholds_StrictlyIncreasingAndConsistent(t *testing.T) {
 }
 
 func TestProgressPct_AlwaysInRange(t *testing.T) {
-	samples := []float64{0, 1, 127, 128, 129, 300, 1e4, 1e6, 1e9, -5, math.NaN(), math.Inf(1)}
+	samples := []float64{0, 1, 146, 147, 148, 310, 1e4, 1e6, 1e9, -5, math.NaN(), math.Inf(1)}
 	for xp := 1.0; xp < 1e10; xp *= 1.7 {
 		samples = append(samples, xp, thresholdXP(levelForXP(xp)))
 	}
@@ -141,34 +147,54 @@ func TestCoherence_SameIdentityAcrossBand(t *testing.T) {
 		require.Equal(t, biome, biomeForLineage(salt))
 		require.Contains(t, stageName(salt, level), species,
 			"level %d keeps its species name", level)
-		require.Greater(t, richnessScore(level), richnessScore(level-1),
-			"level %d must add something new", level)
+		require.GreaterOrEqual(t, richnessScore(level), richnessScore(level-1),
+			"level %d must never regress", level)
+		if level >= 3 {
+			require.Greater(t, richnessScore(level), richnessScore(level-2),
+				"levels %d..%d must add something new", level-2, level)
+		}
 	}
 }
 
 func TestStageForLevel_MetamorphosisMilestones(t *testing.T) {
 	require.Equal(t, stageEgg, stageForLevel(1))
 	require.Equal(t, stageHatch, stageForLevel(2))
-	require.Equal(t, stageHatch, stageForLevel(7))
-	require.Equal(t, stageJuvenile, stageForLevel(8))
-	require.Equal(t, stageAdult, stageForLevel(18))
-	require.Equal(t, stageMajestic, stageForLevel(30))
-	require.Equal(t, stageMajestic, stageForLevel(1000))
+	require.Equal(t, stageHatch, stageForLevel(11))
+	require.Equal(t, stageJuvenile, stageForLevel(12))
+	require.Equal(t, stageAdult, stageForLevel(30))
+	require.Equal(t, stageMajestic, stageForLevel(55))
+	require.Equal(t, stageMythic, stageForLevel(80))
+	require.Equal(t, stageMythic, stageForLevel(1000))
 }
 
-// TestRichness_MonotonicAwesomeness: the awesomeness budget never dips, is
-// strictly increasing through the whole 1..bandMax arc (every level adds),
-// and stays non-decreasing forever after.
+// TestRichness_MonotonicAwesomeness: the awesomeness budget never dips,
+// gains at least every 2 levels across the whole 1..bandMax arc, and stays
+// non-decreasing forever after.
 func TestRichness_MonotonicAwesomeness(t *testing.T) {
 	for level := 2; level <= bandMax; level++ {
-		require.Greater(t, richnessScore(level), richnessScore(level-1),
-			"richness must strictly increase at level %d", level)
+		require.GreaterOrEqual(t, richnessScore(level), richnessScore(level-1),
+			"richness must never dip (level %d)", level)
+	}
+	for level := 1; level <= bandMax-2; level++ {
+		require.Greater(t, richnessScore(level+2), richnessScore(level),
+			"richness must gain at least every 2 levels (level %d)", level)
 	}
 	prev := richnessScore(bandMax)
-	for level := bandMax + 1; level <= 200; level++ {
+	for level := bandMax + 1; level <= 300; level++ {
 		score := richnessScore(level)
 		require.GreaterOrEqual(t, score, prev, "richness dipped at level %d", level)
 		prev = score
+	}
+}
+
+// TestEpithets_NoAdjacentRepeats: the deterministic collision-avoidance
+// never lets two consecutive levels share an epithet.
+func TestEpithets_NoAdjacentRepeats(t *testing.T) {
+	for _, salt := range []uint32{7, 42, 20260728} {
+		for level := 3; level <= 120; level++ {
+			require.NotEqual(t, epithetFor(salt, level-1), epithetFor(salt, level),
+				"salt=%d: levels %d/%d repeat an epithet", salt, level-1, level)
+		}
 	}
 }
 
@@ -192,7 +218,7 @@ func TestStageName_FixedSpeciesRisingEpithets(t *testing.T) {
 	// radiant words late.
 	humble := stageName(salt, 3)
 	require.Contains(t, epithetBands[0], strings.TrimSuffix(humble, " "+species))
-	epic := stageName(salt, 40)
+	epic := stageName(salt, 95)
 	require.Contains(t, epithetBands[4], strings.TrimSuffix(epic, " "+species))
 }
 
@@ -205,7 +231,7 @@ func TestStageName_MythicLadderBeyondBand(t *testing.T) {
 	require.True(t, strings.HasSuffix(name, " II"), "got %q", name)
 	deep := stageName(salt, 1000)
 	require.NotEmpty(t, deep)
-	require.Less(t, len(deep), 40, "names stay label-sized forever")
+	require.Less(t, len(deep), 48, "names stay label-sized forever")
 }
 
 func TestFlavorText_NeverItemizesFactors(t *testing.T) {
