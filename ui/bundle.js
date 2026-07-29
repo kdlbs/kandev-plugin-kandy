@@ -1287,7 +1287,11 @@ var SHIPLING_CSS =
   "@keyframes kandev-shipling-hop{0%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}60%{transform:translateY(0)}80%{transform:translateY(-2px)}}" +
   "@keyframes kandev-shipling-flash{0%{opacity:0;transform:scale(0.4)}35%{opacity:1;transform:scale(1.15)}100%{opacity:0;transform:scale(1.4)}}" +
   "@keyframes kandev-shipling-pulse{0%{box-shadow:0 0 0 0 rgba(255,209,102,0.9)}100%{box-shadow:0 0 0 9px rgba(255,209,102,0)}}" +
-  "@keyframes kandev-shipling-cardhop{0%,100%{transform:translate(-50%,0)}18%{transform:translate(-50%,-9px)}36%{transform:translate(-50%,0)}52%{transform:translate(-50%,-6px)}68%{transform:translate(-50%,0)}84%{transform:translate(-50%,-3px)}}" +
+  // cardhop animates translateY ONLY. It must never carry a positional
+  // translate: a transform animation REPLACES the element's base transform
+  // for its duration, so any animated class has to live on a wrapper with
+  // no layout transform (the outer positioning div owns translateX(-50%)).
+  "@keyframes kandev-shipling-cardhop{0%,100%{transform:translateY(0)}18%{transform:translateY(-9px)}36%{transform:translateY(0)}52%{transform:translateY(-6px)}68%{transform:translateY(0)}84%{transform:translateY(-3px)}}" +
   "@keyframes kandev-shipling-burstpop{0%{opacity:0;transform:scale(0.3)}30%{opacity:1;transform:scale(1.2)}100%{opacity:0;transform:scale(1.6) translateY(-9px)}}" +
   "@keyframes kandev-shipling-namehl{0%,100%{background:transparent}30%{background:rgba(255,209,102,0.5)}}" +
   "@keyframes kandev-shipling-heartfloat{0%{opacity:0;transform:translateY(4px) scale(0.6)}25%{opacity:1;transform:translateY(-6px) scale(1.05)}100%{opacity:0;transform:translateY(-26px) scale(1)}}" +
@@ -1379,7 +1383,9 @@ function heartsRow(h, mood) {
 }
 
 // floatingHearts — the petting reaction: hearts drifting up from the being.
-function floatingHearts(h) {
+// seq keys the overlay so an in-window repeat click remounts it and the
+// heart animation replays.
+function floatingHearts(h, seq) {
   var spots = [
     [44, 46, 0],
     [55, 40, 120],
@@ -1388,7 +1394,7 @@ function floatingHearts(h) {
   ];
   return h(
     "div",
-    { key: "pethearts", style: { position: "absolute", inset: 0, pointerEvents: "none" } },
+    { key: "pethearts" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } },
     spots.map(function (s, i) {
       return h(
         "span",
@@ -1433,27 +1439,49 @@ function burstSparkles(h, big) {
 
 // celebration: null, or {kind: "gain"|"levelup"} — joyful hops + sparkles;
 // levelup also highlights the (new) stage name.
-// pet (dialog only): null, or {fx: bool, onPointerMove: fn, hint: bool} —
-// stroking the creature (pointermove works for mouse and touch-drag) pets
-// it: happy wiggle + floating hearts. Petting never feeds XP.
+// pet (dialog only): null, or {fx: seq|0, onPet: fn, hint: bool} — a plain
+// click/tap on the creature pets it: happy hop + floating hearts. fx is a
+// nonce so repeat clicks replay the hearts. Petting never feeds XP.
+//
+// Layering rule (the v0.7.0 jump-to-center bug): a CSS transform animation
+// REPLACES the element's base transform for its whole duration, so the
+// always-on wiggle (rotate keyframes) was dropping the centering
+// translateX(-50%) and cardhop was momentarily restoring it — the creature
+// snapped horizontally on every pet/celebration. The outer div now owns the
+// layout transform and carries NO animated class; the inner element (a real
+// pet button in the dialog, a plain div in the tooltip) carries the
+// animated classes and NO base transform.
 function shiplingCard(h, data, celebration, pet) {
   var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0);
-  var creatureProps = {
-    className:
-      "kandev-shipling-wiggle" +
-      (celebration || (pet && pet.fx) ? " kandev-shipling-cardhop" : ""),
-    style: {
-      position: "absolute",
-      left: "50%",
-      bottom: "2px",
-      transform: "translateX(-50%)",
-      padding: pet ? "10px 14px 0" : "0",
-      touchAction: pet ? "none" : "auto",
-    },
-  };
-  if (pet && pet.onPointerMove) {
-    creatureProps.onPointerMove = pet.onPointerMove;
-    creatureProps.id = "kandev-shipling-pet-zone";
+  var animCls =
+    "kandev-shipling-wiggle" +
+    (celebration || (pet && pet.fx) ? " kandev-shipling-cardhop" : "");
+  var creature = creatureSvg(h, data, 92);
+  var inner;
+  if (pet && pet.onPet) {
+    inner = h(
+      "button",
+      {
+        id: "kandev-shipling-pet-zone",
+        type: "button",
+        "aria-label": "Pet your shipling",
+        className: animCls,
+        onClick: pet.onPet,
+        style: {
+          display: "block",
+          background: "transparent",
+          border: "none",
+          margin: 0,
+          padding: "10px 14px 0",
+          cursor: "pointer",
+          color: "inherit",
+          touchAction: "manipulation",
+        },
+      },
+      creature,
+    );
+  } else {
+    inner = h("div", { className: animCls }, creature);
   }
   return h(
     "div",
@@ -1480,9 +1508,20 @@ function shiplingCard(h, data, celebration, pet) {
         },
         scene.props,
       ),
-      h("div", creatureProps, creatureSvg(h, data, 92)),
+      h(
+        "div",
+        {
+          style: {
+            position: "absolute",
+            left: "50%",
+            bottom: "2px",
+            transform: "translateX(-50%)",
+          },
+        },
+        inner,
+      ),
       celebration ? burstSparkles(h, celebration.kind === "levelup") : null,
-      pet && pet.fx ? floatingHearts(h) : null,
+      pet && pet.fx ? floatingHearts(h, pet.fx) : null,
     ),
     h(
       "div",
@@ -1549,11 +1588,22 @@ function shiplingCard(h, data, celebration, pet) {
         { style: { fontSize: "11px", opacity: 0.7, fontStyle: "italic" } },
         pet && pet.fx ? "Your shipling purrs." : data.flavor,
       ),
-      pet && pet.hint
+      // The hint row is ALWAYS mounted in the dialog and hides via
+      // visibility, never unmount: removing the row (petting can lift the
+      // mood past the hint threshold mid-animation) would shrink the card
+      // and the vertically-centered dialog would recenter — a layout jump
+      // right in the middle of the pet reaction.
+      pet
         ? h(
             "div",
-            { style: { fontSize: "10px", opacity: 0.45 } },
-            "psst — stroke your shipling (or press p)",
+            {
+              style: {
+                fontSize: "10px",
+                opacity: 0.45,
+                visibility: pet.hint && !pet.fx ? "visible" : "hidden",
+              },
+            },
+            "psst — click your shipling",
           )
         : null,
     ),
@@ -1583,17 +1633,18 @@ function makeShiplingWidget(host) {
     var celebrationHook = React.useState(null);
     var celebration = celebrationHook[0];
     var setCelebration = celebrationHook[1];
-    // petFx: true while the petting reaction (hearts + wiggle) plays.
-    var petFxHook = React.useState(false);
+    // petFx: 0 while idle, else a nonce (re-set on every click) that keys
+    // the floating-hearts overlay so repeat clicks replay the animation.
+    var petFxHook = React.useState(0);
     var petFx = petFxHook[0];
     var setPetFx = petFxHook[1];
     var mountedRef = React.useRef(true);
     var prevRef = React.useRef(null);
     var celebrationTimerRef = React.useRef(null);
     var petTimerRef = React.useRef(null);
-    // Stroke detector state: an actual rubbing gesture is >300px of
-    // horizontal travel with >=2 direction reversals inside a 2s window.
-    var strokeRef = React.useRef({ lastX: null, lastSign: 0, dist: 0, reversals: 0, windowStart: 0, lastPetAt: 0 });
+    // lastPetPostRef rate-limits the POST to ~1 per 3s; in-window clicks
+    // still get the local hearts/purr reaction.
+    var lastPetPostRef = React.useRef(0);
 
     function celebrate(kind) {
       setCelebration({ kind: kind });
@@ -1633,19 +1684,19 @@ function makeShiplingWidget(host) {
         });
     }
 
-    // triggerPet: local reaction immediately + POST the pet stamp (which
-    // lifts the displayed mood a tier, never XP). Rate-limited ~1 per 3s
-    // so continuous rubbing doesn't spam.
+    // triggerPet (click/tap or Enter/Space on the pet button): local
+    // reaction immediately, POST the pet stamp (which lifts the displayed
+    // mood a tier, never XP) at most once per 3s. Extra clicks inside the
+    // window replay the hearts/purr locally without hitting the backend.
     function triggerPet() {
-      var m = strokeRef.current;
       var nowMs = Date.now();
-      if (nowMs - m.lastPetAt < 3000) return;
-      m.lastPetAt = nowMs;
-      setPetFx(true);
+      setPetFx(nowMs);
       if (petTimerRef.current) clearTimeout(petTimerRef.current);
       petTimerRef.current = setTimeout(function () {
-        if (mountedRef.current) setPetFx(false);
+        if (mountedRef.current) setPetFx(0);
       }, 1600);
+      if (nowMs - lastPetPostRef.current < 3000) return;
+      lastPetPostRef.current = nowMs;
       host.api
         .fetch("webhooks/pet", { method: "POST" })
         .then(function (r) {
@@ -1660,37 +1711,6 @@ function makeShiplingWidget(host) {
         .catch(function () {
           /* the local purr already played */
         });
-    }
-
-    // Pointer-event stroke detection (works for mouse and touch-drag).
-    function handlePetMove(e) {
-      var m = strokeRef.current;
-      var nowMs = Date.now();
-      if (nowMs - m.windowStart > 2000) {
-        m.windowStart = nowMs;
-        m.dist = 0;
-        m.reversals = 0;
-        m.lastSign = 0;
-        m.lastX = e.clientX;
-        return;
-      }
-      if (m.lastX == null) {
-        m.lastX = e.clientX;
-        return;
-      }
-      var dx = e.clientX - m.lastX;
-      m.lastX = e.clientX;
-      if (Math.abs(dx) < 1) return;
-      m.dist += Math.abs(dx);
-      var sign = dx > 0 ? 1 : -1;
-      if (m.lastSign !== 0 && sign !== m.lastSign) m.reversals++;
-      m.lastSign = sign;
-      if (m.dist > 300 && m.reversals >= 2) {
-        m.dist = 0;
-        m.reversals = 0;
-        m.windowStart = nowMs;
-        triggerPet();
-      }
     }
 
     React.useEffect(function () {
@@ -1763,17 +1783,14 @@ function makeShiplingWidget(host) {
             id: "kandev-shipling-dialog",
             className: "w-auto max-w-[280px] p-0 gap-0 overflow-hidden rounded-xl",
             showCloseButton: false,
-            // Keyboard petting path: with the dialog open (Radix focuses
-            // the content), pressing "p" pets the shipling.
-            onKeyDown: function (e) {
-              if (e.key === "p" || e.key === "P") triggerPet();
-            },
           },
           h(DialogTitle, { className: "sr-only" }, "Shipling"),
           shiplingCard(h, shown, celebration, {
             fx: petFx,
-            onPointerMove: handlePetMove,
-            hint: HEARTS_BY_MOOD[shown.mood || "content"] <= 4 && !petFx,
+            onPet: triggerPet,
+            // Hint presence follows the underlying mood (not the celebration
+            // override) so the row doesn't pop in/out mid-celebration.
+            hint: HEARTS_BY_MOOD[(data || EGG_PLACEHOLDER).mood || "content"] <= 4,
           }),
         ),
       ),
