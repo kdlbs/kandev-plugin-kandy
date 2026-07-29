@@ -22,29 +22,15 @@ forms, scenes, and stage names. It starts as an egg. It never stops.
 
 ## Screenshots
 
-The card (light and dark), with the mood hearts and level progress:
+The first week — an egg hatches and starts to grow:
 
-![Kandy card](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/c5e1da470a83ee4641decbe768e3bdd05844e42b/card-light.png)
+![Your first week](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/c77094dcfecf8eb76365589d4eb31fcc6b8dc78c/first-week-light.png)
 
-One lineage growing from egg to Lv 100 — same being at every level, it only
-ever gains:
-
-![Evolution, Lv 1 → 100](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/c5e1da470a83ee4641decbe768e3bdd05844e42b/evolution-1-100.png)
-
-Different installs roll different DNA — species, palette, and home biome:
-
-![Four lineages](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/c5e1da470a83ee4641decbe768e3bdd05844e42b/lineages.png)
-
-A first month at a real measured working pace:
-
-![First month](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/c5e1da470a83ee4641decbe768e3bdd05844e42b/first-month.png)
-
-The Lv 100 endgame:
-
-![Lv 100 hero](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/c5e1da470a83ee4641decbe768e3bdd05844e42b/hero-lv100.png)
+What it grows into — the species your install rolls, the places it lives,
+what it looks like months from now — is yours to find out. Ship and see.
 
 *(Screenshots live on the `media/readme-screenshots` orphan branch,
-referenced by pinned commit — regenerate with `demo/render-evolution-sheet.mjs`.)*
+referenced by pinned commit.)*
 
 ## Install
 
