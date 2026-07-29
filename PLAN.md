@@ -51,15 +51,17 @@ K = 400, B = 1.32                          // v0.2.0 retune
   archive awards it, once per task), and (b) at the measured pace (18
   active days/30, ~129 turns + ~8.4 archived tasks + ~2 msgs/turn per
   active day => ~2,860 XP/active day, ~51.5k/month) Lv40 was ~33 years out.
-- v0.4.0: **K=2100, B=1.07, band 1..100.** Expected levels at the measured
-  pace (~51.5k XP/month):
+- v0.4.0 shipped K=2100/B=1.07, but a single archived task (~193 XP
+  all-in) still bought more than a whole early level. v0.6.0 (approved):
+  **K=9174, B=1.0545, band 1..100** — an early level costs ~3 shipped
+  tasks (threshold(2)=500), endgame timing unchanged. Expected levels at
+  the measured pace (~51.5k XP/month):
 
-  | After | 1 month | 6 months | 12 months | 30 months | ~33 months |
-  |---|---|---|---|---|---|
-  | Level | ~48 | ~74 | ~85 | ~98 | **100** |
+  | After | day 1 | 1 month | 6 months | 12 months | 30 months | ~34 months |
+  |---|---|---|---|---|---|---|
+  | Level | ~6 | ~36 | ~67 | ~80 | ~97 | **100** |
 
-  First month moves a level every 1-2 days; cadence stretches to ~weekly
-  in the 60s-70s and ~monthly past 90; "max" (Lv100) lands at ~2.75 years.
+  Month one moves a level every 1-2 days; "max" (Lv100) lands at ~2.8 years.
   Beyond it only the infinite prestige ladder continues. Geometric growth
   stretches forever; float64 log stays finite and monotonic for any
   realistic xp, so there is no cap.

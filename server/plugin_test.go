@@ -112,9 +112,10 @@ func TestOnEvent_AwardsHiddenXP(t *testing.T) {
 	require.Equal(t, 1.0+8+20+150, persistedXP(t, host))
 
 	state := fetchShipling(t, p, "")
-	require.Equal(t, 2, state.Level, "179 XP crosses the level-2 threshold (128)")
-	require.NotEqual(t, "Egg", state.StageName)
+	require.Equal(t, levelForXP(179), state.Level, "level derives from the hidden ledger")
 	require.Equal(t, archetypeForLineage(42), state.Archetype)
+	require.Equal(t, int64(4), state.AwardSeq, "every award bumps the sequence")
+	require.Equal(t, "elated", state.Mood, "just fed")
 }
 
 func TestOnEvent_TaskStateChangedToNonDoneAwardsNothing(t *testing.T) {
@@ -295,6 +296,65 @@ func TestDebugGrant_RejectsJunk(t *testing.T) {
 		require.Equal(t, int32(400), resp.Status, "grant=%s", grant)
 	}
 	require.Empty(t, host.state)
+}
+
+func TestWebhook_MoodFromLastAward(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	require.NoError(t, p.OnEvent(ctx, busEvent("turn.completed", map[string]any{})))
+
+	// Just fed -> elated; advance the clock and the mood decays.
+	require.Equal(t, "elated", fetchShipling(t, p, "").Mood)
+	base := p.now()
+	p.now = func() time.Time { return base.Add(9 * time.Hour) }
+	state := fetchShipling(t, p, "")
+	require.Equal(t, "content", state.Mood)
+	p.now = func() time.Time { return base.Add(200 * time.Hour) }
+	require.Equal(t, "gloomy", fetchShipling(t, p, "").Mood)
+}
+
+func TestWebhook_MoodMigrationDefaults(t *testing.T) {
+	// Pre-0.6 state: no last_award_at — fall back to updated_at.
+	host := newFakeHost(nil)
+	host.state[stateMapKey(stateScope, "", stateKey)] = map[string]any{
+		"xp": 600.0, "salt": 42.0,
+		"updated_at": "2026-07-28T00:00:00Z", // 36h before the fixed test clock
+	}
+	p := newTestPlugin(t, host)
+	require.Equal(t, "content", fetchShipling(t, p, "").Mood)
+
+	// No timestamps at all: treat as now, never as ancient.
+	host2 := newFakeHost(nil)
+	host2.state[stateMapKey(stateScope, "", stateKey)] = map[string]any{"xp": 600.0, "salt": 42.0}
+	p2 := newTestPlugin(t, host2)
+	require.Equal(t, "elated", fetchShipling(t, p2, "").Mood)
+}
+
+func TestDebugIdleHours_GatedAndOverrides(t *testing.T) {
+	// Debug off: 403 and no state served.
+	p := newTestPlugin(t, newFakeHost(nil))
+	resp, err := p.HandleWebhook(context.Background(),
+		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET", Query: "debug_idle_hours=120"})
+	require.NoError(t, err)
+	require.Equal(t, int32(403), resp.Status)
+
+	// Debug on: junk rejected, valid values override the mood clock.
+	host := newFakeHost(map[string]any{"debug": true})
+	p2 := newTestPlugin(t, host)
+	require.NoError(t, p2.OnEvent(context.Background(), busEvent("turn.completed", map[string]any{})))
+	for _, junk := range []string{"abc", "-4", "NaN", "10000000"} {
+		resp, err := p2.HandleWebhook(context.Background(),
+			&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET", Query: "debug_idle_hours=" + junk})
+		require.NoError(t, err)
+		require.Equal(t, int32(400), resp.Status, "junk=%s", junk)
+	}
+	for hours, want := range map[string]string{
+		"0": "elated", "1": "happy", "24": "content", "60": "bored", "120": "sad", "200": "gloomy",
+	} {
+		state := fetchShipling(t, p2, "debug_idle_hours="+hours)
+		require.Equal(t, want, state.Mood, "hours=%s", hours)
+	}
 }
 
 func TestStageNameStableAcrossCalls(t *testing.T) {

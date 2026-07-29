@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"math/rand"
 	"net/url"
 	"strconv"
@@ -71,6 +72,13 @@ type ledger struct {
 	// archives, or both. (In real production use tasks end at REVIEW and
 	// get archived; new_state=="COMPLETED" never fires there.)
 	AwardedTasks []string `json:"awarded_tasks,omitempty"`
+	// AwardSeq increments on every XP award — the UI's "gained since last
+	// fetch" signal that never exposes the hidden XP magnitude.
+	AwardSeq int64 `json:"award_seq,omitempty"`
+	// LastAwardAt (RFC3339) feeds the mood: how long since the shipling
+	// was last fed. Missing on pre-0.6 state: presentLedger falls back to
+	// UpdatedAt (every award touched it), never to "ancient".
+	LastAwardAt string `json:"last_award_at,omitempty"`
 }
 
 func (l *ledger) hasAwardedTask(taskID string) bool {
@@ -102,8 +110,13 @@ type shiplingResponse struct {
 	StageName      string  `json:"stage_name"`
 	ProgressPct    float64 `json:"progress_pct"`
 	AppearanceSeed uint32  `json:"appearance_seed"`
-	Flavor         string  `json:"flavor"`
-	AliveSince     string  `json:"alive_since"`
+	// Mood is derived from time since the last XP award; AwardSeq lets the
+	// UI detect "gained since last fetch" without exposing XP magnitudes.
+	Mood        string `json:"mood"`
+	AwardSeq    int64  `json:"award_seq"`
+	LastAwardAt string `json:"last_award_at,omitempty"`
+	Flavor      string `json:"flavor"`
+	AliveSince  string `json:"alive_since"`
 }
 
 type plugin struct {
@@ -174,6 +187,16 @@ func (p *plugin) mutateLedger(ctx context.Context, fn func(*ledger)) *ledger {
 	return l
 }
 
+// awardXP is mutateLedger plus the per-award bookkeeping (sequence bump +
+// last-award timestamp for the mood). Callers must hold p.mu.
+func (p *plugin) awardXP(ctx context.Context, apply func(*ledger)) *ledger {
+	return p.mutateLedger(ctx, func(l *ledger) {
+		apply(l)
+		l.AwardSeq++
+		l.LastAwardAt = p.now().UTC().Format(time.RFC3339)
+	})
+}
+
 // OnEvent feeds the shipling. It always returns nil — kandev retries
 // deliveries on error with the same EventID, and a retried delivery of an
 // already-counted event would farm duplicate XP — so parse failures and
@@ -192,7 +215,7 @@ func (p *plugin) OnEvent(ctx context.Context, e *pluginsdk.Event) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.mutateLedger(ctx, func(l *ledger) {
+	p.awardXP(ctx, func(l *ledger) {
 		l.XP += delta
 		apply(l)
 	})
@@ -234,7 +257,7 @@ func (p *plugin) awardTaskCompletion(ctx context.Context, taskID string) {
 	if p.loadLedger(ctx).hasAwardedTask(taskID) {
 		return
 	}
-	p.mutateLedger(ctx, func(l *ledger) {
+	p.awardXP(ctx, func(l *ledger) {
 		l.XP += xpTaskCompleted
 		l.TasksDone++
 		l.markTaskAwarded(taskID)
@@ -274,9 +297,17 @@ func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookReques
 			return resp, nil
 		}
 	}
+	var idleOverride *time.Duration
+	if raw := query.Get("debug_idle_hours"); raw != "" {
+		override, errResp := p.parseDebugIdleHours(ctx, raw)
+		if errResp != nil {
+			return errResp, nil
+		}
+		idleOverride = override
+	}
 
 	l := p.loadLedger(ctx)
-	body, err := json.Marshal(p.presentLedger(l))
+	body, err := json.Marshal(p.presentLedger(l, idleOverride))
 	if err != nil {
 		return jsonResponse(500, []byte(`{"error":"encoding state"}`)), nil
 	}
@@ -295,8 +326,24 @@ func (p *plugin) applyDebugGrant(ctx context.Context, grant string) *pluginsdk.W
 	if err != nil || n <= 0 || n > debugGrantMax {
 		return jsonResponse(400, []byte(`{"error":"debug_grant must be an integer in 1..1000000000"}`))
 	}
-	p.mutateLedger(ctx, func(l *ledger) { l.XP += float64(n) })
+	p.awardXP(ctx, func(l *ledger) { l.XP += float64(n) })
 	return nil
+}
+
+// parseDebugIdleHours handles the ?debug_idle_hours dev/demo knob: an
+// override for the mood's idle duration (so sadness states can be demoed
+// without waiting days). Debug-gated exactly like debug_grant. Returns
+// (override, errorResponse).
+func (p *plugin) parseDebugIdleHours(ctx context.Context, raw string) (*time.Duration, *pluginsdk.WebhookResponse) {
+	if !p.debugEnabled(ctx) {
+		return nil, jsonResponse(403, []byte(`{"error":"debug mode disabled"}`))
+	}
+	hours, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsNaN(hours) || math.IsInf(hours, 0) || hours < 0 || hours > 1e6 {
+		return nil, jsonResponse(400, []byte(`{"error":"debug_idle_hours must be a number in 0..1000000"}`))
+	}
+	d := time.Duration(hours * float64(time.Hour))
+	return &d, nil
 }
 
 func (p *plugin) debugEnabled(ctx context.Context) bool {
@@ -313,15 +360,30 @@ func (p *plugin) debugEnabled(ctx context.Context) bool {
 	return enabled
 }
 
+// sinceLastAward computes how long ago the shipling was last fed.
+// Migration-safe: pre-0.6 state has no last_award_at, so fall back to
+// updated_at (every award touched it); a fully unknown timestamp counts as
+// "just now" — never as ancient.
+func (p *plugin) sinceLastAward(l *ledger) time.Duration {
+	for _, stamp := range []string{l.LastAwardAt, l.UpdatedAt} {
+		if t, err := time.Parse(time.RFC3339, stamp); err == nil {
+			return p.now().UTC().Sub(t)
+		}
+	}
+	return 0
+}
+
 // presentLedger converts the private ledger into the public presentation.
 // This is the only place webhook output is built — counters and weights
-// never cross this boundary.
-func (p *plugin) presentLedger(l *ledger) shiplingResponse {
+// never cross this boundary. idleOverride (debug-only) replaces the
+// computed time-since-award for mood/flavor.
+func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) shiplingResponse {
 	level := levelForXP(l.XP)
-	sinceActivity := time.Duration(-1)
-	if updated, err := time.Parse(time.RFC3339, l.UpdatedAt); err == nil {
-		sinceActivity = p.now().UTC().Sub(updated)
+	sinceAward := p.sinceLastAward(l)
+	if idleOverride != nil {
+		sinceAward = *idleOverride
 	}
+	mood := moodFor(sinceAward)
 	return shiplingResponse{
 		Level:          level,
 		Stage:          stageForLevel(level),
@@ -332,7 +394,10 @@ func (p *plugin) presentLedger(l *ledger) shiplingResponse {
 		StageName:      stageName(l.Salt, level),
 		ProgressPct:    roundDownToTenth(progressPct(l.XP)),
 		AppearanceSeed: appearanceSeed(l.Salt, level),
-		Flavor:         flavorText(l.Salt, level, sinceActivity),
+		Mood:           mood,
+		AwardSeq:       l.AwardSeq,
+		LastAwardAt:    l.LastAwardAt,
+		Flavor:         flavorText(l.Salt, level, mood),
 		AliveSince:     l.CreatedAt,
 	}
 }

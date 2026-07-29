@@ -30,14 +30,14 @@ import (
 )
 
 const (
-	// v0.4.0 retune against the user's MEASURED production pace (~129
-	// turns + ~8.4 archived tasks per active day, 18 active days/30 =>
-	// ~2,860 XP/active day, ~51.5k XP/month): level 2 still lands inside
-	// the first light day (147 XP), roughly a level per 1-2 days through
-	// month one, ~weekly cadence in the 60s-70s, ~monthly at 90+, and
-	// level 100 in ~2.75 years.
-	levelK = 2100.0
-	levelB = 1.07
+	// v0.6.0 retune (user-approved): under v0.4/v0.5 a single archived
+	// task (~193 XP all-in) bought more than a whole early level. Now an
+	// early level costs ~3 shipped tasks (threshold(2) = 500 XP) while the
+	// endgame timing stays put: at the measured pace (~2,860 XP/active
+	// day, 18 active days/30 => ~51.5k XP/month) day one ends ~Lv6, month
+	// one ~Lv36, year one ~Lv80, and level 100 lands at ~2.8 years.
+	levelK = 9174.0
+	levelB = 1.0545
 
 	// bandMax is the last level of the designed dull->awesome arc; beyond
 	// it the infinite prestige ladder (names, celestial scenes) continues.
@@ -377,6 +377,42 @@ func romanNumeral(n int) string {
 	return out
 }
 
+// ---------------------------------------------------------------------------
+// Mood — derived at webhook time from how long ago the last XP award
+// happened. Calendar-time on purpose (a shipling that missed you over a
+// long break is the tamagotchi charm), but generous enough that normal
+// work cadence — nights, weekends — never drops below content/bored.
+// ---------------------------------------------------------------------------
+
+type moodTier struct {
+	name   string
+	within time.Duration
+}
+
+var moodTiers = []moodTier{
+	{"elated", 10 * time.Minute},
+	{"happy", 8 * time.Hour},
+	{"content", 48 * time.Hour},
+	{"bored", 96 * time.Hour},
+	{"sad", 168 * time.Hour},
+}
+
+const moodGloomy = "gloomy" // >= 168h
+
+// moodFor maps time-since-last-award to a mood tier. Negative (unknown)
+// durations count as "just now" — never as ancient.
+func moodFor(sinceAward time.Duration) string {
+	if sinceAward < 0 {
+		sinceAward = 0
+	}
+	for _, tier := range moodTiers {
+		if sinceAward < tier.within {
+			return tier.name
+		}
+	}
+	return moodGloomy
+}
+
 var idleFlavor = []string{
 	"Your shipling hums a tiny tune.",
 	"Something stirs beneath the surface.",
@@ -388,23 +424,25 @@ var idleFlavor = []string{
 	"A faint glow. Probably fine.",
 }
 
-const (
-	flavorEnergizedWithin = 15 * time.Minute
-	flavorNapAfter        = 24 * time.Hour
-)
-
-// flavorText picks the cryptic status line. Recent activity and long idle
-// override the seeded default; nothing here ever itemizes XP sources.
-func flavorText(salt uint32, level int, sinceActivity time.Duration) string {
+// flavorText picks the cryptic status line for a mood. Content moods fall
+// back to the seeded idle lines; nothing here ever itemizes XP sources.
+func flavorText(salt uint32, level int, mood string) string {
 	if level <= 1 {
 		return "The egg is warm. Keep working."
 	}
-	if sinceActivity >= 0 && sinceActivity < flavorEnergizedWithin {
+	switch mood {
+	case "elated":
+		return "Your shipling is thrilled!"
+	case "happy":
 		return "Your shipling looks energized."
+	case "bored":
+		return "Your shipling is getting restless."
+	case "sad":
+		return "Your shipling misses you — ship something."
+	case moodGloomy:
+		return "Your shipling sits in the rain, waiting for a ship."
+	default:
+		seed := appearanceSeed(salt, level)
+		return idleFlavor[seededIndex(seed, 2, len(idleFlavor))]
 	}
-	if sinceActivity >= flavorNapAfter {
-		return "Your shipling is napping quietly."
-	}
-	seed := appearanceSeed(salt, level)
-	return idleFlavor[seededIndex(seed, 2, len(idleFlavor))]
 }

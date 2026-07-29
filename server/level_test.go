@@ -4,6 +4,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -17,11 +18,11 @@ func TestLevelForXP_BaseCases(t *testing.T) {
 }
 
 func TestLevelForXP_TunedConstants(t *testing.T) {
-	// K=2100, B=1.07: level 2 at 147 XP — inside the first day of light
-	// use (the fast first evolution is the hook).
-	require.Equal(t, 1, levelForXP(146))
-	require.Equal(t, 2, levelForXP(148))
-	require.Equal(t, 3, levelForXP(310), "~day two of light use")
+	// K=9174, B=1.0545: level 2 at ~500 XP — about 3 shipped tasks, so a
+	// single archive can no longer buy more than a whole early level.
+	require.Equal(t, 1, levelForXP(498))
+	require.Equal(t, 2, levelForXP(502))
+	require.Greater(t, thresholdXP(2), 2*xpTaskCompleted, "one task must not clear an early level")
 }
 
 // measuredMonthlyXP is the user's real production pace: ~129 turns + ~8.4
@@ -30,24 +31,28 @@ func TestLevelForXP_TunedConstants(t *testing.T) {
 const measuredMonthlyXP = 2860 * 18
 
 func TestLevelForXP_MeasuredPaceTargets(t *testing.T) {
+	day1 := levelForXP(2860)
+	require.GreaterOrEqual(t, day1, 5, "day one ends around Lv6")
+	require.LessOrEqual(t, day1, 7)
+
 	month1 := levelForXP(measuredMonthlyXP)
-	require.GreaterOrEqual(t, month1, 44, "month one lands in the 40s")
-	require.LessOrEqual(t, month1, 52)
+	require.GreaterOrEqual(t, month1, 33, "month one lands mid-30s")
+	require.LessOrEqual(t, month1, 39)
 
 	month6 := levelForXP(6 * measuredMonthlyXP)
-	require.GreaterOrEqual(t, month6, 70)
-	require.LessOrEqual(t, month6, 78)
+	require.GreaterOrEqual(t, month6, 64)
+	require.LessOrEqual(t, month6, 70)
 
 	month12 := levelForXP(12 * measuredMonthlyXP)
-	require.GreaterOrEqual(t, month12, 82)
-	require.LessOrEqual(t, month12, 88)
+	require.GreaterOrEqual(t, month12, 77, "year one lands around Lv80")
+	require.LessOrEqual(t, month12, 83)
 
 	month30 := levelForXP(30 * measuredMonthlyXP)
-	require.GreaterOrEqual(t, month30, 95)
+	require.GreaterOrEqual(t, month30, 94)
 	require.LessOrEqual(t, month30, 99)
 
-	// "Max" (level 100) is reachable in ~2.5-3 years at the measured pace.
-	require.Less(t, levelForXP(20*measuredMonthlyXP), 100)
+	// "Max" (level 100) stays reachable in ~2.5-3 years at the measured pace.
+	require.Less(t, levelForXP(24*measuredMonthlyXP), 100)
 	require.GreaterOrEqual(t, levelForXP(36*measuredMonthlyXP), 100)
 }
 
@@ -261,14 +266,44 @@ func TestStageName_MythicLadderBeyondBand(t *testing.T) {
 	require.Less(t, len(deep), 48, "names stay label-sized forever")
 }
 
-func TestFlavorText_NeverItemizesFactors(t *testing.T) {
-	require.Equal(t, "Your shipling looks energized.", flavorText(7, 5, 0))
-	require.Equal(t, "Your shipling is napping quietly.", flavorText(7, 5, 48*3600*1e9))
-	for _, level := range []int{1, 2, 9, 40} {
-		line := flavorText(7, level, 3600*1e9)
-		require.NotEmpty(t, line)
-		for _, banned := range []string{"XP", "token", "turn", "message", "task"} {
-			require.NotContains(t, strings.ToLower(line), strings.ToLower(banned))
+func TestMoodFor_TierBoundaries(t *testing.T) {
+	cases := []struct {
+		since time.Duration
+		want  string
+	}{
+		{-5 * time.Minute, "elated"}, // unknown counts as "just now"
+		{0, "elated"},
+		{9 * time.Minute, "elated"},
+		{10 * time.Minute, "happy"},
+		{7 * time.Hour, "happy"},
+		{8 * time.Hour, "content"},
+		{47 * time.Hour, "content"},
+		{48 * time.Hour, "bored"},
+		{95 * time.Hour, "bored"},
+		{96 * time.Hour, "sad"},
+		{167 * time.Hour, "sad"},
+		{168 * time.Hour, "gloomy"},
+		{24 * 365 * time.Hour, "gloomy"},
+	}
+	for _, tc := range cases {
+		require.Equal(t, tc.want, moodFor(tc.since), "since=%s", tc.since)
+	}
+}
+
+func TestFlavorText_TracksMoodAndNeverItemizesFactors(t *testing.T) {
+	require.Equal(t, "Your shipling is thrilled!", flavorText(7, 5, "elated"))
+	require.Equal(t, "Your shipling looks energized.", flavorText(7, 5, "happy"))
+	require.Equal(t, "Your shipling is getting restless.", flavorText(7, 5, "bored"))
+	require.Contains(t, flavorText(7, 5, "sad"), "misses you")
+	require.Contains(t, flavorText(7, 5, "gloomy"), "rain")
+	require.Equal(t, "The egg is warm. Keep working.", flavorText(7, 1, "sad"), "the egg has no moods")
+	for _, mood := range []string{"elated", "happy", "content", "bored", "sad", "gloomy"} {
+		for _, level := range []int{1, 2, 9, 40} {
+			line := flavorText(7, level, mood)
+			require.NotEmpty(t, line)
+			for _, banned := range []string{"XP", "token", "turn", "message", "task"} {
+				require.NotContains(t, strings.ToLower(line), strings.ToLower(banned))
+			}
 		}
 	}
 }

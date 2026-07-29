@@ -512,11 +512,19 @@ function eyeAt(h, rand, cx, cy, r, style, key) {
   return out;
 }
 
-function faceParts(h, lineage, C, head, g, sty) {
+function faceParts(h, lineage, C, head, g, sty, mood) {
   var rand = makeRand(lineage, 30);
   var out = [];
+  // Mood overlays are render-time only: they restyle the face, they never
+  // touch DNA or growth. bored = half-lowered lids; sad/gloomy = lids +
+  // frown + a single teardrop.
+  var droopy = mood === "sad" || mood === "gloomy";
   var style = g.stage <= 1 ? "dot" : sty.eyeStyle;
-  var eyeR = (style === "wide" ? 4.8 : 3.9) * Math.min(head.r / 10, 1.4);
+  if (mood === "bored" || droopy) style = "sleepy";
+  var eyeR =
+    (style === "wide" ? 4.8 : 3.9) *
+    Math.min(head.r / 10, 1.4) *
+    (mood === "bored" || droopy ? 0.85 : 1);
   var count = head.alien && g.stage >= 2 ? sty.alienEyes : 2;
   if (count === 2) {
     var dx = head.r * 0.5;
@@ -531,11 +539,36 @@ function faceParts(h, lineage, C, head, g, sty) {
     }
   }
 
+  if (droopy) {
+    out.push(
+      h("ellipse", {
+        key: "tear",
+        cx: head.cx - head.r * 0.5 - 1,
+        cy: head.cy + eyeR + 4,
+        rx: 1.3,
+        ry: 2,
+        fill: "#7fd7ff",
+        opacity: 0.9,
+      }),
+    );
+  }
+
   if (g.mouth) {
     var mouthY = head.cy + head.r * 0.55;
     var mw = head.r * 0.55;
-    var mouth = sty.mouthStyle;
-    if (mouth === "smile") {
+    var mouth = droopy ? "frown" : sty.mouthStyle;
+    if (mouth === "frown") {
+      out.push(
+        h("path", {
+          key: "mouth",
+          d: "M" + (head.cx - mw) + " " + (mouthY + 2) + " Q" + head.cx + " " + (mouthY - 3.5) + " " + (head.cx + mw) + " " + (mouthY + 2),
+          stroke: C.dark,
+          strokeWidth: 2,
+          strokeLinecap: "round",
+          fill: "none",
+        }),
+      );
+    } else if (mouth === "smile") {
       out.push(h("path", { key: "mouth", d: "M" + (head.cx - mw) + " " + mouthY + " Q" + head.cx + " " + (mouthY + 5) + " " + (head.cx + mw) + " " + mouthY, stroke: C.dark, strokeWidth: 2, strokeLinecap: "round", fill: "none" }));
     } else if (mouth === "open") {
       out.push(h("ellipse", { key: "mouth", cx: head.cx, cy: mouthY + 1, rx: mw * 0.6, ry: 3, fill: C.dark }));
@@ -555,9 +588,11 @@ function faceParts(h, lineage, C, head, g, sty) {
     );
   }
   if (g.tufts) {
+    // Droopy ears when sad/gloomy: the tufts point downward.
+    var tuftDy = droopy ? 3 : -3;
     out.push(
-      h("path", { key: "tuftL", d: "M" + (head.cx - head.r) + " " + (head.cy - head.r * 0.6) + " l-4 -3 l1.5 4.5 Z", fill: C.light, stroke: C.dark, strokeWidth: 0.8 }),
-      h("path", { key: "tuftR", d: "M" + (head.cx + head.r) + " " + (head.cy - head.r * 0.6) + " l4 -3 l-1.5 4.5 Z", fill: C.light, stroke: C.dark, strokeWidth: 0.8 }),
+      h("path", { key: "tuftL", d: "M" + (head.cx - head.r) + " " + (head.cy - head.r * 0.6) + " l-4 " + tuftDy + " l1.5 " + (droopy ? -4.5 : 4.5) + " Z", fill: C.light, stroke: C.dark, strokeWidth: 0.8 }),
+      h("path", { key: "tuftR", d: "M" + (head.cx + head.r) + " " + (head.cy - head.r * 0.6) + " l4 " + tuftDy + " l-1.5 " + (droopy ? -4.5 : 4.5) + " Z", fill: C.light, stroke: C.dark, strokeWidth: 0.8 }),
     );
   }
   return out;
@@ -590,13 +625,23 @@ function markingParts(h, lineage, C, region, g, sty) {
   return out;
 }
 
-function hornParts(h, lineage, C, top, g, sty) {
+function hornParts(h, lineage, C, top, g, sty, mood) {
   if (g.horns <= 0) return [];
   var rand = makeRand(lineage, 32);
   var s = 0.7 + g.horns * 0.3; // horns grow at each unlock
+  var droopy = mood === "sad" || mood === "gloomy";
   var out = [];
   var x = top.x;
   var y = top.y;
+  if (sty.hornStyle === "antenna" && droopy) {
+    // The antenna wilts when the shipling is sad.
+    var wiltX = x + 7;
+    out.push(
+      h("path", { key: "antline", d: "M" + x + " " + (y + 1) + " Q" + (x + 3) + " " + (y - 8 * s) + " " + wiltX + " " + (y - 3), stroke: C.dark, strokeWidth: 2, fill: "none" }),
+      h("circle", { key: "antball", cx: wiltX + 1, cy: y - 1.5, r: 2 + s * 0.8, fill: C.accent }),
+    );
+    return out;
+  }
   if (sty.hornStyle === "nubs") {
     out.push(
       h("circle", { key: "nubL", cx: x - 7, cy: y - 2 * s, r: 2 + s, fill: C.accent, stroke: C.dark, strokeWidth: 1 }),
@@ -866,21 +911,38 @@ function creatureParts(h, data, portrait) {
   // body only changes through stage scale/detail, never reshuffles.
   var body = BODY_BUILDERS[arch](h, makeRand(lineage, 6), C, g);
 
+  var mood = data.mood || "content";
   var inner = [];
   inner = inner.concat(wingParts(h, C, body.top, g));
   inner = inner.concat(body.parts);
   inner = inner.concat(markingParts(h, lineage, C, body.mark, g, sty));
-  inner = inner.concat(faceParts(h, lineage, C, body.head, g, sty));
-  inner = inner.concat(hornParts(h, lineage, C, body.top, g, sty));
+  inner = inner.concat(faceParts(h, lineage, C, body.head, g, sty, mood));
+  inner = inner.concat(hornParts(h, lineage, C, body.top, g, sty, mood));
   if (body.grounded) inner = inner.concat(tailPartsFor(h, C, g, sty));
   inner = inner.concat(prestigeInBody(h, C, body.top, g));
+  if (mood === "gloomy") {
+    // A tiny personal rain cloud — archetype-agnostic, above the head.
+    inner.push(
+      h(
+        "g",
+        { key: "raincloud", opacity: 0.92 },
+        h("ellipse", { key: "c1", cx: body.top.x - 6, cy: body.top.y - 19, rx: 6, ry: 3.6, fill: "#9aa2ad" }),
+        h("ellipse", { key: "c2", cx: body.top.x + 5, cy: body.top.y - 20, rx: 7, ry: 4.2, fill: "#8b94a1" }),
+        h("ellipse", { key: "c3", cx: body.top.x, cy: body.top.y - 16.5, rx: 8.5, ry: 3.8, fill: "#a7aeb8" }),
+      ),
+    );
+  }
 
   var s = portrait ? 1 : STAGE_SCALE[g.stage];
-  var scaled = h(
-    "g",
-    { key: "being", transform: "translate(" + 50 * (1 - s) + " " + 88 * (1 - s) + ") scale(" + s + ")" },
-    inner,
-  );
+  var beingProps = {
+    key: "being",
+    transform: "translate(" + 50 * (1 - s) + " " + 88 * (1 - s) + ") scale(" + s + ")",
+  };
+  if (mood === "gloomy") {
+    // Desaturate the creature only (scene and chrome stay full-color).
+    beingProps.style = { filter: "saturate(0.6)" };
+  }
+  var scaled = h("g", beingProps, inner);
 
   var parts = [];
   if (!portrait) parts = parts.concat(effectParts(h, lineage, C, g, level));
@@ -896,6 +958,13 @@ function creatureParts(h, data, portrait) {
 // hover card.
 function creatureSvg(h, data, size, extraClass, isStatic) {
   var cls = (extraClass || "") + (isStatic ? " kandev-shipling-static" : "");
+  // Mood sets the idle-bob tempo: elated bounces faster, bored slows down,
+  // sad/gloomy nearly stop.
+  var mood = data.mood || "content";
+  var bobCls = "kandev-shipling-bob";
+  if (mood === "elated") bobCls += " kandev-shipling-bob-fast";
+  else if (mood === "bored") bobCls += " kandev-shipling-bob-slow";
+  else if (mood === "sad" || mood === "gloomy") bobCls = "kandev-shipling-bobsad";
   return h(
     "svg",
     {
@@ -906,7 +975,7 @@ function creatureSvg(h, data, size, extraClass, isStatic) {
       "aria-hidden": "true",
       style: { overflow: isStatic ? "hidden" : "visible", flexShrink: 0 },
     },
-    h("g", { className: isStatic ? "" : "kandev-shipling-bob" }, creatureParts(h, data, !!isStatic)),
+    h("g", { className: isStatic ? "" : bobCls }, creatureParts(h, data, !!isStatic)),
   );
 }
 
@@ -1212,13 +1281,30 @@ function sceneFor(biome, level, seed) {
 
 var SHIPLING_CSS =
   "@keyframes kandev-shipling-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}" +
+  "@keyframes kandev-shipling-bobsad{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.7px)}}" +
   "@keyframes kandev-shipling-blink{0%,90%,100%{transform:scaleY(1)}93%,96%{transform:scaleY(0.08)}}" +
   "@keyframes kandev-shipling-wiggle{0%,86%,100%{transform:rotate(0deg)}90%{transform:rotate(-4deg)}94%{transform:rotate(4deg)}}" +
+  "@keyframes kandev-shipling-hop{0%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}60%{transform:translateY(0)}80%{transform:translateY(-2px)}}" +
+  "@keyframes kandev-shipling-flash{0%{opacity:0;transform:scale(0.4)}35%{opacity:1;transform:scale(1.15)}100%{opacity:0;transform:scale(1.4)}}" +
+  "@keyframes kandev-shipling-pulse{0%{box-shadow:0 0 0 0 rgba(255,209,102,0.9)}100%{box-shadow:0 0 0 9px rgba(255,209,102,0)}}" +
+  "@keyframes kandev-shipling-cardhop{0%,100%{transform:translate(-50%,0)}18%{transform:translate(-50%,-9px)}36%{transform:translate(-50%,0)}52%{transform:translate(-50%,-6px)}68%{transform:translate(-50%,0)}84%{transform:translate(-50%,-3px)}}" +
+  "@keyframes kandev-shipling-burstpop{0%{opacity:0;transform:scale(0.3)}30%{opacity:1;transform:scale(1.2)}100%{opacity:0;transform:scale(1.6) translateY(-9px)}}" +
+  "@keyframes kandev-shipling-namehl{0%,100%{background:transparent}30%{background:rgba(255,209,102,0.5)}}" +
   ".kandev-shipling-bob{animation:kandev-shipling-bob 2.8s ease-in-out infinite}" +
+  ".kandev-shipling-bob-fast{animation-duration:1.6s}" +
+  ".kandev-shipling-bob-slow{animation-duration:5.5s}" +
+  ".kandev-shipling-bobsad{animation:kandev-shipling-bobsad 7s ease-in-out infinite}" +
   ".kandev-shipling-blink{animation:kandev-shipling-blink 4.6s ease-in-out infinite}" +
   ".kandev-shipling-wiggle{animation:kandev-shipling-wiggle 7s ease-in-out infinite;transform-origin:50% 70%}" +
+  ".kandev-shipling-celebrate{animation:kandev-shipling-hop 0.8s ease}" +
+  ".kandev-shipling-celebrate::after{content:\"\\2726\";position:absolute;top:-7px;right:-5px;font-size:11px;color:#ffd166;animation:kandev-shipling-flash 0.8s ease forwards;pointer-events:none}" +
+  ".kandev-shipling-levelup{animation:kandev-shipling-hop 0.8s ease,kandev-shipling-pulse 1.4s ease}" +
+  ".kandev-shipling-levelup::after{content:\"\\2726\";position:absolute;top:-8px;right:-6px;font-size:13px;color:#ffd166;animation:kandev-shipling-flash 1.2s ease forwards;pointer-events:none}" +
+  ".kandev-shipling-cardhop{animation:kandev-shipling-cardhop 1.2s ease}" +
+  ".kandev-shipling-burst{position:absolute;font-size:12px;color:#ffd166;animation:kandev-shipling-burstpop 1s ease forwards;pointer-events:none}" +
+  ".kandev-shipling-namehl{animation:kandev-shipling-namehl 1.4s ease;border-radius:4px;padding:0 2px}" +
   ".kandev-shipling-static,.kandev-shipling-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-shipling-bob,.kandev-shipling-blink,.kandev-shipling-wiggle{animation:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-shipling-bob,.kandev-shipling-bob-fast,.kandev-shipling-bob-slow,.kandev-shipling-bobsad,.kandev-shipling-blink,.kandev-shipling-wiggle,.kandev-shipling-celebrate,.kandev-shipling-celebrate::after,.kandev-shipling-levelup,.kandev-shipling-levelup::after,.kandev-shipling-cardhop,.kandev-shipling-burst,.kandev-shipling-namehl{animation:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -1247,10 +1333,42 @@ var EGG_PLACEHOLDER = {
   stage_name: "Egg",
   progress_pct: 0,
   appearance_seed: 1,
+  mood: "content",
+  award_seq: 0,
   flavor: "The egg is warm. Keep working.",
 };
 
-function shiplingCard(h, data) {
+// burstSparkles renders the celebration particle burst over the scene.
+var BURST_SPOTS = [
+  [30, 30], [66, 18], [50, 55], [78, 45], [20, 60], [60, 72], [40, 12], [82, 68],
+];
+
+function burstSparkles(h, big) {
+  var count = big ? 8 : 6;
+  var out = [];
+  for (var i = 0; i < count; i++) {
+    out.push(
+      h(
+        "span",
+        {
+          key: "burst" + i,
+          className: "kandev-shipling-burst",
+          style: {
+            left: BURST_SPOTS[i][0] + "%",
+            top: BURST_SPOTS[i][1] + "%",
+            animationDelay: (i % 4) * 90 + "ms",
+          },
+        },
+        "✦",
+      ),
+    );
+  }
+  return h("div", { key: "burstwrap", style: { position: "absolute", inset: 0, pointerEvents: "none" } }, out);
+}
+
+// celebration: null, or {kind: "gain"|"levelup"} — joyful hops + sparkles;
+// levelup also highlights the (new) stage name.
+function shiplingCard(h, data, celebration) {
   var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0);
   return h(
     "div",
@@ -1280,7 +1398,7 @@ function shiplingCard(h, data) {
       h(
         "div",
         {
-          className: "kandev-shipling-wiggle",
+          className: "kandev-shipling-wiggle" + (celebration ? " kandev-shipling-cardhop" : ""),
           style: {
             position: "absolute",
             left: "50%",
@@ -1290,6 +1408,7 @@ function shiplingCard(h, data) {
         },
         creatureSvg(h, data, 92),
       ),
+      celebration ? burstSparkles(h, celebration.kind === "levelup") : null,
     ),
     h(
       "div",
@@ -1297,7 +1416,14 @@ function shiplingCard(h, data) {
       h(
         "div",
         { style: { display: "flex", alignItems: "baseline", gap: "8px" } },
-        h("span", { style: { fontSize: "13px", fontWeight: 600 } }, data.stage_name),
+        h(
+          "span",
+          {
+            className: celebration && celebration.kind === "levelup" ? "kandev-shipling-namehl" : "",
+            style: { fontSize: "13px", fontWeight: 600 },
+          },
+          data.stage_name,
+        ),
         h(
           "span",
           {
@@ -1365,7 +1491,25 @@ function makeShiplingWidget(host) {
     var openHook = React.useState(false);
     var dialogOpen = openHook[0];
     var setDialogOpen = openHook[1];
+    // celebration: null | {kind: "gain"|"levelup"} — set when a refetch
+    // shows award_seq/level increased, cleared after the animation window.
+    var celebrationHook = React.useState(null);
+    var celebration = celebrationHook[0];
+    var setCelebration = celebrationHook[1];
     var mountedRef = React.useRef(true);
+    var prevRef = React.useRef(null);
+    var celebrationTimerRef = React.useRef(null);
+
+    function celebrate(kind) {
+      setCelebration({ kind: kind });
+      if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
+      celebrationTimerRef.current = setTimeout(
+        function () {
+          if (mountedRef.current) setCelebration(null);
+        },
+        kind === "levelup" ? 2200 : 1400,
+      );
+    }
 
     function load() {
       host.api
@@ -1374,7 +1518,20 @@ function makeShiplingWidget(host) {
           return r.json();
         })
         .then(function (body) {
-          if (mountedRef.current && body && typeof body.level === "number") setData(body);
+          if (!mountedRef.current || !body || typeof body.level !== "number") return;
+          var prev = prevRef.current;
+          if (prev) {
+            if (body.level > prev.level) celebrate("levelup");
+            else if (
+              typeof body.award_seq === "number" &&
+              typeof prev.award_seq === "number" &&
+              body.award_seq > prev.award_seq
+            ) {
+              celebrate("gain");
+            }
+          }
+          prevRef.current = { level: body.level, award_seq: body.award_seq };
+          setData(body);
         })
         .catch(function () {
           /* keep the last known creature */
@@ -1389,24 +1546,35 @@ function makeShiplingWidget(host) {
       return function () {
         mountedRef.current = false;
         clearInterval(interval);
+        if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
         var i = refreshListeners.indexOf(load);
         if (i >= 0) refreshListeners.splice(i, 1);
       };
     }, []);
 
     var shown = data || EGG_PLACEHOLDER;
+    // While celebrating, the face is happy regardless of prior mood — it
+    // just got fed. Render-time override only; state stays untouched.
+    if (celebration) shown = Object.assign({}, shown, { mood: "elated" });
 
     // The chip is a real button: hover/focus gives the desktop quick-peek
     // tooltip, tap/click opens the same card as a dialog (touch devices
     // have no hover, so the dialog is the mobile path).
+    var chipCelebrateCls = "";
+    if (celebration) {
+      chipCelebrateCls =
+        celebration.kind === "levelup" ? " kandev-shipling-levelup" : " kandev-shipling-celebrate";
+    }
     var trigger = h(
       "button",
       {
         id: "kandev-shipling-widget",
         type: "button",
         className:
-          "h-7 w-7 flex items-center justify-center cursor-pointer rounded-md border border-border/60 bg-muted/30 hover:bg-muted/60",
-        "aria-label": "Shipling: level " + shown.level + " " + shown.stage_name,
+          "relative h-7 w-7 flex items-center justify-center cursor-pointer rounded-md border border-border/60 bg-muted/30 hover:bg-muted/60" +
+          chipCelebrateCls,
+        "aria-label":
+          "Shipling: level " + shown.level + " " + shown.stage_name + ", " + (shown.mood || "content"),
         onMouseEnter: load,
         onFocus: load,
         onClick: function () {
@@ -1427,7 +1595,7 @@ function makeShiplingWidget(host) {
         h(
           TooltipContent,
           { side: "bottom", align: "end", className: "p-0 overflow-hidden" },
-          shiplingCard(h, shown),
+          shiplingCard(h, shown, celebration),
         ),
       ),
       h(
@@ -1441,7 +1609,7 @@ function makeShiplingWidget(host) {
             showCloseButton: false,
           },
           h(DialogTitle, { className: "sr-only" }, "Shipling"),
-          shiplingCard(h, shown),
+          shiplingCard(h, shown, celebration),
         ),
       ),
     );
