@@ -47,19 +47,6 @@ make fmt vet     # gofmt + go vet
 make package-host
 ```
 
-### Debug / demo knob
-
-With the plugin config **Debug mode** enabled (Settings > Plugins > Kandev
-Kandy), the webhook accepts `?debug_grant=<n>` to add `n` XP (1..10^9) so
-you can preview later evolution stages:
-
-```sh
-curl "http://localhost:8080/api/plugins/kandev-plugin-kandy/webhooks/kandy?debug_grant=100000"
-```
-
-With debug off (the default) the parameter is rejected with 403 and grants
-nothing. There is intentionally no way to inspect or itemize XP sources.
-
 ## State
 
 One small JSON ledger in kandev Host state (scope `instance`), so the kandy
