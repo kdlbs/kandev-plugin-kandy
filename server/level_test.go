@@ -291,9 +291,9 @@ func TestMoodFor_TierBoundaries(t *testing.T) {
 }
 
 func TestFlavorText_TracksMoodAndNeverItemizesFactors(t *testing.T) {
-	require.Equal(t, "Your shipling is thrilled!", flavorText(7, 5, "elated"))
-	require.Equal(t, "Your shipling looks energized.", flavorText(7, 5, "happy"))
-	require.Equal(t, "Your shipling is getting restless.", flavorText(7, 5, "bored"))
+	require.Equal(t, "Your kandy is thrilled!", flavorText(7, 5, "elated"))
+	require.Equal(t, "Your kandy looks energized.", flavorText(7, 5, "happy"))
+	require.Equal(t, "Your kandy is getting restless.", flavorText(7, 5, "bored"))
 	require.Contains(t, flavorText(7, 5, "sad"), "misses you")
 	require.Contains(t, flavorText(7, 5, "gloomy"), "rain")
 	require.Equal(t, "The egg is warm. Keep working.", flavorText(7, 1, "sad"), "the egg has no moods")

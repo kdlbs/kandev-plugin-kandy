@@ -1,4 +1,4 @@
-module kandev-plugin-shipling
+module kandev-plugin-kandy
 
 go 1.26.0
 

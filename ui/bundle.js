@@ -1,7 +1,7 @@
-// Shipling — chat-top-bar plugin. A tiny creature that lives in the
+// Kandy — chat-top-bar plugin. A tiny creature that lives in the
 // session top bar and evolves forever from work happening in this kandev
 // instance. All growth logic is server-side; this bundle only renders what
-// GET webhooks/shipling returns: { level, stage, archetype, family, biome,
+// GET webhooks/kandy returns: { level, stage, archetype, family, biome,
 // lineage_seed, appearance_seed, stage_name, progress_pct, flavor }.
 //
 // v0.3.0 — DNA vs growth:
@@ -15,8 +15,8 @@
 //   Deterministic: no Math.random at render time; a level always renders
 //   identically, and Lv N+1 is always "Lv N plus something new".
 
-var PLUGIN_ID = "kandev-plugin-shipling";
-var STYLE_ID = "kandev-shipling-style";
+var PLUGIN_ID = "kandev-plugin-kandy";
+var STYLE_ID = "kandev-kandy-style";
 // Backstop poll. The live path is the WS bridge below — these actions mirror
 // the bus events the backend awards XP for, so the creature updates as work
 // happens instead of on the next poll (or a page reload).
@@ -494,7 +494,7 @@ function eyeAt(h, rand, cx, cy, r, style, key) {
       cy: cy,
       r: style === "dot" ? r * 0.55 : r * 0.45,
       fill: "#26232e",
-      className: "kandev-shipling-blink",
+      className: "kandev-kandy-blink",
       style: { transformBox: "fill-box", transformOrigin: "center" },
     }),
   );
@@ -634,7 +634,7 @@ function hornParts(h, lineage, C, top, g, sty, mood) {
   var x = top.x;
   var y = top.y;
   if (sty.hornStyle === "antenna" && droopy) {
-    // The antenna wilts when the shipling is sad.
+    // The antenna wilts when the kandy is sad.
     var wiltX = x + 7;
     out.push(
       h("path", { key: "antline", d: "M" + x + " " + (y + 1) + " Q" + (x + 3) + " " + (y - 8 * s) + " " + wiltX + " " + (y - 3), stroke: C.dark, strokeWidth: 2, fill: "none" }),
@@ -857,7 +857,7 @@ function groundParts(h, C, g, sty) {
       out.push(
         h(
           "g",
-          { key: "balloon", className: "kandev-shipling-bob" },
+          { key: "balloon", className: "kandev-kandy-bob" },
           h("path", { key: "bstr", d: "M16 52 Q10 62 14 72", stroke: C.dark, strokeWidth: 1, fill: "none" }),
           h("ellipse", { key: "bball", cx: 16, cy: 45, rx: 6, ry: 7.5, fill: C.accent, stroke: C.dark, strokeWidth: 1.2 }),
         ),
@@ -874,7 +874,7 @@ function groundParts(h, C, g, sty) {
     out.push(
       h(
         "g",
-        { key: "pet", className: "kandev-shipling-bob" },
+        { key: "pet", className: "kandev-kandy-bob" },
         h("circle", { key: "petb", cx: 12, cy: 82, r: 4.6, fill: C.accent, stroke: C.dark, strokeWidth: 1.4 }),
         h("circle", { key: "pete1", cx: 10.6, cy: 81, r: 0.9, fill: "#26232e" }),
         h("circle", { key: "pete2", cx: 13.6, cy: 81, r: 0.9, fill: "#26232e" }),
@@ -885,7 +885,7 @@ function groundParts(h, C, g, sty) {
     out.push(
       h(
         "g",
-        { key: "pal", className: "kandev-shipling-bob" },
+        { key: "pal", className: "kandev-kandy-bob" },
         h("circle", { key: "palb", cx: 90, cy: 40, r: 3.2, fill: C.light, stroke: C.dark, strokeWidth: 1.1 }),
         h("circle", { key: "pale", cx: 90, cy: 39.4, r: 0.8, fill: "#26232e" }),
       ),
@@ -952,19 +952,19 @@ function creatureParts(h, data, portrait) {
 }
 
 // isStatic renders a motionless portrait (top-bar icon): no bob wrapper, the
-// kandev-shipling-static class kills descendant blink/wiggle animations, and the
+// kandev-kandy-static class kills descendant blink/wiggle animations, and the
 // viewBox crops tight to the full-grown body (creatureParts portrait mode) so
 // the icon fills its chip at every growth stage — all the life stays in the
 // hover card.
 function creatureSvg(h, data, size, extraClass, isStatic) {
-  var cls = (extraClass || "") + (isStatic ? " kandev-shipling-static" : "");
+  var cls = (extraClass || "") + (isStatic ? " kandev-kandy-static" : "");
   // Mood sets the idle-bob tempo: elated bounces faster, bored slows down,
   // sad/gloomy nearly stop.
   var mood = data.mood || "content";
-  var bobCls = "kandev-shipling-bob";
-  if (mood === "elated") bobCls += " kandev-shipling-bob-fast";
-  else if (mood === "bored") bobCls += " kandev-shipling-bob-slow";
-  else if (mood === "sad" || mood === "gloomy") bobCls = "kandev-shipling-bobsad";
+  var bobCls = "kandev-kandy-bob";
+  if (mood === "elated") bobCls += " kandev-kandy-bob-fast";
+  else if (mood === "bored") bobCls += " kandev-kandy-bob-slow";
+  else if (mood === "sad" || mood === "gloomy") bobCls = "kandev-kandy-bobsad";
   return h(
     "svg",
     {
@@ -1279,44 +1279,44 @@ function sceneFor(biome, level, seed) {
 // Animations — injected once; disabled under prefers-reduced-motion.
 // ---------------------------------------------------------------------------
 
-var SHIPLING_CSS =
-  "@keyframes kandev-shipling-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}" +
-  "@keyframes kandev-shipling-bobsad{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.7px)}}" +
-  "@keyframes kandev-shipling-blink{0%,90%,100%{transform:scaleY(1)}93%,96%{transform:scaleY(0.08)}}" +
-  "@keyframes kandev-shipling-wiggle{0%,86%,100%{transform:rotate(0deg)}90%{transform:rotate(-4deg)}94%{transform:rotate(4deg)}}" +
-  "@keyframes kandev-shipling-hop{0%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}60%{transform:translateY(0)}80%{transform:translateY(-2px)}}" +
-  "@keyframes kandev-shipling-flash{0%{opacity:0;transform:scale(0.4)}35%{opacity:1;transform:scale(1.15)}100%{opacity:0;transform:scale(1.4)}}" +
-  "@keyframes kandev-shipling-pulse{0%{box-shadow:0 0 0 0 rgba(255,209,102,0.9)}100%{box-shadow:0 0 0 9px rgba(255,209,102,0)}}" +
+var KANDY_CSS =
+  "@keyframes kandev-kandy-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}" +
+  "@keyframes kandev-kandy-bobsad{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.7px)}}" +
+  "@keyframes kandev-kandy-blink{0%,90%,100%{transform:scaleY(1)}93%,96%{transform:scaleY(0.08)}}" +
+  "@keyframes kandev-kandy-wiggle{0%,86%,100%{transform:rotate(0deg)}90%{transform:rotate(-4deg)}94%{transform:rotate(4deg)}}" +
+  "@keyframes kandev-kandy-hop{0%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}60%{transform:translateY(0)}80%{transform:translateY(-2px)}}" +
+  "@keyframes kandev-kandy-flash{0%{opacity:0;transform:scale(0.4)}35%{opacity:1;transform:scale(1.15)}100%{opacity:0;transform:scale(1.4)}}" +
+  "@keyframes kandev-kandy-pulse{0%{box-shadow:0 0 0 0 rgba(255,209,102,0.9)}100%{box-shadow:0 0 0 9px rgba(255,209,102,0)}}" +
   // cardhop animates translateY ONLY. It must never carry a positional
   // translate: a transform animation REPLACES the element's base transform
   // for its duration, so any animated class has to live on a wrapper with
   // no layout transform (the outer positioning div owns translateX(-50%)).
-  "@keyframes kandev-shipling-cardhop{0%,100%{transform:translateY(0)}18%{transform:translateY(-9px)}36%{transform:translateY(0)}52%{transform:translateY(-6px)}68%{transform:translateY(0)}84%{transform:translateY(-3px)}}" +
-  "@keyframes kandev-shipling-burstpop{0%{opacity:0;transform:scale(0.3)}30%{opacity:1;transform:scale(1.2)}100%{opacity:0;transform:scale(1.6) translateY(-9px)}}" +
-  "@keyframes kandev-shipling-namehl{0%,100%{background:transparent}30%{background:rgba(255,209,102,0.5)}}" +
-  "@keyframes kandev-shipling-heartfloat{0%{opacity:0;transform:translateY(4px) scale(0.6)}25%{opacity:1;transform:translateY(-6px) scale(1.05)}100%{opacity:0;transform:translateY(-26px) scale(1)}}" +
-  ".kandev-shipling-bob{animation:kandev-shipling-bob 2.8s ease-in-out infinite}" +
-  ".kandev-shipling-bob-fast{animation-duration:1.6s}" +
-  ".kandev-shipling-bob-slow{animation-duration:5.5s}" +
-  ".kandev-shipling-bobsad{animation:kandev-shipling-bobsad 7s ease-in-out infinite}" +
-  ".kandev-shipling-blink{animation:kandev-shipling-blink 4.6s ease-in-out infinite}" +
-  ".kandev-shipling-wiggle{animation:kandev-shipling-wiggle 7s ease-in-out infinite;transform-origin:50% 70%}" +
-  ".kandev-shipling-celebrate{animation:kandev-shipling-hop 0.8s ease}" +
-  ".kandev-shipling-celebrate::after{content:\"\\2726\";position:absolute;top:-7px;right:-5px;font-size:11px;color:#ffd166;animation:kandev-shipling-flash 0.8s ease forwards;pointer-events:none}" +
-  ".kandev-shipling-levelup{animation:kandev-shipling-hop 0.8s ease,kandev-shipling-pulse 1.4s ease}" +
-  ".kandev-shipling-levelup::after{content:\"\\2726\";position:absolute;top:-8px;right:-6px;font-size:13px;color:#ffd166;animation:kandev-shipling-flash 1.2s ease forwards;pointer-events:none}" +
-  ".kandev-shipling-cardhop{animation:kandev-shipling-cardhop 1.2s ease}" +
-  ".kandev-shipling-burst{position:absolute;font-size:12px;color:#ffd166;animation:kandev-shipling-burstpop 1s ease forwards;pointer-events:none}" +
-  ".kandev-shipling-namehl{animation:kandev-shipling-namehl 1.4s ease;border-radius:4px;padding:0 2px}" +
-  ".kandev-shipling-heartfloat{position:absolute;font-size:13px;color:#f43f5e;animation:kandev-shipling-heartfloat 1.4s ease forwards;pointer-events:none}" +
-  ".kandev-shipling-static,.kandev-shipling-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-shipling-bob,.kandev-shipling-bob-fast,.kandev-shipling-bob-slow,.kandev-shipling-bobsad,.kandev-shipling-blink,.kandev-shipling-wiggle,.kandev-shipling-celebrate,.kandev-shipling-celebrate::after,.kandev-shipling-levelup,.kandev-shipling-levelup::after,.kandev-shipling-cardhop,.kandev-shipling-burst,.kandev-shipling-namehl,.kandev-shipling-heartfloat{animation:none}}";
+  "@keyframes kandev-kandy-cardhop{0%,100%{transform:translateY(0)}18%{transform:translateY(-9px)}36%{transform:translateY(0)}52%{transform:translateY(-6px)}68%{transform:translateY(0)}84%{transform:translateY(-3px)}}" +
+  "@keyframes kandev-kandy-burstpop{0%{opacity:0;transform:scale(0.3)}30%{opacity:1;transform:scale(1.2)}100%{opacity:0;transform:scale(1.6) translateY(-9px)}}" +
+  "@keyframes kandev-kandy-namehl{0%,100%{background:transparent}30%{background:rgba(255,209,102,0.5)}}" +
+  "@keyframes kandev-kandy-heartfloat{0%{opacity:0;transform:translateY(4px) scale(0.6)}25%{opacity:1;transform:translateY(-6px) scale(1.05)}100%{opacity:0;transform:translateY(-26px) scale(1)}}" +
+  ".kandev-kandy-bob{animation:kandev-kandy-bob 2.8s ease-in-out infinite}" +
+  ".kandev-kandy-bob-fast{animation-duration:1.6s}" +
+  ".kandev-kandy-bob-slow{animation-duration:5.5s}" +
+  ".kandev-kandy-bobsad{animation:kandev-kandy-bobsad 7s ease-in-out infinite}" +
+  ".kandev-kandy-blink{animation:kandev-kandy-blink 4.6s ease-in-out infinite}" +
+  ".kandev-kandy-wiggle{animation:kandev-kandy-wiggle 7s ease-in-out infinite;transform-origin:50% 70%}" +
+  ".kandev-kandy-celebrate{animation:kandev-kandy-hop 0.8s ease}" +
+  ".kandev-kandy-celebrate::after{content:\"\\2726\";position:absolute;top:-7px;right:-5px;font-size:11px;color:#ffd166;animation:kandev-kandy-flash 0.8s ease forwards;pointer-events:none}" +
+  ".kandev-kandy-levelup{animation:kandev-kandy-hop 0.8s ease,kandev-kandy-pulse 1.4s ease}" +
+  ".kandev-kandy-levelup::after{content:\"\\2726\";position:absolute;top:-8px;right:-6px;font-size:13px;color:#ffd166;animation:kandev-kandy-flash 1.2s ease forwards;pointer-events:none}" +
+  ".kandev-kandy-cardhop{animation:kandev-kandy-cardhop 1.2s ease}" +
+  ".kandev-kandy-burst{position:absolute;font-size:12px;color:#ffd166;animation:kandev-kandy-burstpop 1s ease forwards;pointer-events:none}" +
+  ".kandev-kandy-namehl{animation:kandev-kandy-namehl 1.4s ease;border-radius:4px;padding:0 2px}" +
+  ".kandev-kandy-heartfloat{position:absolute;font-size:13px;color:#f43f5e;animation:kandev-kandy-heartfloat 1.4s ease forwards;pointer-events:none}" +
+  ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat{animation:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
   var el = document.createElement("style");
   el.id = STYLE_ID;
-  el.textContent = SHIPLING_CSS;
+  el.textContent = KANDY_CSS;
   document.head.appendChild(el);
 }
 
@@ -1402,7 +1402,7 @@ function floatingHearts(h, seq) {
         "span",
         {
           key: "petheart" + i,
-          className: "kandev-shipling-heartfloat",
+          className: "kandev-kandy-heartfloat",
           style: { left: s[0] + "%", top: s[1] + "%", animationDelay: s[2] + "ms" },
         },
         "♥",
@@ -1425,7 +1425,7 @@ function burstSparkles(h, big) {
         "span",
         {
           key: "burst" + i,
-          className: "kandev-shipling-burst",
+          className: "kandev-kandy-burst",
           style: {
             left: BURST_SPOTS[i][0] + "%",
             top: BURST_SPOTS[i][1] + "%",
@@ -1453,20 +1453,20 @@ function burstSparkles(h, big) {
 // layout transform and carries NO animated class; the inner element (a real
 // pet button in the dialog, a plain div in the tooltip) carries the
 // animated classes and NO base transform.
-function shiplingCard(h, data, celebration, pet) {
+function kandyCard(h, data, celebration, pet) {
   var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0);
   var animCls =
-    "kandev-shipling-wiggle" +
-    (celebration || (pet && pet.fx) ? " kandev-shipling-cardhop" : "");
+    "kandev-kandy-wiggle" +
+    (celebration || (pet && pet.fx) ? " kandev-kandy-cardhop" : "");
   var creature = creatureSvg(h, data, 92);
   var inner;
   if (pet && pet.onPet) {
     inner = h(
       "button",
       {
-        id: "kandev-shipling-pet-zone",
+        id: "kandev-kandy-pet-zone",
         type: "button",
-        "aria-label": "Pet your shipling",
+        "aria-label": "Pet your kandy",
         className: animCls,
         onClick: pet.onPet,
         style: {
@@ -1538,7 +1538,7 @@ function shiplingCard(h, data, celebration, pet) {
         h(
           "span",
           {
-            className: celebration && celebration.kind === "levelup" ? "kandev-shipling-namehl" : "",
+            className: celebration && celebration.kind === "levelup" ? "kandev-kandy-namehl" : "",
             style: { fontSize: "13px", fontWeight: 600, flex: "1 1 auto", minWidth: 0, lineHeight: 1.25 },
           },
           data.stage_name,
@@ -1596,7 +1596,7 @@ function shiplingCard(h, data, celebration, pet) {
       h(
         "div",
         { style: { fontSize: "11px", opacity: 0.7, fontStyle: "italic" } },
-        pet && pet.fx ? "Your shipling purrs." : data.flavor,
+        pet && pet.fx ? "Your kandy purrs." : data.flavor,
       ),
       // The hint row is ALWAYS mounted in the dialog and hides via
       // visibility, never unmount: removing the row (petting can lift the
@@ -1613,14 +1613,14 @@ function shiplingCard(h, data, celebration, pet) {
                 visibility: pet.hint && !pet.fx ? "visible" : "hidden",
               },
             },
-            "psst — click your shipling",
+            "psst — click your kandy",
           )
         : null,
     ),
   );
 }
 
-function makeShiplingWidget(host) {
+function makeKandyWidget(host) {
   var React = host.React;
   var h = host.jsx;
   var ui = host.ui;
@@ -1631,7 +1631,7 @@ function makeShiplingWidget(host) {
   var DialogContent = ui.DialogContent;
   var DialogTitle = ui.DialogTitle;
 
-  return function ShiplingWidget() {
+  return function KandyWidget() {
     var stateHook = React.useState(null);
     var data = stateHook[0];
     var setData = stateHook[1];
@@ -1669,7 +1669,7 @@ function makeShiplingWidget(host) {
 
     function load() {
       host.api
-        .fetch("webhooks/shipling")
+        .fetch("webhooks/kandy")
         .then(function (r) {
           return r.json();
         })
@@ -1749,18 +1749,18 @@ function makeShiplingWidget(host) {
     var chipCelebrateCls = "";
     if (celebration) {
       chipCelebrateCls =
-        celebration.kind === "levelup" ? " kandev-shipling-levelup" : " kandev-shipling-celebrate";
+        celebration.kind === "levelup" ? " kandev-kandy-levelup" : " kandev-kandy-celebrate";
     }
     var trigger = h(
       "button",
       {
-        id: "kandev-shipling-widget",
+        id: "kandev-kandy-widget",
         type: "button",
         className:
           "relative h-7 w-7 flex items-center justify-center cursor-pointer rounded-md border border-border/60 bg-muted/30 hover:bg-muted/60" +
           chipCelebrateCls,
         "aria-label":
-          "Shipling: level " + shown.level + " " + shown.stage_name + ", " + (shown.mood || "content"),
+          "Kandy: level " + shown.level + " " + shown.stage_name + ", " + (shown.mood || "content"),
         onMouseEnter: load,
         onFocus: load,
         onClick: function () {
@@ -1781,7 +1781,7 @@ function makeShiplingWidget(host) {
         h(
           TooltipContent,
           { side: "bottom", align: "end", className: "p-0 overflow-hidden" },
-          shiplingCard(h, shown, celebration),
+          kandyCard(h, shown, celebration),
         ),
       ),
       h(
@@ -1790,12 +1790,12 @@ function makeShiplingWidget(host) {
         h(
           DialogContent,
           {
-            id: "kandev-shipling-dialog",
+            id: "kandev-kandy-dialog",
             className: "w-auto max-w-[280px] p-0 gap-0 overflow-hidden rounded-xl",
             showCloseButton: false,
           },
-          h(DialogTitle, { className: "sr-only" }, "Shipling"),
-          shiplingCard(h, shown, celebration, {
+          h(DialogTitle, { className: "sr-only" }, "Kandy"),
+          kandyCard(h, shown, celebration, {
             fx: petFx,
             onPet: triggerPet,
             // Hint presence follows the underlying mood (not the celebration
@@ -1812,7 +1812,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
   initialize: function (registry, host) {
     h0 = host.jsx;
     injectStyles();
-    registry.registerComponent("chat-top-bar", makeShiplingWidget(host));
+    registry.registerComponent("chat-top-bar", makeKandyWidget(host));
     // Live updates: refetch when work happens, instead of waiting for the
     // backstop poll (or a page reload).
     WS_ACTIONS.forEach(function (action) {
@@ -1835,7 +1835,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     creatureParts: creatureParts,
     sceneFor: sceneFor,
     growthForLevel: growthForLevel,
-    shiplingCard: shiplingCard,
+    kandyCard: kandyCard,
     setJsx: function (jsx) {
       h0 = jsx;
     },

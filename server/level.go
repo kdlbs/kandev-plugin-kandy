@@ -1,4 +1,4 @@
-// level.go — the shipling's growth math and procedural presentation.
+// level.go — the kandy's growth math and procedural presentation.
 // Everything here is pure and deterministic.
 //
 // v0.3.0 model — DNA vs growth:
@@ -379,7 +379,7 @@ func romanNumeral(n int) string {
 
 // ---------------------------------------------------------------------------
 // Mood — derived at webhook time from how long ago the last XP award
-// happened. Calendar-time on purpose (a shipling that missed you over a
+// happened. Calendar-time on purpose (a kandy that missed you over a
 // long break is the tamagotchi charm), but generous enough that normal
 // work cadence — nights, weekends — never drops below content/bored.
 // ---------------------------------------------------------------------------
@@ -420,7 +420,7 @@ const petLiftWindow = 60 * time.Minute
 var moodOrder = []string{"elated", "happy", "content", "bored", "sad", moodGloomy}
 
 // liftMood raises a mood one tier, capped at "happy": petting can never
-// fake "elated" (only real shipped work does that), and a gloomy shipling
+// fake "elated" (only real shipped work does that), and a gloomy kandy
 // petted becomes merely sad. Presentational only — the base mood still
 // derives from last_award_at.
 func liftMood(mood string) string {
@@ -436,13 +436,13 @@ func liftMood(mood string) string {
 }
 
 var idleFlavor = []string{
-	"Your shipling hums a tiny tune.",
+	"Your kandy hums a tiny tune.",
 	"Something stirs beneath the surface.",
-	"Your shipling seems pleased with itself.",
+	"Your kandy seems pleased with itself.",
 	"It is dreaming of far-off places.",
-	"Your shipling wiggles contentedly.",
+	"Your kandy wiggles contentedly.",
 	"It watches the cursor with great interest.",
-	"Your shipling is thinking very hard about nothing.",
+	"Your kandy is thinking very hard about nothing.",
 	"A faint glow. Probably fine.",
 }
 
@@ -454,15 +454,15 @@ func flavorText(salt uint32, level int, mood string) string {
 	}
 	switch mood {
 	case "elated":
-		return "Your shipling is thrilled!"
+		return "Your kandy is thrilled!"
 	case "happy":
-		return "Your shipling looks energized."
+		return "Your kandy looks energized."
 	case "bored":
-		return "Your shipling is getting restless."
+		return "Your kandy is getting restless."
 	case "sad":
-		return "Your shipling misses you — ship something."
+		return "Your kandy misses you — ship something."
 	case moodGloomy:
-		return "Your shipling sits in the rain, waiting for a ship."
+		return "Your kandy sits in the rain, waiting for a ship."
 	default:
 		seed := appearanceSeed(salt, level)
 		return idleFlavor[seededIndex(seed, 2, len(idleFlavor))]

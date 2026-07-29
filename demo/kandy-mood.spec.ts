@@ -1,5 +1,5 @@
 /**
- * THROWAWAY verification spec for Shipling v0.6.0 (moods + celebrations).
+ * THROWAWAY verification spec for Kandy v0.6.0 (moods + celebrations).
  * - real work (archive) triggers the celebration classes on the chip live,
  * - four archives cross the new 500-XP level-2 threshold -> levelup pulse,
  * - debug_idle_hours (injected into the widget's own fetch via route
@@ -12,12 +12,12 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures/test-base";
 import { SessionPage } from "../pages/session-page";
 
-const PLUGIN_ID = "kandev-plugin-shipling";
+const PLUGIN_ID = "kandev-plugin-kandy";
 const PACKAGE_PATH =
-  "/home/jcfs/kandev-plugins/kandev-plugin-shipling/kandev-plugin-shipling-0.6.0.tar.gz";
-const SHOT_DIR = "/tmp/kandev-shipling-demo/screenshots";
+  "/home/jcfs/kandev-plugins/kandev-plugin-kandy/kandev-plugin-kandy-0.6.0.tar.gz";
+const SHOT_DIR = "/tmp/kandev-kandy-demo/screenshots";
 
-async function installShipling(baseUrl: string) {
+async function installKandy(baseUrl: string) {
   const form = new FormData();
   form.append("package", new Blob([fs.readFileSync(PACKAGE_PATH)]), path.basename(PACKAGE_PATH));
   const res = await fetch(`${baseUrl}/api/plugins/install`, { method: "POST", body: form });
@@ -30,7 +30,7 @@ async function installShipling(baseUrl: string) {
     body: JSON.stringify({ config: { debug: true } }),
   });
   await expect
-    .poll(async () => (await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/shipling`)).status, {
+    .poll(async () => (await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/kandy`)).status, {
       timeout: 30_000,
     })
     .toBe(200);
@@ -48,7 +48,7 @@ async function makeTask(
   return task.id as string;
 }
 
-test.describe("Shipling v0.6 — moods + celebrations (desktop)", () => {
+test.describe("Kandy v0.6 — moods + celebrations (desktop)", () => {
   test("celebrations fire live; idle moods render", async ({
     testPage,
     apiClient,
@@ -57,18 +57,18 @@ test.describe("Shipling v0.6 — moods + celebrations (desktop)", () => {
   }) => {
     test.setTimeout(240_000);
     fs.mkdirSync(SHOT_DIR, { recursive: true });
-    await installShipling(backend.baseUrl);
+    await installKandy(backend.baseUrl);
 
     const taskIds: string[] = [];
     for (let i = 0; i < 4; i++) {
-      taskIds.push(await makeTask(apiClient, seedData, `Shipling mood task ${i}`));
+      taskIds.push(await makeTask(apiClient, seedData, `Kandy mood task ${i}`));
     }
-    const pageTask = await makeTask(apiClient, seedData, "Shipling mood viewer");
+    const pageTask = await makeTask(apiClient, seedData, "Kandy mood viewer");
     await testPage.goto(`/t/${pageTask}`);
     const session = new SessionPage(testPage);
     await session.waitForLoad();
 
-    const widget = testPage.locator("#kandev-shipling-widget");
+    const widget = testPage.locator("#kandev-kandy-widget");
     await expect(widget).toBeVisible({ timeout: 15_000 });
     expect(await widget.getAttribute("aria-label")).toMatch(/level 1 Egg, (elated|happy|content)/);
     await testPage.mouse.move(5, 500);
@@ -76,11 +76,11 @@ test.describe("Shipling v0.6 — moods + celebrations (desktop)", () => {
     // --- Gain celebration: one archive (+150 < 500 threshold => no level
     // change) must flash the chip's celebrate class live. ---
     await fetch(`${backend.baseUrl}/api/v1/tasks/${taskIds[0]}/archive`, { method: "POST" });
-    const celebrating = testPage.locator("#kandev-shipling-widget.kandev-shipling-celebrate");
+    const celebrating = testPage.locator("#kandev-kandy-widget.kandev-kandy-celebrate");
     await celebrating.waitFor({ state: "visible", timeout: 15_000 });
     await testPage
       .locator('[data-testid="task-topbar"]')
-      .screenshot({ path: `${SHOT_DIR}/shipling-celebration-frame.png` });
+      .screenshot({ path: `${SHOT_DIR}/kandy-celebration-frame.png` });
     console.log("gain celebration class observed");
     await expect(celebrating).toBeHidden({ timeout: 5_000 });
 
@@ -90,11 +90,11 @@ test.describe("Shipling v0.6 — moods + celebrations (desktop)", () => {
     await fetch(`${backend.baseUrl}/api/v1/tasks/${taskIds[2]}/archive`, { method: "POST" });
     await testPage.waitForTimeout(4_000); // let those settle (still level 1: 450 XP)
     await fetch(`${backend.baseUrl}/api/v1/tasks/${taskIds[3]}/archive`, { method: "POST" });
-    const levelup = testPage.locator("#kandev-shipling-widget.kandev-shipling-levelup");
+    const levelup = testPage.locator("#kandev-kandy-widget.kandev-kandy-levelup");
     await levelup.waitFor({ state: "visible", timeout: 15_000 });
     await testPage
       .locator('[data-testid="task-topbar"]')
-      .screenshot({ path: `${SHOT_DIR}/shipling-levelup-frame.png` });
+      .screenshot({ path: `${SHOT_DIR}/kandy-levelup-frame.png` });
     console.log("levelup celebration class observed");
     await expect
       .poll(async () => (await widget.getAttribute("aria-label")) ?? "")
@@ -108,7 +108,7 @@ test.describe("Shipling v0.6 — moods + celebrations (desktop)", () => {
       { hours: 200, mood: "gloomy" },
     ];
     for (const m of moods) {
-      await testPage.route("**/webhooks/shipling*", (route) => {
+      await testPage.route("**/webhooks/kandy*", (route) => {
         const url = new URL(route.request().url());
         url.searchParams.set("debug_idle_hours", String(m.hours));
         void route.continue({ url: url.toString() });
@@ -125,30 +125,30 @@ test.describe("Shipling v0.6 — moods + celebrations (desktop)", () => {
         .first();
       await expect(card.getByText("to next evolution").first()).toBeVisible({ timeout: 10_000 });
       await testPage.waitForTimeout(400);
-      await card.screenshot({ path: `${SHOT_DIR}/shipling-mood-${m.mood}-card.png` });
+      await card.screenshot({ path: `${SHOT_DIR}/kandy-mood-${m.mood}-card.png` });
       await testPage
         .locator('[data-testid="task-topbar"]')
-        .screenshot({ path: `${SHOT_DIR}/shipling-mood-${m.mood}-chip.png` });
-      await testPage.unroute("**/webhooks/shipling*");
+        .screenshot({ path: `${SHOT_DIR}/kandy-mood-${m.mood}-chip.png` });
+      await testPage.unroute("**/webhooks/kandy*");
     }
   });
 });
 
-test.describe("Shipling v0.6 — mobile regression", () => {
+test.describe("Kandy v0.6 — mobile regression", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
   test("tap still opens the dialog", async ({ testPage, apiClient, seedData, backend }) => {
     test.setTimeout(120_000);
-    await installShipling(backend.baseUrl);
-    const taskId = await makeTask(apiClient, seedData, "Shipling mobile v6");
+    await installKandy(backend.baseUrl);
+    const taskId = await makeTask(apiClient, seedData, "Kandy mobile v6");
     await testPage.goto(`/t/${taskId}`);
     const session = new SessionPage(testPage);
     await session.waitForLoad();
 
-    const widget = testPage.locator("#kandev-shipling-widget");
+    const widget = testPage.locator("#kandev-kandy-widget");
     await expect(widget).toBeVisible({ timeout: 15_000 });
     await widget.tap();
-    const dialog = testPage.locator("#kandev-shipling-dialog");
+    const dialog = testPage.locator("#kandev-kandy-dialog");
     await expect(dialog).toBeVisible({ timeout: 10_000 });
     await expect(dialog.getByText("to next evolution")).toBeVisible();
   });

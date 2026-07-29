@@ -1,5 +1,5 @@
 /**
- * THROWAWAY verification spec for Shipling v0.7.0 (hearts + petting).
+ * THROWAWAY verification spec for Kandy v0.7.0 (hearts + petting).
  * - hearts row reflects the mood tier (bored=3, gloomy=1),
  * - a rubbing stroke over the creature triggers the local reaction
  *   (floating hearts) and exactly one rate-limited POST /webhooks/pet,
@@ -15,12 +15,12 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures/test-base";
 import { SessionPage } from "../pages/session-page";
 
-const PLUGIN_ID = "kandev-plugin-shipling";
+const PLUGIN_ID = "kandev-plugin-kandy";
 const PACKAGE_PATH =
-  "/home/jcfs/kandev-plugins/kandev-plugin-shipling/kandev-plugin-shipling-0.7.0.tar.gz";
-const SHOT_DIR = "/tmp/kandev-shipling-demo/screenshots";
+  "/home/jcfs/kandev-plugins/kandev-plugin-kandy/kandev-plugin-kandy-0.7.0.tar.gz";
+const SHOT_DIR = "/tmp/kandev-kandy-demo/screenshots";
 
-async function installShipling(baseUrl: string) {
+async function installKandy(baseUrl: string) {
   const form = new FormData();
   form.append("package", new Blob([fs.readFileSync(PACKAGE_PATH)]), path.basename(PACKAGE_PATH));
   const res = await fetch(`${baseUrl}/api/plugins/install`, { method: "POST", body: form });
@@ -33,16 +33,16 @@ async function installShipling(baseUrl: string) {
     body: JSON.stringify({ config: { debug: true } }),
   });
   await expect
-    .poll(async () => (await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/shipling`)).status, {
+    .poll(async () => (await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/kandy`)).status, {
       timeout: 30_000,
     })
     .toBe(200);
-  await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/shipling?debug_grant=5000`);
+  await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/kandy?debug_grant=5000`);
 }
 
 async function forceIdleHours(page: Page, hours: number) {
   await page.unrouteAll();
-  await page.route("**/webhooks/shipling*", (route) => {
+  await page.route("**/webhooks/kandy*", (route) => {
     const url = new URL(route.request().url());
     url.searchParams.set("debug_idle_hours", String(hours));
     void route.continue({ url: url.toString() });
@@ -66,7 +66,7 @@ async function openTask(
 
 /** One left-right rubbing pass over the pet zone via real mouse moves. */
 async function strokeOnce(page: Page) {
-  const zone = page.locator("#kandev-shipling-pet-zone");
+  const zone = page.locator("#kandev-kandy-pet-zone");
   const box = await zone.boundingBox();
   if (!box) throw new Error("pet zone not visible");
   const cy = box.y + box.height / 2;
@@ -77,7 +77,7 @@ async function strokeOnce(page: Page) {
   }
 }
 
-test.describe("Shipling v0.7 — hearts + petting (desktop)", () => {
+test.describe("Kandy v0.7 — hearts + petting (desktop)", () => {
   test("hearts, stroke-to-pet, mood lift, XP integrity", async ({
     testPage,
     apiClient,
@@ -86,7 +86,7 @@ test.describe("Shipling v0.7 — hearts + petting (desktop)", () => {
   }) => {
     test.setTimeout(240_000);
     fs.mkdirSync(SHOT_DIR, { recursive: true });
-    await installShipling(backend.baseUrl);
+    await installKandy(backend.baseUrl);
 
     let petPosts = 0;
     testPage.on("request", (req) => {
@@ -94,31 +94,31 @@ test.describe("Shipling v0.7 — hearts + petting (desktop)", () => {
     });
 
     await forceIdleHours(testPage, 60); // base mood: bored
-    await openTask(testPage, apiClient, seedData, "Shipling petting verify");
-    const widget = testPage.locator("#kandev-shipling-widget");
+    await openTask(testPage, apiClient, seedData, "Kandy petting verify");
+    const widget = testPage.locator("#kandev-kandy-widget");
     await expect(widget).toBeVisible({ timeout: 15_000 });
 
     // XP integrity baseline (raw, no override).
     const before = await (
-      await fetch(`${backend.baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/shipling`)
+      await fetch(`${backend.baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/kandy`)
     ).json();
 
     // Open the dialog; hearts row shows the bored tier (3/5).
     await widget.click();
-    const dialog = testPage.locator("#kandev-shipling-dialog");
+    const dialog = testPage.locator("#kandev-kandy-dialog");
     await expect(dialog).toBeVisible({ timeout: 10_000 });
     await expect(dialog.locator('[aria-label="mood: bored, 3 of 5 hearts"]')).toBeVisible({
       timeout: 10_000,
     });
     await testPage.waitForTimeout(400);
-    await dialog.screenshot({ path: `${SHOT_DIR}/shipling-hearts-bored.png` });
+    await dialog.screenshot({ path: `${SHOT_DIR}/kandy-hearts-bored.png` });
 
     // --- Stroke to pet: local hearts + exactly one POST. ---
     await strokeOnce(testPage);
-    await expect(testPage.locator(".kandev-shipling-heartfloat").first()).toBeVisible({
+    await expect(testPage.locator(".kandev-kandy-heartfloat").first()).toBeVisible({
       timeout: 3_000,
     });
-    await dialog.screenshot({ path: `${SHOT_DIR}/shipling-petting-frame.png` });
+    await dialog.screenshot({ path: `${SHOT_DIR}/kandy-petting-frame.png` });
     await expect.poll(() => petPosts, { timeout: 5_000 }).toBe(1);
 
     // Mood lift arrives on the next refetch (route-rewritten GET keeps the
@@ -135,7 +135,7 @@ test.describe("Shipling v0.7 — hearts + petting (desktop)", () => {
       timeout: 10_000,
     });
     await expect(tooltipCard.getByText("hungry for shipped work").first()).toBeVisible();
-    await tooltipCard.screenshot({ path: `${SHOT_DIR}/shipling-hearts-lifted.png` });
+    await tooltipCard.screenshot({ path: `${SHOT_DIR}/kandy-hearts-lifted.png` });
 
     // Reopen the dialog for the rubbing/rate-limit tests.
     await testPage.mouse.move(5, 500);
@@ -162,7 +162,7 @@ test.describe("Shipling v0.7 — hearts + petting (desktop)", () => {
 
     // --- XP integrity: petting changed nothing hidden. ---
     const after = await (
-      await fetch(`${backend.baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/shipling`)
+      await fetch(`${backend.baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/kandy`)
     ).json();
     expect(after.level).toBe(before.level);
     expect(after.progress_pct).toBe(before.progress_pct);
@@ -181,11 +181,11 @@ test.describe("Shipling v0.7 — hearts + petting (desktop)", () => {
       timeout: 10_000,
     });
     await testPage.waitForTimeout(400);
-    await dialog.screenshot({ path: `${SHOT_DIR}/shipling-hearts-sad.png` });
+    await dialog.screenshot({ path: `${SHOT_DIR}/kandy-hearts-sad.png` });
   });
 });
 
-test.describe("Shipling v0.7 — mobile touch petting", () => {
+test.describe("Kandy v0.7 — mobile touch petting", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
   test("touch-drag stroke pets in the dialog", async ({
@@ -195,22 +195,22 @@ test.describe("Shipling v0.7 — mobile touch petting", () => {
     backend,
   }) => {
     test.setTimeout(120_000);
-    await installShipling(backend.baseUrl);
+    await installKandy(backend.baseUrl);
     let petPosts = 0;
     testPage.on("request", (req) => {
       if (req.url().includes("/webhooks/pet") && req.method() === "POST") petPosts++;
     });
-    await openTask(testPage, apiClient, seedData, "Shipling mobile petting");
+    await openTask(testPage, apiClient, seedData, "Kandy mobile petting");
 
-    const widget = testPage.locator("#kandev-shipling-widget");
+    const widget = testPage.locator("#kandev-kandy-widget");
     await expect(widget).toBeVisible({ timeout: 15_000 });
     await widget.tap();
-    const dialog = testPage.locator("#kandev-shipling-dialog");
+    const dialog = testPage.locator("#kandev-kandy-dialog");
     await expect(dialog).toBeVisible({ timeout: 10_000 });
 
     // Synthesize a touch-drag rubbing gesture as pointer events (what a
     // finger drag dispatches with touch-action: none).
-    await testPage.locator("#kandev-shipling-pet-zone").evaluate((el) => {
+    await testPage.locator("#kandev-kandy-pet-zone").evaluate((el) => {
       const box = el.getBoundingClientRect();
       const cy = box.y + box.height / 2;
       const xs: number[] = [];
@@ -235,7 +235,7 @@ test.describe("Shipling v0.7 — mobile touch petting", () => {
         );
       }
     });
-    await expect(testPage.locator(".kandev-shipling-heartfloat").first()).toBeVisible({
+    await expect(testPage.locator(".kandev-kandy-heartfloat").first()).toBeVisible({
       timeout: 3_000,
     });
     await expect.poll(() => petPosts, { timeout: 5_000 }).toBeGreaterThanOrEqual(1);

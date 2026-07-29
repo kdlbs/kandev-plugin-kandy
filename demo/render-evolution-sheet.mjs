@@ -27,7 +27,7 @@ const REPO = path.resolve(__dirname, "..");
 const WEB_DIR =
   process.env.KANDEV_WEB_DIR ??
   "/home/jcfs/.kandev/tasks/kandev-plugin-ideas_z84/kandev/apps/web";
-const OUT_DIR = "/tmp/kandev-shipling-demo/screenshots";
+const OUT_DIR = "/tmp/kandev-kandy-demo/screenshots";
 
 const SALT = 20260728; // fixed demo lineage — note in any report/README
 const COMPARE_SALTS = [20260728, 424242, 90210, 777001]; // comparison rows
@@ -46,7 +46,7 @@ function xpAtDay(day) {
   return Math.round(XP_PER_ACTIVE_DAY * Math.max(1, Math.round(day * ACTIVE_DAYS_RATIO)));
 }
 
-const bin = path.join(REPO, "bin", "kandev-plugin-shipling");
+const bin = path.join(REPO, "bin", "kandev-plugin-kandy");
 if (!fs.existsSync(bin)) {
   console.error(`missing ${bin} — run \`make build\` first`);
   process.exit(1);
@@ -94,7 +94,7 @@ const harnessScript = `
 var LEVELS = ${JSON.stringify(LEVELS)};
 var ROWS = ${JSON.stringify(ROWS)};
 var DAY_LABELS = ${JSON.stringify(DAY_LABELS)};
-var R = window.__plugins["kandev-plugin-shipling"].__render;
+var R = window.__plugins["kandev-plugin-kandy"].__render;
 
 var SVG_TAGS = { svg: 1, g: 1, circle: 1, ellipse: 1, path: 1, rect: 1, line: 1, polygon: 1, text: 1 };
 function appendKids(el, kids) {
@@ -199,14 +199,14 @@ if (ROWS) {
   var last = LEVELS[LEVELS.length - 1];
   document.getElementById("hero").appendChild(makeCell(last, 480, 250, 200, true));
 }
-document.title = "kandev shipling evolution sheet";
+document.title = "kandev kandy evolution sheet";
 `;
 
 const title = COMPARE
-  ? "Shipling — four lineages, growing up"
+  ? "Kandy — four lineages, growing up"
   : FIRST_MONTH
-    ? "Shipling — your first month, at your real pace"
-    : `Shipling — evolution, Lv ${LEVELS[0] ? LEVELS[0].level : 1} → ${LEVELS.length ? LEVELS[LEVELS.length - 1].level : 100}`;
+    ? "Kandy — your first month, at your real pace"
+    : `Kandy — evolution, Lv ${LEVELS[0] ? LEVELS[0].level : 1} → ${LEVELS.length ? LEVELS[LEVELS.length - 1].level : 100}`;
 const subtitle = COMPARE
   ? "Different seeds are different beings; each one grows coherently. Rendered by the shipped plugin code."
   : FIRST_MONTH

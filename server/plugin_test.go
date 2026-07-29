@@ -1,4 +1,4 @@
-// Package main tests. Exercises the shipling's OnEvent XP awards, state
+// Package main tests. Exercises the kandy's OnEvent XP awards, state
 // persistence, and webhook presentation end to end against a fake Host —
 // no go-plugin spawn (tokscale-plugin test pattern).
 package main
@@ -70,24 +70,24 @@ func busEvent(eventType string, payload map[string]any) *pluginsdk.Event {
 	return &pluginsdk.Event{EventID: "evt-1", EventType: eventType, Payload: payload}
 }
 
-func shiplingState(t *testing.T, resp *pluginsdk.WebhookResponse) shiplingResponse {
+func kandyState(t *testing.T, resp *pluginsdk.WebhookResponse) kandyResponse {
 	t.Helper()
 	require.Equal(t, int32(200), resp.Status)
 	require.Equal(t, "application/json", resp.Headers["Content-Type"])
 	// Level/XP change as work lands — a cacheable body would show a stale
 	// creature until the page is reloaded.
 	require.Equal(t, "no-store", resp.Headers["Cache-Control"])
-	var out shiplingResponse
+	var out kandyResponse
 	require.NoError(t, json.Unmarshal(resp.Body, &out))
 	return out
 }
 
-func fetchShipling(t *testing.T, p *plugin, query string) shiplingResponse {
+func fetchKandy(t *testing.T, p *plugin, query string) kandyResponse {
 	t.Helper()
 	resp, err := p.HandleWebhook(context.Background(),
-		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET", Query: query})
+		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET", Query: query})
 	require.NoError(t, err)
-	return shiplingState(t, resp)
+	return kandyState(t, resp)
 }
 
 func persistedXP(t *testing.T, host *fakeHost) float64 {
@@ -111,7 +111,7 @@ func TestOnEvent_AwardsHiddenXP(t *testing.T) {
 
 	require.Equal(t, 1.0+8+20+150, persistedXP(t, host))
 
-	state := fetchShipling(t, p, "")
+	state := fetchKandy(t, p, "")
 	require.Equal(t, levelForXP(179), state.Level, "level derives from the hidden ledger")
 	require.Equal(t, archetypeForLineage(42), state.Archetype)
 	require.Equal(t, int64(4), state.AwardSeq, "every award bumps the sequence")
@@ -215,11 +215,11 @@ func TestStateRoundTrip_SurvivesRestart(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		require.NoError(t, p1.OnEvent(ctx, busEvent("turn.completed", map[string]any{})))
 	}
-	before := fetchShipling(t, p1, "")
+	before := fetchKandy(t, p1, "")
 
 	// A fresh plugin process (new cache) against the same Host state.
 	p2 := newTestPlugin(t, host)
-	after := fetchShipling(t, p2, "")
+	after := fetchKandy(t, p2, "")
 	require.Equal(t, before.Level, after.Level)
 	require.Equal(t, before.StageName, after.StageName)
 	require.Equal(t, before.AppearanceSeed, after.AppearanceSeed)
@@ -231,7 +231,7 @@ func TestWebhook_ShapeAndHiddenFactors(t *testing.T) {
 	p := newTestPlugin(t, host)
 	require.NoError(t, p.OnEvent(context.Background(), busEvent("turn.completed", map[string]any{})))
 
-	state := fetchShipling(t, p, "")
+	state := fetchKandy(t, p, "")
 	require.GreaterOrEqual(t, state.Level, 1)
 	require.GreaterOrEqual(t, state.Archetype, 0)
 	require.Less(t, state.Archetype, numArchetypes)
@@ -248,7 +248,7 @@ func TestWebhook_ShapeAndHiddenFactors(t *testing.T) {
 	// The hidden-factors requirement: raw counters and the XP ledger never
 	// appear in the webhook body.
 	resp, err := p.HandleWebhook(context.Background(),
-		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET"})
+		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET"})
 	require.NoError(t, err)
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal(resp.Body, &raw))
@@ -270,7 +270,7 @@ func TestDebugGrant_RequiresDebugConfig(t *testing.T) {
 	p := newTestPlugin(t, host)
 
 	resp, err := p.HandleWebhook(context.Background(),
-		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET", Query: "debug_grant=5000"})
+		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET", Query: "debug_grant=5000"})
 	require.NoError(t, err)
 	require.Equal(t, int32(403), resp.Status)
 	require.Empty(t, host.state, "no XP granted while debug is off")
@@ -280,7 +280,7 @@ func TestDebugGrant_GrantsWhenDebugEnabled(t *testing.T) {
 	host := newFakeHost(map[string]any{"debug": true})
 	p := newTestPlugin(t, host)
 
-	state := fetchShipling(t, p, "debug_grant=5000")
+	state := fetchKandy(t, p, "debug_grant=5000")
 	require.Equal(t, 5000.0, persistedXP(t, host))
 	require.Equal(t, levelForXP(5000), state.Level)
 	require.Greater(t, state.Level, 2)
@@ -291,7 +291,7 @@ func TestDebugGrant_RejectsJunk(t *testing.T) {
 	p := newTestPlugin(t, host)
 	for _, grant := range []string{"abc", "-5", "0", "10000000000000"} {
 		resp, err := p.HandleWebhook(context.Background(),
-			&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET", Query: "debug_grant=" + grant})
+			&pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET", Query: "debug_grant=" + grant})
 		require.NoError(t, err)
 		require.Equal(t, int32(400), resp.Status, "grant=%s", grant)
 	}
@@ -305,13 +305,13 @@ func TestWebhook_MoodFromLastAward(t *testing.T) {
 	require.NoError(t, p.OnEvent(ctx, busEvent("turn.completed", map[string]any{})))
 
 	// Just fed -> elated; advance the clock and the mood decays.
-	require.Equal(t, "elated", fetchShipling(t, p, "").Mood)
+	require.Equal(t, "elated", fetchKandy(t, p, "").Mood)
 	base := p.now()
 	p.now = func() time.Time { return base.Add(9 * time.Hour) }
-	state := fetchShipling(t, p, "")
+	state := fetchKandy(t, p, "")
 	require.Equal(t, "content", state.Mood)
 	p.now = func() time.Time { return base.Add(200 * time.Hour) }
-	require.Equal(t, "gloomy", fetchShipling(t, p, "").Mood)
+	require.Equal(t, "gloomy", fetchKandy(t, p, "").Mood)
 }
 
 func TestWebhook_MoodMigrationDefaults(t *testing.T) {
@@ -322,20 +322,20 @@ func TestWebhook_MoodMigrationDefaults(t *testing.T) {
 		"updated_at": "2026-07-28T00:00:00Z", // 36h before the fixed test clock
 	}
 	p := newTestPlugin(t, host)
-	require.Equal(t, "content", fetchShipling(t, p, "").Mood)
+	require.Equal(t, "content", fetchKandy(t, p, "").Mood)
 
 	// No timestamps at all: treat as now, never as ancient.
 	host2 := newFakeHost(nil)
 	host2.state[stateMapKey(stateScope, "", stateKey)] = map[string]any{"xp": 600.0, "salt": 42.0}
 	p2 := newTestPlugin(t, host2)
-	require.Equal(t, "elated", fetchShipling(t, p2, "").Mood)
+	require.Equal(t, "elated", fetchKandy(t, p2, "").Mood)
 }
 
 func TestDebugIdleHours_GatedAndOverrides(t *testing.T) {
 	// Debug off: 403 and no state served.
 	p := newTestPlugin(t, newFakeHost(nil))
 	resp, err := p.HandleWebhook(context.Background(),
-		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET", Query: "debug_idle_hours=120"})
+		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET", Query: "debug_idle_hours=120"})
 	require.NoError(t, err)
 	require.Equal(t, int32(403), resp.Status)
 
@@ -345,24 +345,24 @@ func TestDebugIdleHours_GatedAndOverrides(t *testing.T) {
 	require.NoError(t, p2.OnEvent(context.Background(), busEvent("turn.completed", map[string]any{})))
 	for _, junk := range []string{"abc", "-4", "NaN", "10000000"} {
 		resp, err := p2.HandleWebhook(context.Background(),
-			&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET", Query: "debug_idle_hours=" + junk})
+			&pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET", Query: "debug_idle_hours=" + junk})
 		require.NoError(t, err)
 		require.Equal(t, int32(400), resp.Status, "junk=%s", junk)
 	}
 	for hours, want := range map[string]string{
 		"0": "elated", "1": "happy", "24": "content", "60": "bored", "120": "sad", "200": "gloomy",
 	} {
-		state := fetchShipling(t, p2, "debug_idle_hours="+hours)
+		state := fetchKandy(t, p2, "debug_idle_hours="+hours)
 		require.Equal(t, want, state.Mood, "hours=%s", hours)
 	}
 }
 
-func petShipling(t *testing.T, p *plugin) shiplingResponse {
+func petKandy(t *testing.T, p *plugin) kandyResponse {
 	t.Helper()
 	resp, err := p.HandleWebhook(context.Background(),
 		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyPet, Method: "POST"})
 	require.NoError(t, err)
-	return shiplingState(t, resp)
+	return kandyState(t, resp)
 }
 
 func TestPet_StampsFieldWithoutTouchingXP(t *testing.T) {
@@ -370,9 +370,9 @@ func TestPet_StampsFieldWithoutTouchingXP(t *testing.T) {
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
 	require.NoError(t, p.OnEvent(ctx, busEvent("turn.completed", map[string]any{})))
-	before := fetchShipling(t, p, "")
+	before := fetchKandy(t, p, "")
 
-	petted := petShipling(t, p)
+	petted := petKandy(t, p)
 
 	// XP-derived facts are untouched: petting is never an award.
 	require.Equal(t, before.Level, petted.Level)
@@ -394,25 +394,25 @@ func TestPet_LiftsMoodOneTierCappedAtHappy(t *testing.T) {
 
 	// bored (60h idle) + fresh pet => content.
 	p.now = func() time.Time { return base.Add(60 * time.Hour) }
-	require.Equal(t, "bored", fetchShipling(t, p, "").Mood)
-	petted := petShipling(t, p)
+	require.Equal(t, "bored", fetchKandy(t, p, "").Mood)
+	petted := petKandy(t, p)
 	require.Equal(t, "content", petted.Mood)
 
 	// gloomy petted becomes merely sad, with the hungry-purr flavor.
 	p.now = func() time.Time { return base.Add(300 * time.Hour) }
-	require.Equal(t, "gloomy", fetchShipling(t, p, "").Mood)
-	state := petShipling(t, p)
+	require.Equal(t, "gloomy", fetchKandy(t, p, "").Mood)
+	state := petKandy(t, p)
 	require.Equal(t, "sad", state.Mood)
 	require.Contains(t, state.Flavor, "purrs")
 	require.Contains(t, state.Flavor, "hungry")
 
 	// content + pet => happy; happy/elated never go higher.
 	p.now = func() time.Time { return base.Add(10 * time.Hour) }
-	require.Equal(t, "happy", petShipling(t, p).Mood, "content lifts to happy")
+	require.Equal(t, "happy", petKandy(t, p).Mood, "content lifts to happy")
 	p.now = func() time.Time { return base.Add(1 * time.Hour) }
-	require.Equal(t, "happy", petShipling(t, p).Mood, "happy stays happy — petting cannot fake elated")
+	require.Equal(t, "happy", petKandy(t, p).Mood, "happy stays happy — petting cannot fake elated")
 	p.now = func() time.Time { return base.Add(time.Minute) }
-	require.Equal(t, "elated", petShipling(t, p).Mood, "elated stays elated")
+	require.Equal(t, "elated", petKandy(t, p).Mood, "elated stays elated")
 }
 
 func TestPet_LiftExpiresAfterAnHour(t *testing.T) {
@@ -423,19 +423,19 @@ func TestPet_LiftExpiresAfterAnHour(t *testing.T) {
 	base := p.now()
 
 	p.now = func() time.Time { return base.Add(60 * time.Hour) }
-	require.Equal(t, "content", petShipling(t, p).Mood, "lift active")
+	require.Equal(t, "content", petKandy(t, p).Mood, "lift active")
 	// 59 minutes after the pet the lift still holds; at 61 it's gone.
 	p.now = func() time.Time { return base.Add(60*time.Hour + 59*time.Minute) }
-	require.Equal(t, "content", fetchShipling(t, p, "").Mood)
+	require.Equal(t, "content", fetchKandy(t, p, "").Mood)
 	p.now = func() time.Time { return base.Add(60*time.Hour + 61*time.Minute) }
-	require.Equal(t, "bored", fetchShipling(t, p, "").Mood, "lift expired")
+	require.Equal(t, "bored", fetchKandy(t, p, "").Mood, "lift expired")
 }
 
 func TestStageNameStableAcrossCalls(t *testing.T) {
 	host := newFakeHost(map[string]any{"debug": true})
 	p := newTestPlugin(t, host)
-	first := fetchShipling(t, p, "debug_grant=100000")
-	second := fetchShipling(t, p, "")
+	first := fetchKandy(t, p, "debug_grant=100000")
+	second := fetchKandy(t, p, "")
 	require.Equal(t, first.Level, second.Level)
 	require.Equal(t, first.StageName, second.StageName)
 	require.Equal(t, first.AppearanceSeed, second.AppearanceSeed)

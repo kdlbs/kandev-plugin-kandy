@@ -1,6 +1,6 @@
-// Command server is the backend for the Shipling plugin: it feeds the
+// Command server is the backend for the Kandy plugin: it feeds the
 // creature from bus events and serves its presentation state over the
-// "shipling" webhook. Kandev spawns and supervises this process.
+// "kandy" webhook. Kandev spawns and supervises this process.
 package main
 
 import (

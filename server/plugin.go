@@ -1,6 +1,6 @@
-// Package main is the backend of the Shipling plugin. It owns the
+// Package main is the backend of the Kandy plugin. It owns the
 // entire XP model: OnEvent turns work signals from the kandev bus into
-// lifetime XP persisted through Host state, and the single "shipling" webhook
+// lifetime XP persisted through Host state, and the single "kandy" webhook
 // serves the presentation-only view (level, stage name, progress, seed) the
 // UI renders. The factor weights below are deliberately never exposed.
 package main
@@ -20,11 +20,11 @@ import (
 )
 
 const (
-	webhookKeyShipling = "shipling"
+	webhookKeyKandy = "kandy"
 	webhookKeyPet      = "pet"
 
-	stateScope = "instance" // one shipling per kandev instance
-	stateKey   = "shipling"
+	stateScope = "instance" // one kandy per kandev instance
+	stateKey   = "kandy"
 
 	configKeyDebug = "debug"
 
@@ -55,7 +55,7 @@ const (
 	maxAwardedTasks = 500
 )
 
-// ledger is the whole persisted shipling: lifetime XP plus private counters.
+// ledger is the whole persisted kandy: lifetime XP plus private counters.
 // It round-trips through Host state as a JSON object.
 type ledger struct {
 	XP        float64 `json:"xp"`
@@ -76,7 +76,7 @@ type ledger struct {
 	// AwardSeq increments on every XP award — the UI's "gained since last
 	// fetch" signal that never exposes the hidden XP magnitude.
 	AwardSeq int64 `json:"award_seq,omitempty"`
-	// LastAwardAt (RFC3339) feeds the mood: how long since the shipling
+	// LastAwardAt (RFC3339) feeds the mood: how long since the kandy
 	// was last fed. Missing on pre-0.6 state: presentLedger falls back to
 	// UpdatedAt (every award touched it), never to "ancient".
 	LastAwardAt string `json:"last_award_at,omitempty"`
@@ -101,10 +101,10 @@ func (l *ledger) markTaskAwarded(taskID string) {
 	}
 }
 
-// shiplingResponse is everything the UI is allowed to know. Archetype,
+// kandyResponse is everything the UI is allowed to know. Archetype,
 // family, biome and lineage_seed are the lineage DNA (constant for the
 // install's lifetime); level/stage drive the additive growth.
-type shiplingResponse struct {
+type kandyResponse struct {
 	Level          int     `json:"level"`
 	Stage          int     `json:"stage"` // metamorphosis stage 0..4
 	Archetype      int     `json:"archetype"`
@@ -163,7 +163,7 @@ func (p *plugin) loadLedger(ctx context.Context) *ledger {
 	}
 	value, found, err := host.GetState(ctx, stateScope, "", stateKey)
 	if err != nil {
-		log.Printf("shipling: reading state: %v", err)
+		log.Printf("kandy: reading state: %v", err)
 		return fresh
 	}
 	if found {
@@ -186,7 +186,7 @@ func (p *plugin) mutateLedger(ctx context.Context, fn func(*ledger)) *ledger {
 		return l
 	}
 	if err := host.SetState(ctx, stateScope, "", stateKey, ledgerToMap(l)); err != nil {
-		log.Printf("shipling: persisting state: %v", err)
+		log.Printf("kandy: persisting state: %v", err)
 	}
 	return l
 }
@@ -201,7 +201,7 @@ func (p *plugin) awardXP(ctx context.Context, apply func(*ledger)) *ledger {
 	})
 }
 
-// OnEvent feeds the shipling. It always returns nil — kandev retries
+// OnEvent feeds the kandy. It always returns nil — kandev retries
 // deliveries on error with the same EventID, and a retried delivery of an
 // already-counted event would farm duplicate XP — so parse failures and
 // state hiccups are logged and swallowed.
@@ -288,7 +288,7 @@ func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookReques
 	if req.WebhookKey == webhookKeyPet {
 		return p.handlePet(ctx), nil
 	}
-	if req.WebhookKey != webhookKeyShipling {
+	if req.WebhookKey != webhookKeyKandy {
 		return jsonResponse(404, []byte(`{"error":"unknown webhook"}`)), nil
 	}
 	query, err := url.ParseQuery(req.Query)
@@ -381,14 +381,14 @@ func (p *plugin) debugEnabled(ctx context.Context) bool {
 	}
 	config, err := host.GetConfig(ctx)
 	if err != nil {
-		log.Printf("shipling: reading config: %v", err)
+		log.Printf("kandy: reading config: %v", err)
 		return false
 	}
 	enabled, _ := config[configKeyDebug].(bool)
 	return enabled
 }
 
-// sinceLastAward computes how long ago the shipling was last fed.
+// sinceLastAward computes how long ago the kandy was last fed.
 // Migration-safe: pre-0.6 state has no last_award_at, so fall back to
 // updated_at (every award touched it); a fully unknown timestamp counts as
 // "just now" — never as ancient.
@@ -405,7 +405,7 @@ func (p *plugin) sinceLastAward(l *ledger) time.Duration {
 // This is the only place webhook output is built — counters and weights
 // never cross this boundary. idleOverride (debug-only) replaces the
 // computed time-since-award for mood/flavor.
-func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) shiplingResponse {
+func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) kandyResponse {
 	level := levelForXP(l.XP)
 	sinceAward := p.sinceLastAward(l)
 	if idleOverride != nil {
@@ -420,10 +420,10 @@ func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) shiplingR
 		p.now().UTC().Sub(petted) < petLiftWindow {
 		if lifted := liftMood(mood); lifted != mood {
 			mood = lifted
-			flavor = "Your shipling purrs — but it's still hungry for shipped work."
+			flavor = "Your kandy purrs — but it's still hungry for shipped work."
 		}
 	}
-	return shiplingResponse{
+	return kandyResponse{
 		Level:          level,
 		Stage:          stageForLevel(level),
 		Archetype:      archetypeForLineage(l.Salt),
@@ -467,7 +467,7 @@ func ledgerFromMap(m map[string]any) *ledger {
 	return l
 }
 
-// jsonResponse marks every reply no-store: the shipling's level and XP change
+// jsonResponse marks every reply no-store: the kandy's level and XP change
 // as work lands, so a cached body would show a stale creature until reload.
 func jsonResponse(status int32, body []byte) *pluginsdk.WebhookResponse {
 	return &pluginsdk.WebhookResponse{

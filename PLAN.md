@@ -1,6 +1,6 @@
-# Shipling — implementation plan
+# Kandy — implementation plan
 
-A Tamashipling-style creature living in the `chat-top-bar` slot that evolves
+A Tamakandy-style creature living in the `chat-top-bar` slot that evolves
 forever from the work happening in the Kandev instance. All XP logic is
 server-side (Go plugin backend); the UI only renders what the webhook returns.
 
@@ -72,7 +72,7 @@ K = 400, B = 1.32                          // v0.2.0 retune
 ## 3. State & persistence
 
 Host state (requires `capabilities.state: true`), scope `instance`,
-scopeID `""`, key `shipling` — one small JSON object, participates in kandev
+scopeID `""`, key `kandy` — one small JSON object, participates in kandev
 backups, survives upgrades, removed on uninstall:
 
 ```json
@@ -90,25 +90,25 @@ backups, survives upgrades, removed on uninstall:
 ## 4. Manifest
 
 ```yaml
-id: kandev-plugin-shipling | api_version: 1 | version: 0.1.0
-display_name: "Shipling" | categories: ["tools"]
+id: kandev-plugin-kandy | api_version: 1 | version: 0.1.0
+display_name: "Kandy" | categories: ["tools"]
 runtime.type: binary (linux-amd64 for host loop; full package builds all 5)
 capabilities:
   state: true
   events: [task.state_changed, turn.completed, agent.completed, message.added]
-webhooks: [{ key: shipling, method: GET }]
+webhooks: [{ key: kandy, method: GET }]
 ui.bundle: /ui/bundle.js
 config_schema: { debug: boolean, default false }
 ```
 
-## 5. Webhook API (`GET .../webhooks/shipling`)
+## 5. Webhook API (`GET .../webhooks/kandy`)
 
 Response — creature facts only, no factor breakdown:
 
 ```json
 { "level": 6, "tier": 1, "stage_name": "Mossy Sproutling",
   "progress_pct": 42.5, "appearance_seed": 987654321,
-  "flavor": "Your shipling looks energized.", "alive_since": "RFC3339" }
+  "flavor": "Your kandy looks energized.", "alive_since": "RFC3339" }
 ```
 
 - `appearance_seed = fnv32(salt ":" level)` — deterministic per level per
@@ -123,7 +123,7 @@ Response — creature facts only, no factor breakdown:
 ## 6. Procedural evolution
 
 > **v0.3.0 — DNA vs growth.** v0.2's per-level archetype cycling broke the
-> tamashipling fantasy ("it's a different guy every level"). v0.3 splits the
+> tamakandy fantasy ("it's a different guy every level"). v0.3 splits the
 > generator: the **salt is DNA** — it fixes archetype/species, palette
 > family, biome, and lineage style picks (eye/horn/tail/marking/held-item
 > styles via `lineage_seed`) for the whole lifetime — while the **level is
@@ -174,20 +174,20 @@ seeded PRNG — **no `Math.random` at render time**, so no flicker.
 
 ## 7. UI component structure (`ui/bundle.js`, no build step)
 
-Plain ES module, `window.registerKandevPlugin("kandev-plugin-shipling", ...)`,
+Plain ES module, `window.registerKandevPlugin("kandev-plugin-kandy", ...)`,
 `registry.registerComponent("chat-top-bar", ...)`, `host.React` + `host.jsx`
 + `host.ui` Tooltip/TooltipTrigger/TooltipContent (activity-rings pattern).
 
-- Data: `host.api.fetch("webhooks/shipling")` on mount, re-fetch on hover
+- Data: `host.api.fetch("webhooks/kandy")` on mount, re-fetch on hover
   (mouseenter/focus) and a 60s interval (cleared on unmount).
 - Trigger: ~24px mini creature SVG with subtle idle bob + periodic blink.
 - TooltipContent card (~240px): scene background div, ~96px creature with
   idle bob / blink / occasional wiggle, stage name + "Lv N", XP bar
   (rounded track using `var(--muted)` / fill `var(--primary)`) with % to
   next evolution, flavor line. Theme vars where reasonable for light/dark.
-- Animations: one injected `<style id="kandev-shipling-style">` (guarded so
-  repeat `initialize` is safe) with keyframes `shipling-bob`, `shipling-blink`,
-  `shipling-wiggle`; disabled under `prefers-reduced-motion: reduce`.
+- Animations: one injected `<style id="kandev-kandy-style">` (guarded so
+  repeat `initialize` is safe) with keyframes `kandy-bob`, `kandy-blink`,
+  `kandy-wiggle`; disabled under `prefers-reduced-motion: reduce`.
   `destroy` removes the style tag and clears the interval.
 
 ## 8. Test plan (Go, cached go1.26 toolchain; gofmt + go vet clean)
@@ -214,9 +214,9 @@ Never touch the real backend/DB; no broad pkill; spec deleted afterwards and
 1. `make package-host` → install tarball via `POST /api/plugins/install`.
 2. Create task, message the mock agent so real events flow; assert via the
    webhook that lifetime XP grew (proves OnEvent wiring).
-3. `PATCH /api/plugins/kandev-plugin-shipling` config `{debug: true}`, then
+3. `PATCH /api/plugins/kandev-plugin-kandy` config `{debug: true}`, then
    `?debug_grant` to jump to mid/high levels.
-4. Screenshots to `/tmp/kandev-shipling-demo/screenshots/`: top-bar icon in
+4. Screenshots to `/tmp/kandev-kandy-demo/screenshots/`: top-bar icon in
    context (crop `[data-testid="task-topbar"]`), hover card at low level
    (egg), 2–3 progressively evolved levels (creature + scene + stage name +
    XP bar), one full page; light + dark (toggle `documentElement.classList`,

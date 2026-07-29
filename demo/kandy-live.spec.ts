@@ -1,5 +1,5 @@
 /**
- * THROWAWAY verification spec for Shipling v0.5.2 live updates.
+ * THROWAWAY verification spec for Kandy v0.5.2 live updates.
  * Proves the widget updates from WS events with NO page reload:
  *  - real chat events trigger a spontaneous (debounced) webhook refetch,
  *  - archiving a task (+150 XP) levels the creature up live in the DOM,
@@ -13,12 +13,12 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures/test-base";
 import { SessionPage } from "../pages/session-page";
 
-const PLUGIN_ID = "kandev-plugin-shipling";
+const PLUGIN_ID = "kandev-plugin-kandy";
 const PACKAGE_PATH =
-  "/home/jcfs/kandev-plugins/kandev-plugin-shipling/kandev-plugin-shipling-0.5.2.tar.gz";
-const SHOT_DIR = "/tmp/kandev-shipling-demo/screenshots";
+  "/home/jcfs/kandev-plugins/kandev-plugin-kandy/kandev-plugin-kandy-0.5.2.tar.gz";
+const SHOT_DIR = "/tmp/kandev-kandy-demo/screenshots";
 
-async function installShipling(baseUrl: string) {
+async function installKandy(baseUrl: string) {
   const form = new FormData();
   form.append("package", new Blob([fs.readFileSync(PACKAGE_PATH)]), path.basename(PACKAGE_PATH));
   const res = await fetch(`${baseUrl}/api/plugins/install`, { method: "POST", body: form });
@@ -30,7 +30,7 @@ async function installShipling(baseUrl: string) {
 function trackWebhookFetches(page: Page): { times: number[] } {
   const tracker = { times: [] as number[] };
   page.on("request", (req) => {
-    if (req.url().includes(`/webhooks/shipling`)) tracker.times.push(Date.now());
+    if (req.url().includes(`/webhooks/kandy`)) tracker.times.push(Date.now());
   });
   return tracker;
 }
@@ -39,7 +39,7 @@ function countSince(tracker: { times: number[] }, since: number): number {
   return tracker.times.filter((t) => t >= since).length;
 }
 
-test.describe("Shipling — live updates (desktop)", () => {
+test.describe("Kandy — live updates (desktop)", () => {
   test("XP and creature update with NO reload", async ({
     testPage,
     apiClient,
@@ -48,17 +48,17 @@ test.describe("Shipling — live updates (desktop)", () => {
   }) => {
     test.setTimeout(180_000);
     fs.mkdirSync(SHOT_DIR, { recursive: true });
-    await installShipling(backend.baseUrl);
+    await installKandy(backend.baseUrl);
 
     // Task A: plain task we will archive later. Task B: agent-backed task
     // whose chat generates real turn/message events.
-    const taskA = await apiClient.createTask(seedData.workspaceId, "Shipling archive target", {
+    const taskA = await apiClient.createTask(seedData.workspaceId, "Kandy archive target", {
       workflow_id: seedData.workflowId,
       workflow_step_id: seedData.startStepId,
     });
     const taskB = await apiClient.createTaskWithAgent(
       seedData.workspaceId,
-      "Shipling live chat",
+      "Kandy live chat",
       seedData.agentProfileId,
       {
         workflow_id: seedData.workflowId,
@@ -73,13 +73,13 @@ test.describe("Shipling — live updates (desktop)", () => {
     await session.waitForLoad();
     await session.waitForChatIdle();
 
-    const widget = testPage.locator("#kandev-shipling-widget");
+    const widget = testPage.locator("#kandev-kandy-widget");
     await expect(widget).toBeVisible({ timeout: 15_000 });
     const initialLabel = await widget.getAttribute("aria-label");
     expect(initialLabel).toContain("level 1");
     await testPage
       .locator('[data-testid="task-topbar"]')
-      .screenshot({ path: `${SHOT_DIR}/shipling-live-before.png` });
+      .screenshot({ path: `${SHOT_DIR}/kandy-live-before.png` });
 
     // Keep the mouse far away so no hover/focus refetch can pollute the
     // spontaneous-refetch measurement.
@@ -88,7 +88,7 @@ test.describe("Shipling — live updates (desktop)", () => {
     // --- 2. Real chat work triggers a spontaneous refetch (no reload,
     // no hover): the mock agent turn produces a burst of WS events. ---
     const chatStart = Date.now();
-    await session.sendMessage("grow, little shipling");
+    await session.sendMessage("grow, little kandy");
     await session.waitForChatIdle();
     await expect
       .poll(() => countSince(tracker, chatStart), {
@@ -119,7 +119,7 @@ test.describe("Shipling — live updates (desktop)", () => {
     console.log(`archive: ${archiveRefetches} refetch(es)`);
     await testPage
       .locator('[data-testid="task-topbar"]')
-      .screenshot({ path: `${SHOT_DIR}/shipling-live-after.png` });
+      .screenshot({ path: `${SHOT_DIR}/kandy-live-after.png` });
 
     // --- 5. No regression: hover tooltip and click dialog still work. ---
     await widget.hover();
@@ -132,7 +132,7 @@ test.describe("Shipling — live updates (desktop)", () => {
     });
     await testPage.mouse.move(5, 500);
     await widget.click();
-    const dialog = testPage.locator("#kandev-shipling-dialog");
+    const dialog = testPage.locator("#kandev-kandy-dialog");
     await expect(dialog).toBeVisible({ timeout: 10_000 });
     await expect(dialog.getByText("to next evolution")).toBeVisible();
     await testPage.keyboard.press("Escape");
@@ -140,13 +140,13 @@ test.describe("Shipling — live updates (desktop)", () => {
   });
 });
 
-test.describe("Shipling — mobile regression", () => {
+test.describe("Kandy — mobile regression", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
   test("tap still opens the dialog", async ({ testPage, apiClient, seedData, backend }) => {
     test.setTimeout(120_000);
-    await installShipling(backend.baseUrl);
-    const task = await apiClient.createTask(seedData.workspaceId, "Shipling mobile regression", {
+    await installKandy(backend.baseUrl);
+    const task = await apiClient.createTask(seedData.workspaceId, "Kandy mobile regression", {
       workflow_id: seedData.workflowId,
       workflow_step_id: seedData.startStepId,
     });
@@ -154,10 +154,10 @@ test.describe("Shipling — mobile regression", () => {
     const session = new SessionPage(testPage);
     await session.waitForLoad();
 
-    const widget = testPage.locator("#kandev-shipling-widget");
+    const widget = testPage.locator("#kandev-kandy-widget");
     await expect(widget).toBeVisible({ timeout: 15_000 });
     await widget.tap();
-    const dialog = testPage.locator("#kandev-shipling-dialog");
+    const dialog = testPage.locator("#kandev-kandy-dialog");
     await expect(dialog).toBeVisible({ timeout: 10_000 });
     await expect(dialog.getByText("to next evolution")).toBeVisible();
   });

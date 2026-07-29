@@ -1,5 +1,5 @@
 /**
- * THROWAWAY verification spec for kandev-plugin-shipling v0.5.0.
+ * THROWAWAY verification spec for kandev-plugin-kandy v0.5.0.
  * Desktop: hover tooltip still works; click opens the card dialog;
  * Escape / outside-click close it. Mobile viewport: does the chat-top-bar
  * slot render in the phone layout at all, and does tap open the dialog?
@@ -11,12 +11,12 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../fixtures/test-base";
 import { SessionPage } from "../pages/session-page";
 
-const PLUGIN_ID = "kandev-plugin-shipling";
+const PLUGIN_ID = "kandev-plugin-kandy";
 const PACKAGE_PATH =
-  "/home/jcfs/kandev-plugins/kandev-plugin-shipling/kandev-plugin-shipling-0.5.0.tar.gz";
-const SHOT_DIR = "/tmp/kandev-shipling-demo/screenshots";
+  "/home/jcfs/kandev-plugins/kandev-plugin-kandy/kandev-plugin-kandy-0.5.0.tar.gz";
+const SHOT_DIR = "/tmp/kandev-kandy-demo/screenshots";
 
-async function installShipling(baseUrl: string) {
+async function installKandy(baseUrl: string) {
   const form = new FormData();
   form.append("package", new Blob([fs.readFileSync(PACKAGE_PATH)]), path.basename(PACKAGE_PATH));
   const res = await fetch(`${baseUrl}/api/plugins/install`, { method: "POST", body: form });
@@ -31,12 +31,12 @@ async function installShipling(baseUrl: string) {
     body: JSON.stringify({ config: { debug: true } }),
   });
   await expect
-    .poll(async () => (await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/shipling`)).status, {
+    .poll(async () => (await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/kandy`)).status, {
       timeout: 30_000,
     })
     .toBe(200);
   const state = await (
-    await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/shipling?debug_grant=60000`)
+    await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/kandy?debug_grant=60000`)
   ).json();
   return state as { level: number };
 }
@@ -57,17 +57,17 @@ async function openTaskPage(
 }
 
 function dialog(page: Page): Locator {
-  return page.locator("#kandev-shipling-dialog");
+  return page.locator("#kandev-kandy-dialog");
 }
 
-test.describe("Shipling — desktop", () => {
+test.describe("Kandy — desktop", () => {
   test("hover tooltip + click dialog", async ({ testPage, apiClient, seedData, backend }) => {
     test.setTimeout(120_000);
     fs.mkdirSync(SHOT_DIR, { recursive: true });
-    await installShipling(backend.baseUrl);
-    await openTaskPage(testPage, apiClient, seedData, "Shipling desktop verify");
+    await installKandy(backend.baseUrl);
+    await openTaskPage(testPage, apiClient, seedData, "Kandy desktop verify");
 
-    const widget = testPage.locator("#kandev-shipling-widget");
+    const widget = testPage.locator("#kandev-kandy-widget");
     await expect(widget).toBeVisible({ timeout: 15_000 });
 
     // Hover quick-peek still works.
@@ -79,7 +79,7 @@ test.describe("Shipling — desktop", () => {
     await expect(tooltipCard.getByText("to next evolution").first()).toBeVisible({
       timeout: 10_000,
     });
-    await tooltipCard.screenshot({ path: `${SHOT_DIR}/shipling-desktop-tooltip.png` });
+    await tooltipCard.screenshot({ path: `${SHOT_DIR}/kandy-desktop-tooltip.png` });
     await testPage.mouse.move(4, 400);
     await expect(tooltipCard).toBeHidden({ timeout: 5_000 });
 
@@ -88,7 +88,7 @@ test.describe("Shipling — desktop", () => {
     await expect(dialog(testPage)).toBeVisible({ timeout: 10_000 });
     await expect(dialog(testPage).getByText("to next evolution")).toBeVisible();
     await testPage.waitForTimeout(500); // fade-in settle
-    await dialog(testPage).screenshot({ path: `${SHOT_DIR}/shipling-desktop-dialog.png` });
+    await dialog(testPage).screenshot({ path: `${SHOT_DIR}/kandy-desktop-dialog.png` });
 
     // Escape closes.
     await testPage.keyboard.press("Escape");
@@ -102,7 +102,7 @@ test.describe("Shipling — desktop", () => {
   });
 });
 
-test.describe("Shipling — mobile viewport", () => {
+test.describe("Kandy — mobile viewport", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
   test("top-bar slot renders on phone layout; tap opens dialog", async ({
@@ -113,19 +113,19 @@ test.describe("Shipling — mobile viewport", () => {
   }) => {
     test.setTimeout(120_000);
     fs.mkdirSync(SHOT_DIR, { recursive: true });
-    await installShipling(backend.baseUrl);
-    await openTaskPage(testPage, apiClient, seedData, "Shipling mobile verify");
+    await installKandy(backend.baseUrl);
+    await openTaskPage(testPage, apiClient, seedData, "Kandy mobile verify");
 
     // KEY FINDING CHECK: does the phone layout render the chat-top-bar
     // plugin slot at all?
-    const widget = testPage.locator("#kandev-shipling-widget");
+    const widget = testPage.locator("#kandev-kandy-widget");
     const mobileActions = testPage.locator('[data-testid="mobile-topbar-actions"]');
     await expect(mobileActions).toBeVisible({ timeout: 15_000 });
     await expect(widget).toBeVisible({ timeout: 15_000 });
-    await mobileActions.screenshot({ path: `${SHOT_DIR}/shipling-mobile-topbar.png` });
+    await mobileActions.screenshot({ path: `${SHOT_DIR}/kandy-mobile-topbar.png` });
     // Context shot of the whole phone top area.
     await testPage.screenshot({
-      path: `${SHOT_DIR}/shipling-mobile-topbar-context.png`,
+      path: `${SHOT_DIR}/kandy-mobile-topbar-context.png`,
       clip: { x: 0, y: 0, width: 390, height: 120 },
     });
 
@@ -134,6 +134,6 @@ test.describe("Shipling — mobile viewport", () => {
     await expect(dialog(testPage)).toBeVisible({ timeout: 10_000 });
     await expect(dialog(testPage).getByText("to next evolution")).toBeVisible();
     await testPage.waitForTimeout(500);
-    await testPage.screenshot({ path: `${SHOT_DIR}/shipling-mobile-dialog.png` });
+    await testPage.screenshot({ path: `${SHOT_DIR}/kandy-mobile-dialog.png` });
   });
 });
