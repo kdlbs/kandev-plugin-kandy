@@ -8,13 +8,43 @@ work happens in your kandev instance. Finish tasks, run agents, keep the
 conversation going — the kandy grows through endless procedurally generated
 forms, scenes, and stage names. It starts as an egg. It never stops.
 
-- **Top bar**: a ~24px animated creature next to the session controls.
-- **Hover**: the kandy card — its current scene (meadow → forest → … → deep
-  space and beyond), the creature with idle animations, its stage name, and
-  an XP bar showing progress to the next evolution.
+- **Top bar**: a small creature portrait next to the session controls,
+  updating live as work lands (no page reload needed).
+- **Hover or click/tap**: the kandy card — its current scene, the creature
+  with idle animations, its stage name, an XP bar, and a 5-heart mood meter.
+- **Moods**: it celebrates when XP lands and gets bored, sad, and eventually
+  gloomy (rain cloud included) when nothing ships for days.
+- **Petting**: click the creature in the open card. Petting comforts it —
+  lifting its mood for a while — but never feeds it. Only shipped work does.
 - **How XP works**: it's a secret. The recipe lives server-side and the UI is
   never told the breakdown — your kandy simply reacts to how much real work
   flows through the instance.
+
+## Screenshots
+
+The card (light and dark), with the mood hearts and level progress:
+
+![Kandy card](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/c5e1da470a83ee4641decbe768e3bdd05844e42b/card-light.png)
+
+One lineage growing from egg to Lv 100 — same being at every level, it only
+ever gains:
+
+![Evolution, Lv 1 → 100](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/c5e1da470a83ee4641decbe768e3bdd05844e42b/evolution-1-100.png)
+
+Different installs roll different DNA — species, palette, and home biome:
+
+![Four lineages](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/c5e1da470a83ee4641decbe768e3bdd05844e42b/lineages.png)
+
+A first month at a real measured working pace:
+
+![First month](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/c5e1da470a83ee4641decbe768e3bdd05844e42b/first-month.png)
+
+The Lv 100 endgame:
+
+![Lv 100 hero](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/c5e1da470a83ee4641decbe768e3bdd05844e42b/hero-lv100.png)
+
+*(Screenshots live on the `media/readme-screenshots` orphan branch,
+referenced by pinned commit — regenerate with `demo/render-evolution-sheet.mjs`.)*
 
 ## Install
 
