@@ -1205,7 +1205,9 @@ function creatureParts(h, data, portrait) {
   // body only changes through stage scale/detail, never reshuffles.
   var body = BODY_BUILDERS[arch](h, makeRand(lineage, 6), C, g);
 
-  var mood = data.mood || "content";
+  // face_mood is a render-only override (celebrations): the expression goes
+  // joyful while the badge keeps the server's mood.
+  var mood = data.face_mood || data.mood || "content";
   // sleep_state is a render-only field the widget/card layer sets from the
   // seeded schedule + local clock: "asleep" (closed eyes, zzz) or "grumpy"
   // (half-woken squint). Never comes from the server.
@@ -1304,8 +1306,9 @@ function zzzText(h, key, x, y, size, cls, delay) {
 function creatureSvg(h, data, size, extraClass, isStatic) {
   var cls = (extraClass || "") + (isStatic ? " kandev-kandy-static" : "");
   // Mood sets the idle-bob tempo: elated bounces faster, bored slows down,
-  // sad/gloomy nearly stop.
-  var mood = data.mood || "content";
+  // sad/gloomy nearly stop. face_mood (celebration override) wins so the
+  // creature bounces joyfully while the badge stays server-truth.
+  var mood = data.face_mood || data.mood || "content";
   var bobCls = "kandev-kandy-bob";
   if (mood === "elated") bobCls += " kandev-kandy-bob-fast";
   else if (mood === "bored") bobCls += " kandev-kandy-bob-slow";
@@ -2952,9 +2955,11 @@ function makeKandyWidget(host) {
     }, []);
 
     var shown = data || EGG_PLACEHOLDER;
-    // While celebrating, the face is happy regardless of prior mood — it
-    // just got fed. Render-time override only; state stays untouched.
-    if (celebration) shown = Object.assign({}, shown, { mood: "elated" });
+    // While celebrating, the FACE is joyful regardless of prior mood — it
+    // just got fed. face_mood only: the mood badge keeps showing the
+    // server's truth, so the badge text never blinks Elated→Happy on every
+    // award (which read as flip-flopping when a bonk mood-dent was active).
+    if (celebration) shown = Object.assign({}, shown, { face_mood: "elated" });
     // The chip portrait sleeps too: closed eyes on the static icon while
     // the seeded schedule says it's bedtime (celebrations still play their
     // chip hop over it — no special-casing).
