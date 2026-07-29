@@ -1,7 +1,5 @@
 # Kandy
 
-*(formerly "Shipling", and before that "Kandev Gotchi")*
-
 A tiny creature that **grows when you ship**. It lives in the session top
 bar and feeds on shipped tasks, agent runs, and turns — evolving forever as
 work happens in your kandev instance. Finish tasks, run agents, keep the
