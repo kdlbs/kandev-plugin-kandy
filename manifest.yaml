@@ -1,6 +1,6 @@
 id: "kandev-plugin-shipling"
 api_version: 1
-version: "0.5.0"
+version: "0.5.1"
 display_name: "Shipling"
 description: "A tiny creature that grows when you ship — it feeds on shipped tasks, agent runs, and turns, and evolves forever in your session top bar."
 author: "kandev"
@@ -10,6 +10,10 @@ runtime:
   type: binary
   executables:
     linux-amd64: "server/plugin-linux-amd64"
+    linux-arm64: "server/plugin-linux-arm64"
+    darwin-amd64: "server/plugin-darwin-amd64"
+    darwin-arm64: "server/plugin-darwin-arm64"
+    windows-amd64: "server/plugin-windows-amd64.exe"
 
 # The shipling's lifetime XP ledger lives in Host state (scope "instance"),
 # fed by work signals from the event bus. The XP recipe is intentionally
