@@ -262,8 +262,8 @@ func TestStageName_MythicLadderBeyondBand(t *testing.T) {
 }
 
 func TestFlavorText_NeverItemizesFactors(t *testing.T) {
-	require.Equal(t, "Your gotchi looks energized.", flavorText(7, 5, 0))
-	require.Equal(t, "Your gotchi is napping quietly.", flavorText(7, 5, 48*3600*1e9))
+	require.Equal(t, "Your shipling looks energized.", flavorText(7, 5, 0))
+	require.Equal(t, "Your shipling is napping quietly.", flavorText(7, 5, 48*3600*1e9))
 	for _, level := range []int{1, 2, 9, 40} {
 		line := flavorText(7, level, 3600*1e9)
 		require.NotEmpty(t, line)

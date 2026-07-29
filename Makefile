@@ -1,9 +1,9 @@
 .PHONY: build run test fmt vet package package-host clean
 
-BIN := bin/kandev-plugin-gotchi
-VERSION := 0.4.1
+BIN := bin/kandev-plugin-shipling
+VERSION := 0.5.0
 STAGE := .build/stage
-PKG_OUT := kandev-plugin-gotchi-$(VERSION).tar.gz
+PKG_OUT := kandev-plugin-shipling-$(VERSION).tar.gz
 
 build:
 	mkdir -p bin
@@ -46,4 +46,4 @@ package-host:
 	@echo "Wrote $(PKG_OUT)"
 
 clean:
-	rm -rf bin $(STAGE) kandev-plugin-gotchi-*.tar.gz
+	rm -rf bin $(STAGE) kandev-plugin-shipling-*.tar.gz

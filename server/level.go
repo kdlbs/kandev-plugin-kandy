@@ -1,4 +1,4 @@
-// level.go — the gotchi's growth math and procedural presentation.
+// level.go — the shipling's growth math and procedural presentation.
 // Everything here is pure and deterministic.
 //
 // v0.3.0 model — DNA vs growth:
@@ -378,13 +378,13 @@ func romanNumeral(n int) string {
 }
 
 var idleFlavor = []string{
-	"Your gotchi hums a tiny tune.",
+	"Your shipling hums a tiny tune.",
 	"Something stirs beneath the surface.",
-	"Your gotchi seems pleased with itself.",
+	"Your shipling seems pleased with itself.",
 	"It is dreaming of far-off places.",
-	"Your gotchi wiggles contentedly.",
+	"Your shipling wiggles contentedly.",
 	"It watches the cursor with great interest.",
-	"Your gotchi is thinking very hard about nothing.",
+	"Your shipling is thinking very hard about nothing.",
 	"A faint glow. Probably fine.",
 }
 
@@ -400,10 +400,10 @@ func flavorText(salt uint32, level int, sinceActivity time.Duration) string {
 		return "The egg is warm. Keep working."
 	}
 	if sinceActivity >= 0 && sinceActivity < flavorEnergizedWithin {
-		return "Your gotchi looks energized."
+		return "Your shipling looks energized."
 	}
 	if sinceActivity >= flavorNapAfter {
-		return "Your gotchi is napping quietly."
+		return "Your shipling is napping quietly."
 	}
 	seed := appearanceSeed(salt, level)
 	return idleFlavor[seededIndex(seed, 2, len(idleFlavor))]

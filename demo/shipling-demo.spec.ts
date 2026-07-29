@@ -1,8 +1,8 @@
 /**
- * THROWAWAY demo spec for kandev-plugin-gotchi verification + screenshots.
+ * THROWAWAY demo spec for kandev-plugin-shipling verification + screenshots.
  * Boots the standard isolated e2e backend (own port/tmpdir/SQLite), installs
  * the locally built tarball, proves real events feed XP, then uses the
- * debug_grant knob to jump the gotchi through evolution stages. DELETE ME.
+ * debug_grant knob to jump the shipling through evolution stages. DELETE ME.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -10,11 +10,11 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../fixtures/test-base";
 import { SessionPage } from "../pages/session-page";
 
-const PLUGIN_ID = "kandev-plugin-gotchi";
-const PACKAGE_PATH = "/home/jcfs/kandev-plugins/kandev-plugin-gotchi/kandev-plugin-gotchi-0.4.0.tar.gz";
-const SHOT_DIR = "/tmp/kandev-gotchi-demo/screenshots";
+const PLUGIN_ID = "kandev-plugin-shipling";
+const PACKAGE_PATH = "/home/jcfs/kandev-plugins/kandev-plugin-shipling/kandev-plugin-shipling-0.4.0.tar.gz";
+const SHOT_DIR = "/tmp/kandev-shipling-demo/screenshots";
 
-type GotchiState = {
+type ShiplingState = {
   level: number;
   tier: number;
   stage_name: string;
@@ -23,10 +23,10 @@ type GotchiState = {
   flavor: string;
 };
 
-async function fetchGotchi(baseUrl: string, query = ""): Promise<GotchiState> {
-  const res = await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/gotchi${query}`);
+async function fetchShipling(baseUrl: string, query = ""): Promise<ShiplingState> {
+  const res = await fetch(`${baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/shipling${query}`);
   expect(res.ok).toBeTruthy();
-  return (await res.json()) as GotchiState;
+  return (await res.json()) as ShiplingState;
 }
 
 async function openCard(page: Page, widget: Locator, level: number): Promise<Locator> {
@@ -44,7 +44,7 @@ async function openCard(page: Page, widget: Locator, level: number): Promise<Loc
   return card;
 }
 
-test("gotchi evolves in an isolated instance (demo screenshots)", async ({
+test("shipling evolves in an isolated instance (demo screenshots)", async ({
   testPage,
   apiClient,
   seedData,
@@ -69,7 +69,7 @@ test("gotchi evolves in an isolated instance (demo screenshots)", async ({
   // --- Create a task and feed the mock agent so real events flow ---
   const task = await apiClient.createTaskWithAgent(
     seedData.workspaceId,
-    "Feed the gotchi",
+    "Feed the shipling",
     seedData.agentProfileId,
     {
       workflow_id: seedData.workflowId,
@@ -81,17 +81,17 @@ test("gotchi evolves in an isolated instance (demo screenshots)", async ({
   const session = new SessionPage(testPage);
   await session.waitForLoad();
   await session.waitForChatIdle();
-  await session.sendMessage("Hello little gotchi, grow strong");
+  await session.sendMessage("Hello little shipling, grow strong");
   await session.waitForChatIdle();
 
   // OnEvent must have awarded XP for the real message/turn events.
   await expect
-    .poll(async () => (await fetchGotchi(backend.baseUrl)).progress_pct, { timeout: 20_000 })
+    .poll(async () => (await fetchShipling(backend.baseUrl)).progress_pct, { timeout: 20_000 })
     .toBeGreaterThan(0);
-  const earned = await fetchGotchi(backend.baseUrl);
+  const earned = await fetchShipling(backend.baseUrl);
 
   // --- Top-bar widget + low-level card (light) ---
-  const widget = testPage.locator("#kandev-gotchi-widget");
+  const widget = testPage.locator("#kandev-shipling-widget");
   await expect(widget).toBeVisible({ timeout: 15_000 });
   await testPage
     .locator('[data-testid="task-topbar"]')
@@ -111,7 +111,7 @@ test("gotchi evolves in an isolated instance (demo screenshots)", async ({
 
   // --- debug_grant is rejected while debug config is off ---
   const forbidden = await fetch(
-    `${backend.baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/gotchi?debug_grant=1000`,
+    `${backend.baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/shipling?debug_grant=1000`,
   );
   expect(forbidden.status).toBe(403);
 
@@ -124,7 +124,7 @@ test("gotchi evolves in an isolated instance (demo screenshots)", async ({
   await expect
     .poll(
       async () =>
-        (await fetch(`${backend.baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/gotchi`)).status,
+        (await fetch(`${backend.baseUrl}/api/plugins/${PLUGIN_ID}/webhooks/shipling`)).status,
       { timeout: 30_000 },
     )
     .toBe(200);
@@ -140,7 +140,7 @@ test("gotchi evolves in an isolated instance (demo screenshots)", async ({
   ];
   let shot = 5;
   for (const stage of stages) {
-    const state = await fetchGotchi(backend.baseUrl, `?debug_grant=${stage.grant}`);
+    const state = await fetchShipling(backend.baseUrl, `?debug_grant=${stage.grant}`);
     expect(state.level).toBeGreaterThan(earned.level);
     card = await openCard(testPage, widget, state.level);
     const prefix = `${String(shot).padStart(2, "0")}-card-lv${state.level}-${stage.label}`;
@@ -156,8 +156,8 @@ test("gotchi evolves in an isolated instance (demo screenshots)", async ({
     shot++;
   }
 
-  // --- Full page with the final evolved gotchi card open ---
-  const finalState = await fetchGotchi(backend.baseUrl);
+  // --- Full page with the final evolved shipling card open ---
+  const finalState = await fetchShipling(backend.baseUrl);
   card = await openCard(testPage, widget, finalState.level);
   await testPage.waitForTimeout(800); // let the tooltip fade-in settle
   await testPage.screenshot({ path: `${SHOT_DIR}/99-full-page-light.png`, fullPage: false });

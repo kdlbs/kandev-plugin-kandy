@@ -1,6 +1,6 @@
-// Package main is the backend of the Kandev Gotchi plugin. It owns the
+// Package main is the backend of the Shipling plugin. It owns the
 // entire XP model: OnEvent turns work signals from the kandev bus into
-// lifetime XP persisted through Host state, and the single "gotchi" webhook
+// lifetime XP persisted through Host state, and the single "shipling" webhook
 // serves the presentation-only view (level, stage name, progress, seed) the
 // UI renders. The factor weights below are deliberately never exposed.
 package main
@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	webhookKeyGotchi = "gotchi"
+	webhookKeyShipling = "shipling"
 
-	stateScope = "instance" // one gotchi per kandev instance
-	stateKey   = "gotchi"
+	stateScope = "instance" // one shipling per kandev instance
+	stateKey   = "shipling"
 
 	configKeyDebug = "debug"
 
@@ -53,7 +53,7 @@ const (
 	maxAwardedTasks = 500
 )
 
-// ledger is the whole persisted gotchi: lifetime XP plus private counters.
+// ledger is the whole persisted shipling: lifetime XP plus private counters.
 // It round-trips through Host state as a JSON object.
 type ledger struct {
 	XP        float64 `json:"xp"`
@@ -89,10 +89,10 @@ func (l *ledger) markTaskAwarded(taskID string) {
 	}
 }
 
-// gotchiResponse is everything the UI is allowed to know. Archetype,
+// shiplingResponse is everything the UI is allowed to know. Archetype,
 // family, biome and lineage_seed are the lineage DNA (constant for the
 // install's lifetime); level/stage drive the additive growth.
-type gotchiResponse struct {
+type shiplingResponse struct {
 	Level          int     `json:"level"`
 	Stage          int     `json:"stage"` // metamorphosis stage 0..4
 	Archetype      int     `json:"archetype"`
@@ -146,7 +146,7 @@ func (p *plugin) loadLedger(ctx context.Context) *ledger {
 	}
 	value, found, err := host.GetState(ctx, stateScope, "", stateKey)
 	if err != nil {
-		log.Printf("gotchi: reading state: %v", err)
+		log.Printf("shipling: reading state: %v", err)
 		return fresh
 	}
 	if found {
@@ -169,12 +169,12 @@ func (p *plugin) mutateLedger(ctx context.Context, fn func(*ledger)) *ledger {
 		return l
 	}
 	if err := host.SetState(ctx, stateScope, "", stateKey, ledgerToMap(l)); err != nil {
-		log.Printf("gotchi: persisting state: %v", err)
+		log.Printf("shipling: persisting state: %v", err)
 	}
 	return l
 }
 
-// OnEvent feeds the gotchi. It always returns nil — kandev retries
+// OnEvent feeds the shipling. It always returns nil — kandev retries
 // deliveries on error with the same EventID, and a retried delivery of an
 // already-counted event would farm duplicate XP — so parse failures and
 // state hiccups are logged and swallowed.
@@ -258,7 +258,7 @@ func xpForEvent(e *pluginsdk.Event) (float64, func(*ledger)) {
 }
 
 func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookRequest) (*pluginsdk.WebhookResponse, error) {
-	if req.WebhookKey != webhookKeyGotchi {
+	if req.WebhookKey != webhookKeyShipling {
 		return jsonResponse(404, []byte(`{"error":"unknown webhook"}`)), nil
 	}
 	query, err := url.ParseQuery(req.Query)
@@ -306,7 +306,7 @@ func (p *plugin) debugEnabled(ctx context.Context) bool {
 	}
 	config, err := host.GetConfig(ctx)
 	if err != nil {
-		log.Printf("gotchi: reading config: %v", err)
+		log.Printf("shipling: reading config: %v", err)
 		return false
 	}
 	enabled, _ := config[configKeyDebug].(bool)
@@ -316,13 +316,13 @@ func (p *plugin) debugEnabled(ctx context.Context) bool {
 // presentLedger converts the private ledger into the public presentation.
 // This is the only place webhook output is built — counters and weights
 // never cross this boundary.
-func (p *plugin) presentLedger(l *ledger) gotchiResponse {
+func (p *plugin) presentLedger(l *ledger) shiplingResponse {
 	level := levelForXP(l.XP)
 	sinceActivity := time.Duration(-1)
 	if updated, err := time.Parse(time.RFC3339, l.UpdatedAt); err == nil {
 		sinceActivity = p.now().UTC().Sub(updated)
 	}
-	return gotchiResponse{
+	return shiplingResponse{
 		Level:          level,
 		Stage:          stageForLevel(level),
 		Archetype:      archetypeForLineage(l.Salt),

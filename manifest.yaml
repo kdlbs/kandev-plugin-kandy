@@ -1,8 +1,8 @@
-id: "kandev-plugin-gotchi"
+id: "kandev-plugin-shipling"
 api_version: 1
-version: "0.4.1"
-display_name: "Kandev Gotchi"
-description: "A tiny creature that lives in the session top bar and evolves forever as work happens in this kandev instance."
+version: "0.5.0"
+display_name: "Shipling"
+description: "A tiny creature that grows when you ship — it feeds on shipped tasks, agent runs, and turns, and evolves forever in your session top bar."
 author: "kandev"
 categories: ["tools"]
 
@@ -11,7 +11,7 @@ runtime:
   executables:
     linux-amd64: "server/plugin-linux-amd64"
 
-# The gotchi's lifetime XP ledger lives in Host state (scope "instance"),
+# The shipling's lifetime XP ledger lives in Host state (scope "instance"),
 # fed by work signals from the event bus. The XP recipe is intentionally
 # server-side only — the UI never sees the factor breakdown.
 capabilities:
@@ -24,8 +24,8 @@ capabilities:
     - "message.added"
 
 webhooks:
-  - key: "gotchi"
-    description: "Current gotchi presentation state as JSON (GET; dev-only ?debug_grant=<n> when debug config is on)"
+  - key: "shipling"
+    description: "Current shipling presentation state as JSON (GET; dev-only ?debug_grant=<n> when debug config is on)"
     method: "GET"
 
 ui:
@@ -37,5 +37,5 @@ config_schema:
     debug:
       type: boolean
       title: "Debug mode"
-      description: "Enables the ?debug_grant dev/demo knob on the gotchi webhook. Leave off in normal use."
+      description: "Enables the ?debug_grant dev/demo knob on the shipling webhook. Leave off in normal use."
       default: false

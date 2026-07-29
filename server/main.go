@@ -1,6 +1,6 @@
-// Command server is the backend for the Kandev Gotchi plugin: it feeds the
+// Command server is the backend for the Shipling plugin: it feeds the
 // creature from bus events and serves its presentation state over the
-// "gotchi" webhook. Kandev spawns and supervises this process.
+// "shipling" webhook. Kandev spawns and supervises this process.
 package main
 
 import (

@@ -1,4 +1,4 @@
-// Package main tests. Exercises the gotchi's OnEvent XP awards, state
+// Package main tests. Exercises the shipling's OnEvent XP awards, state
 // persistence, and webhook presentation end to end against a fake Host —
 // no go-plugin spawn (tokscale-plugin test pattern).
 package main
@@ -70,21 +70,21 @@ func busEvent(eventType string, payload map[string]any) *pluginsdk.Event {
 	return &pluginsdk.Event{EventID: "evt-1", EventType: eventType, Payload: payload}
 }
 
-func gotchiState(t *testing.T, resp *pluginsdk.WebhookResponse) gotchiResponse {
+func shiplingState(t *testing.T, resp *pluginsdk.WebhookResponse) shiplingResponse {
 	t.Helper()
 	require.Equal(t, int32(200), resp.Status)
 	require.Equal(t, "application/json", resp.Headers["Content-Type"])
-	var out gotchiResponse
+	var out shiplingResponse
 	require.NoError(t, json.Unmarshal(resp.Body, &out))
 	return out
 }
 
-func fetchGotchi(t *testing.T, p *plugin, query string) gotchiResponse {
+func fetchShipling(t *testing.T, p *plugin, query string) shiplingResponse {
 	t.Helper()
 	resp, err := p.HandleWebhook(context.Background(),
-		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyGotchi, Method: "GET", Query: query})
+		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET", Query: query})
 	require.NoError(t, err)
-	return gotchiState(t, resp)
+	return shiplingState(t, resp)
 }
 
 func persistedXP(t *testing.T, host *fakeHost) float64 {
@@ -108,7 +108,7 @@ func TestOnEvent_AwardsHiddenXP(t *testing.T) {
 
 	require.Equal(t, 1.0+8+20+150, persistedXP(t, host))
 
-	state := fetchGotchi(t, p, "")
+	state := fetchShipling(t, p, "")
 	require.Equal(t, 2, state.Level, "179 XP crosses the level-2 threshold (128)")
 	require.NotEqual(t, "Egg", state.StageName)
 	require.Equal(t, archetypeForLineage(42), state.Archetype)
@@ -211,11 +211,11 @@ func TestStateRoundTrip_SurvivesRestart(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		require.NoError(t, p1.OnEvent(ctx, busEvent("turn.completed", map[string]any{})))
 	}
-	before := fetchGotchi(t, p1, "")
+	before := fetchShipling(t, p1, "")
 
 	// A fresh plugin process (new cache) against the same Host state.
 	p2 := newTestPlugin(t, host)
-	after := fetchGotchi(t, p2, "")
+	after := fetchShipling(t, p2, "")
 	require.Equal(t, before.Level, after.Level)
 	require.Equal(t, before.StageName, after.StageName)
 	require.Equal(t, before.AppearanceSeed, after.AppearanceSeed)
@@ -227,7 +227,7 @@ func TestWebhook_ShapeAndHiddenFactors(t *testing.T) {
 	p := newTestPlugin(t, host)
 	require.NoError(t, p.OnEvent(context.Background(), busEvent("turn.completed", map[string]any{})))
 
-	state := fetchGotchi(t, p, "")
+	state := fetchShipling(t, p, "")
 	require.GreaterOrEqual(t, state.Level, 1)
 	require.GreaterOrEqual(t, state.Archetype, 0)
 	require.Less(t, state.Archetype, numArchetypes)
@@ -244,7 +244,7 @@ func TestWebhook_ShapeAndHiddenFactors(t *testing.T) {
 	// The hidden-factors requirement: raw counters and the XP ledger never
 	// appear in the webhook body.
 	resp, err := p.HandleWebhook(context.Background(),
-		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyGotchi, Method: "GET"})
+		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET"})
 	require.NoError(t, err)
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal(resp.Body, &raw))
@@ -266,7 +266,7 @@ func TestDebugGrant_RequiresDebugConfig(t *testing.T) {
 	p := newTestPlugin(t, host)
 
 	resp, err := p.HandleWebhook(context.Background(),
-		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyGotchi, Method: "GET", Query: "debug_grant=5000"})
+		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET", Query: "debug_grant=5000"})
 	require.NoError(t, err)
 	require.Equal(t, int32(403), resp.Status)
 	require.Empty(t, host.state, "no XP granted while debug is off")
@@ -276,7 +276,7 @@ func TestDebugGrant_GrantsWhenDebugEnabled(t *testing.T) {
 	host := newFakeHost(map[string]any{"debug": true})
 	p := newTestPlugin(t, host)
 
-	state := fetchGotchi(t, p, "debug_grant=5000")
+	state := fetchShipling(t, p, "debug_grant=5000")
 	require.Equal(t, 5000.0, persistedXP(t, host))
 	require.Equal(t, levelForXP(5000), state.Level)
 	require.Greater(t, state.Level, 2)
@@ -287,7 +287,7 @@ func TestDebugGrant_RejectsJunk(t *testing.T) {
 	p := newTestPlugin(t, host)
 	for _, grant := range []string{"abc", "-5", "0", "10000000000000"} {
 		resp, err := p.HandleWebhook(context.Background(),
-			&pluginsdk.WebhookRequest{WebhookKey: webhookKeyGotchi, Method: "GET", Query: "debug_grant=" + grant})
+			&pluginsdk.WebhookRequest{WebhookKey: webhookKeyShipling, Method: "GET", Query: "debug_grant=" + grant})
 		require.NoError(t, err)
 		require.Equal(t, int32(400), resp.Status, "grant=%s", grant)
 	}
@@ -297,8 +297,8 @@ func TestDebugGrant_RejectsJunk(t *testing.T) {
 func TestStageNameStableAcrossCalls(t *testing.T) {
 	host := newFakeHost(map[string]any{"debug": true})
 	p := newTestPlugin(t, host)
-	first := fetchGotchi(t, p, "debug_grant=100000")
-	second := fetchGotchi(t, p, "")
+	first := fetchShipling(t, p, "debug_grant=100000")
+	second := fetchShipling(t, p, "")
 	require.Equal(t, first.Level, second.Level)
 	require.Equal(t, first.StageName, second.StageName)
 	require.Equal(t, first.AppearanceSeed, second.AppearanceSeed)

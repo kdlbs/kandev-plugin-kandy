@@ -1,4 +1,4 @@
-module kandev-plugin-gotchi
+module kandev-plugin-shipling
 
 go 1.26.0
 

@@ -1,7 +1,7 @@
-// Kandev Gotchi — chat-top-bar plugin. A tiny creature that lives in the
+// Shipling — chat-top-bar plugin. A tiny creature that lives in the
 // session top bar and evolves forever from work happening in this kandev
 // instance. All growth logic is server-side; this bundle only renders what
-// GET webhooks/gotchi returns: { level, stage, archetype, family, biome,
+// GET webhooks/shipling returns: { level, stage, archetype, family, biome,
 // lineage_seed, appearance_seed, stage_name, progress_pct, flavor }.
 //
 // v0.3.0 — DNA vs growth:
@@ -15,8 +15,8 @@
 //   Deterministic: no Math.random at render time; a level always renders
 //   identically, and Lv N+1 is always "Lv N plus something new".
 
-var PLUGIN_ID = "kandev-plugin-gotchi";
-var STYLE_ID = "kandev-gotchi-style";
+var PLUGIN_ID = "kandev-plugin-shipling";
+var STYLE_ID = "kandev-shipling-style";
 var REFRESH_MS = 60000;
 
 // ---------------------------------------------------------------------------
@@ -466,7 +466,7 @@ function eyeAt(h, rand, cx, cy, r, style, key) {
       cy: cy,
       r: style === "dot" ? r * 0.55 : r * 0.45,
       fill: "#26232e",
-      className: "kandev-gotchi-blink",
+      className: "kandev-shipling-blink",
       style: { transformBox: "fill-box", transformOrigin: "center" },
     }),
   );
@@ -784,7 +784,7 @@ function groundParts(h, C, g, sty) {
       out.push(
         h(
           "g",
-          { key: "balloon", className: "kandev-gotchi-bob" },
+          { key: "balloon", className: "kandev-shipling-bob" },
           h("path", { key: "bstr", d: "M16 52 Q10 62 14 72", stroke: C.dark, strokeWidth: 1, fill: "none" }),
           h("ellipse", { key: "bball", cx: 16, cy: 45, rx: 6, ry: 7.5, fill: C.accent, stroke: C.dark, strokeWidth: 1.2 }),
         ),
@@ -801,7 +801,7 @@ function groundParts(h, C, g, sty) {
     out.push(
       h(
         "g",
-        { key: "pet", className: "kandev-gotchi-bob" },
+        { key: "pet", className: "kandev-shipling-bob" },
         h("circle", { key: "petb", cx: 12, cy: 82, r: 4.6, fill: C.accent, stroke: C.dark, strokeWidth: 1.4 }),
         h("circle", { key: "pete1", cx: 10.6, cy: 81, r: 0.9, fill: "#26232e" }),
         h("circle", { key: "pete2", cx: 13.6, cy: 81, r: 0.9, fill: "#26232e" }),
@@ -812,7 +812,7 @@ function groundParts(h, C, g, sty) {
     out.push(
       h(
         "g",
-        { key: "pal", className: "kandev-gotchi-bob" },
+        { key: "pal", className: "kandev-shipling-bob" },
         h("circle", { key: "palb", cx: 90, cy: 40, r: 3.2, fill: C.light, stroke: C.dark, strokeWidth: 1.1 }),
         h("circle", { key: "pale", cx: 90, cy: 39.4, r: 0.8, fill: "#26232e" }),
       ),
@@ -862,12 +862,12 @@ function creatureParts(h, data, portrait) {
 }
 
 // isStatic renders a motionless portrait (top-bar icon): no bob wrapper, the
-// kandev-gotchi-static class kills descendant blink/wiggle animations, and the
+// kandev-shipling-static class kills descendant blink/wiggle animations, and the
 // viewBox crops tight to the full-grown body (creatureParts portrait mode) so
 // the icon fills its chip at every growth stage — all the life stays in the
 // hover card.
 function creatureSvg(h, data, size, extraClass, isStatic) {
-  var cls = (extraClass || "") + (isStatic ? " kandev-gotchi-static" : "");
+  var cls = (extraClass || "") + (isStatic ? " kandev-shipling-static" : "");
   return h(
     "svg",
     {
@@ -878,7 +878,7 @@ function creatureSvg(h, data, size, extraClass, isStatic) {
       "aria-hidden": "true",
       style: { overflow: isStatic ? "hidden" : "visible", flexShrink: 0 },
     },
-    h("g", { className: isStatic ? "" : "kandev-gotchi-bob" }, creatureParts(h, data, !!isStatic)),
+    h("g", { className: isStatic ? "" : "kandev-shipling-bob" }, creatureParts(h, data, !!isStatic)),
   );
 }
 
@@ -1182,21 +1182,21 @@ function sceneFor(biome, level, seed) {
 // Animations — injected once; disabled under prefers-reduced-motion.
 // ---------------------------------------------------------------------------
 
-var GOTCHI_CSS =
-  "@keyframes kandev-gotchi-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}" +
-  "@keyframes kandev-gotchi-blink{0%,90%,100%{transform:scaleY(1)}93%,96%{transform:scaleY(0.08)}}" +
-  "@keyframes kandev-gotchi-wiggle{0%,86%,100%{transform:rotate(0deg)}90%{transform:rotate(-4deg)}94%{transform:rotate(4deg)}}" +
-  ".kandev-gotchi-bob{animation:kandev-gotchi-bob 2.8s ease-in-out infinite}" +
-  ".kandev-gotchi-blink{animation:kandev-gotchi-blink 4.6s ease-in-out infinite}" +
-  ".kandev-gotchi-wiggle{animation:kandev-gotchi-wiggle 7s ease-in-out infinite;transform-origin:50% 70%}" +
-  ".kandev-gotchi-static,.kandev-gotchi-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-gotchi-bob,.kandev-gotchi-blink,.kandev-gotchi-wiggle{animation:none}}";
+var SHIPLING_CSS =
+  "@keyframes kandev-shipling-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}" +
+  "@keyframes kandev-shipling-blink{0%,90%,100%{transform:scaleY(1)}93%,96%{transform:scaleY(0.08)}}" +
+  "@keyframes kandev-shipling-wiggle{0%,86%,100%{transform:rotate(0deg)}90%{transform:rotate(-4deg)}94%{transform:rotate(4deg)}}" +
+  ".kandev-shipling-bob{animation:kandev-shipling-bob 2.8s ease-in-out infinite}" +
+  ".kandev-shipling-blink{animation:kandev-shipling-blink 4.6s ease-in-out infinite}" +
+  ".kandev-shipling-wiggle{animation:kandev-shipling-wiggle 7s ease-in-out infinite;transform-origin:50% 70%}" +
+  ".kandev-shipling-static,.kandev-shipling-static *{animation:none!important}" +
+  "@media (prefers-reduced-motion: reduce){.kandev-shipling-bob,.kandev-shipling-blink,.kandev-shipling-wiggle{animation:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
   var el = document.createElement("style");
   el.id = STYLE_ID;
-  el.textContent = GOTCHI_CSS;
+  el.textContent = SHIPLING_CSS;
   document.head.appendChild(el);
 }
 
@@ -1222,7 +1222,7 @@ var EGG_PLACEHOLDER = {
   flavor: "The egg is warm. Keep working.",
 };
 
-function gotchiCard(h, data) {
+function shiplingCard(h, data) {
   var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0);
   return h(
     "div",
@@ -1252,7 +1252,7 @@ function gotchiCard(h, data) {
       h(
         "div",
         {
-          className: "kandev-gotchi-wiggle",
+          className: "kandev-shipling-wiggle",
           style: {
             position: "absolute",
             left: "50%",
@@ -1319,23 +1319,29 @@ function gotchiCard(h, data) {
   );
 }
 
-function makeGotchiWidget(host) {
+function makeShiplingWidget(host) {
   var React = host.React;
   var h = host.jsx;
   var ui = host.ui;
   var Tooltip = ui.Tooltip;
   var TooltipTrigger = ui.TooltipTrigger;
   var TooltipContent = ui.TooltipContent;
+  var Dialog = ui.Dialog;
+  var DialogContent = ui.DialogContent;
+  var DialogTitle = ui.DialogTitle;
 
-  return function GotchiWidget() {
+  return function ShiplingWidget() {
     var stateHook = React.useState(null);
     var data = stateHook[0];
     var setData = stateHook[1];
+    var openHook = React.useState(false);
+    var dialogOpen = openHook[0];
+    var setDialogOpen = openHook[1];
     var mountedRef = React.useRef(true);
 
     function load() {
       host.api
-        .fetch("webhooks/gotchi")
+        .fetch("webhooks/shipling")
         .then(function (r) {
           return r.json();
         })
@@ -1359,29 +1365,53 @@ function makeGotchiWidget(host) {
 
     var shown = data || EGG_PLACEHOLDER;
 
+    // The chip is a real button: hover/focus gives the desktop quick-peek
+    // tooltip, tap/click opens the same card as a dialog (touch devices
+    // have no hover, so the dialog is the mobile path).
+    var trigger = h(
+      "button",
+      {
+        id: "kandev-shipling-widget",
+        type: "button",
+        className:
+          "h-7 w-7 flex items-center justify-center cursor-pointer rounded-md border border-border/60 bg-muted/30 hover:bg-muted/60",
+        "aria-label": "Shipling: level " + shown.level + " " + shown.stage_name,
+        onMouseEnter: load,
+        onFocus: load,
+        onClick: function () {
+          load();
+          setDialogOpen(true);
+        },
+      },
+      creatureSvg(h, shown, 22, "", true),
+    );
+
     return h(
-      Tooltip,
+      React.Fragment,
       null,
       h(
-        TooltipTrigger,
-        { asChild: true },
+        Tooltip,
+        null,
+        h(TooltipTrigger, { asChild: true }, trigger),
         h(
-          "div",
-          {
-            id: "kandev-gotchi-widget",
-            className:
-              "h-7 w-7 flex items-center justify-center cursor-default rounded-md border border-border/60 bg-muted/30 hover:bg-muted/60",
-            "aria-label": "Kandev Gotchi: level " + shown.level + " " + shown.stage_name,
-            onMouseEnter: load,
-            onFocus: load,
-          },
-          creatureSvg(h, shown, 22, "", true),
+          TooltipContent,
+          { side: "bottom", align: "end", className: "p-0 overflow-hidden" },
+          shiplingCard(h, shown),
         ),
       ),
       h(
-        TooltipContent,
-        { side: "bottom", align: "end", className: "p-0 overflow-hidden" },
-        gotchiCard(h, shown),
+        Dialog,
+        { open: dialogOpen, onOpenChange: setDialogOpen },
+        h(
+          DialogContent,
+          {
+            id: "kandev-shipling-dialog",
+            className: "w-auto max-w-[280px] p-0 gap-0 overflow-hidden rounded-xl",
+            showCloseButton: false,
+          },
+          h(DialogTitle, { className: "sr-only" }, "Shipling"),
+          shiplingCard(h, shown),
+        ),
       ),
     );
   };
@@ -1391,7 +1421,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
   initialize: function (registry, host) {
     h0 = host.jsx;
     injectStyles();
-    registry.registerComponent("chat-top-bar", makeGotchiWidget(host));
+    registry.registerComponent("chat-top-bar", makeShiplingWidget(host));
   },
   destroy: function () {
     removeStyles();
