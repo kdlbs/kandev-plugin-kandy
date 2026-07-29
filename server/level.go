@@ -120,14 +120,20 @@ func roundDownToTenth(x float64) float64 {
 
 // seededIndex picks a deterministic index in [0, n) from a seed and a
 // stream discriminator (so different picks don't correlate).
+// seededIndex mixes with murmur3's fmix32 finalizer. The multiplications
+// make it non-linear over GF(2) — a pure-xorshift mixer is linear, so the
+// XOR-difference between two seeds propagates identically through every
+// stream, and salts that collided on one DNA pick (archetype) tended to
+// collide on the others (palette, biome) too.
 func seededIndex(seed, stream uint32, n int) int {
 	if n <= 0 {
 		return 0
 	}
-	x := seed ^ (stream * 0x9e3779b9)
-	x ^= x << 13
-	x ^= x >> 17
-	x ^= x << 5
+	x := seed + stream*0x9e3779b9
+	x ^= x >> 16
+	x *= 0x85ebca6b
+	x ^= x >> 13
+	x *= 0xc2b2ae35
 	x ^= x >> 16
 	return int(x % uint32(n))
 }

@@ -131,6 +131,33 @@ func TestCrossSeedDiversity(t *testing.T) {
 	require.GreaterOrEqual(t, len(names), 3, "distinct names across seeds")
 }
 
+// TestLineageDNA_StreamsDecorrelated: the three DNA picks must be
+// independent — two installs that roll the same species must still spread
+// across (nearly) the whole palette and biome space. Regression test for the
+// linear-xorshift seededIndex, where salts colliding on the archetype stream
+// usually collided on palette and biome too (e.g. salts 111/666/8080 were
+// identical triples).
+func TestLineageDNA_StreamsDecorrelated(t *testing.T) {
+	familiesByArch := map[int]map[int]bool{}
+	biomesByArch := map[int]map[int]bool{}
+	for salt := uint32(0); salt < 5000; salt++ {
+		arch := archetypeForLineage(salt)
+		if familiesByArch[arch] == nil {
+			familiesByArch[arch] = map[int]bool{}
+			biomesByArch[arch] = map[int]bool{}
+		}
+		familiesByArch[arch][paletteFamilyForLineage(salt)] = true
+		biomesByArch[arch][biomeForLineage(salt)] = true
+	}
+	require.Len(t, familiesByArch, numArchetypes, "all archetypes reachable")
+	for arch, families := range familiesByArch {
+		require.GreaterOrEqual(t, len(families), numFamilies-2,
+			"archetype %d: same-species installs must span palette families", arch)
+		require.Len(t, biomesByArch[arch], numBiomes,
+			"archetype %d: same-species installs must span all biomes", arch)
+	}
+}
+
 // TestCoherence_SameIdentityAcrossBand: for levels 2..bandMax, consecutive
 // levels are the SAME being (archetype, palette family, biome, species all
 // constant) AND differ by at least one additive element (richness strictly
