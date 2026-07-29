@@ -1,6 +1,6 @@
 id: "kandev-plugin-shipling"
 api_version: 1
-version: "0.7.2"
+version: "0.7.3"
 display_name: "Shipling"
 description: "A tiny creature that grows when you ship — it feeds on shipped tasks, agent runs, and turns, and evolves forever in your session top bar."
 author: "kandev"

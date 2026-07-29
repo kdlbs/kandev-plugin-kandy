@@ -1587,7 +1587,10 @@ function shiplingCard(h, data, celebration, pet) {
         h(
           "div",
           { style: { fontSize: "10px", opacity: 0.65, fontVariantNumeric: "tabular-nums" } },
-          Math.floor(data.progress_pct) + "% to next evolution",
+          // progress_pct is completion WITHIN the current level — say so
+          // plainly ("64% through level 12"), not "to next evolution",
+          // which read as 64% remaining.
+          Math.floor(data.progress_pct) + "% through level " + data.level,
         ),
       ),
       h(
