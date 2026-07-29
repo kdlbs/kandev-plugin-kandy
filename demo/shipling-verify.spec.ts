@@ -14,7 +14,7 @@ import { SessionPage } from "../pages/session-page";
 const PLUGIN_ID = "kandev-plugin-shipling";
 const PACKAGE_PATH =
   "/home/jcfs/kandev-plugins/kandev-plugin-shipling/kandev-plugin-shipling-0.5.0.tar.gz";
-const SHOT_DIR = "/tmp/kandev-gotchi-demo/screenshots";
+const SHOT_DIR = "/tmp/kandev-shipling-demo/screenshots";
 
 async function installShipling(baseUrl: string) {
   const form = new FormData();
