@@ -3064,11 +3064,16 @@ function makeKandyWidget(host) {
       null,
       h(
         Tooltip,
-        null,
+        // The app's TooltipProvider disables hoverable content globally
+        // (tooltips are one-liners there). Our preview is a real card —
+        // override per-root so moving the pointer from the chip INTO the
+        // card keeps it open, and re-enable pointer events on the content
+        // (the shared TooltipContent sets pointer-events-none).
+        { disableHoverableContent: false },
         h(TooltipTrigger, { asChild: true }, trigger),
         h(
           TooltipContent,
-          { side: "bottom", align: "end", className: "p-0 overflow-hidden" },
+          { side: "bottom", align: "end", className: "p-0 overflow-hidden pointer-events-auto" },
           kandyCard(h, shown, celebration, null, timeOfDay),
         ),
       ),
