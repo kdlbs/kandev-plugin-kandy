@@ -16,7 +16,8 @@ an egg. It never stops.
   stage name, level, mood, and bond as a polished portrait. Copy the crisp
   PNG directly to your clipboard. Rendering and copying happen entirely in
   your browser — nothing is uploaded, and no surrounding task or app UI
-  enters the image.
+  enters the image. On plain-HTTP deployments, Kandy uses the browser's
+  native image-copy path when available.
 - **Moods**: it celebrates when XP lands and gets bored, sad, and eventually
   gloomy (rain cloud included) when nothing ships for days.
 - **Care**: left-click drops it a treat; right-click dumps a bucket of cold

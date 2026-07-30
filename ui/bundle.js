@@ -3062,14 +3062,155 @@ function copyPhotoBlob(pngBlob, suppliedEnv) {
   }
 }
 
-function photoCopyFailureStatus(error, suppliedEnv) {
+function notSupportedPhotoCopy(message) {
+  var error = new Error(message);
+  error.name = "NotSupportedError";
+  return error;
+}
+
+function disposePreparedPhoto(prepared, suppliedEnv) {
+  if (!prepared || prepared.disposed) return;
+  prepared.disposed = true;
+  var env = suppliedEnv || {};
+  var root = typeof window !== "undefined" ? window : {};
+  var doc = env.document || (typeof document !== "undefined" ? document : null);
+  var URLAPI = env.URL || root.URL;
+  if (prepared.frame) {
+    prepared.frame.onload = null;
+    prepared.frame.onerror = null;
+    var parent = prepared.frame.parentNode || (doc && doc.body);
+    if (parent && typeof parent.removeChild === "function") {
+      try {
+        parent.removeChild(prepared.frame);
+      } catch (error) {
+        /* already removed */
+      }
+    }
+  }
+  if (prepared.url && URLAPI && typeof URLAPI.revokeObjectURL === "function") {
+    URLAPI.revokeObjectURL(prepared.url);
+  }
+}
+
+function preparePhotoCopy(pngBlob, suppliedEnv) {
   var env = suppliedEnv || {};
   var root = typeof window !== "undefined" ? window : {};
   var secure =
     Object.prototype.hasOwnProperty.call(env, "isSecureContext") === true
       ? env.isSecureContext
       : root.isSecureContext;
-  if (secure === false) return "insecure";
+  var ClipboardItemCtor = env.ClipboardItem || root.ClipboardItem;
+  var clipboard = env.clipboard || (root.navigator && root.navigator.clipboard);
+  if (
+    secure !== false &&
+    ClipboardItemCtor &&
+    clipboard &&
+    typeof clipboard.write === "function"
+  ) {
+    return Promise.resolve({ method: "clipboard", pngBlob: pngBlob, disposed: false });
+  }
+
+  var doc = env.document || (typeof document !== "undefined" ? document : null);
+  var URLAPI = env.URL || root.URL;
+  if (
+    !pngBlob ||
+    pngBlob.type !== PHOTO_EXPORT.mimeType ||
+    !doc ||
+    !doc.body ||
+    typeof doc.createElement !== "function" ||
+    !URLAPI ||
+    typeof URLAPI.createObjectURL !== "function"
+  ) {
+    return Promise.reject(notSupportedPhotoCopy("Image copying is not available on this page."));
+  }
+
+  return new Promise(function (resolve, reject) {
+    var prepared = {
+      method: "image-document",
+      pngBlob: pngBlob,
+      frame: null,
+      url: null,
+      disposed: false,
+    };
+    try {
+      var frame = doc.createElement("iframe");
+      prepared.frame = frame;
+      prepared.url = URLAPI.createObjectURL(pngBlob);
+      frame.setAttribute("aria-hidden", "true");
+      frame.setAttribute("tabindex", "-1");
+      frame.style.position = "fixed";
+      frame.style.left = "-10000px";
+      frame.style.top = "0";
+      frame.style.width = "1px";
+      frame.style.height = "1px";
+      frame.style.border = "0";
+      frame.style.opacity = "0";
+      frame.style.pointerEvents = "none";
+      frame.onload = function () {
+        if (
+          !frame.contentDocument ||
+          frame.contentDocument.contentType !== PHOTO_EXPORT.mimeType
+        ) {
+          disposePreparedPhoto(prepared, env);
+          reject(notSupportedPhotoCopy("The PNG copy surface could not be prepared."));
+          return;
+        }
+        resolve(prepared);
+      };
+      frame.onerror = function () {
+        disposePreparedPhoto(prepared, env);
+        reject(notSupportedPhotoCopy("The PNG copy surface could not be prepared."));
+      };
+      frame.src = prepared.url;
+      doc.body.appendChild(frame);
+    } catch (error) {
+      disposePreparedPhoto(prepared, env);
+      reject(error);
+    }
+  });
+}
+
+function copyPreparedPhoto(prepared, suppliedEnv) {
+  if (!prepared || prepared.disposed) {
+    return Promise.reject(notSupportedPhotoCopy("The prepared image is no longer available."));
+  }
+  if (prepared.method === "clipboard") {
+    return copyPhotoBlob(prepared.pngBlob, suppliedEnv);
+  }
+  if (
+    prepared.method !== "image-document" ||
+    !prepared.frame ||
+    !prepared.frame.contentWindow ||
+    !prepared.frame.contentDocument ||
+    prepared.frame.contentDocument.contentType !== PHOTO_EXPORT.mimeType ||
+    typeof prepared.frame.contentDocument.execCommand !== "function"
+  ) {
+    return Promise.reject(notSupportedPhotoCopy("Image copying is not available in this browser."));
+  }
+
+  var env = suppliedEnv || {};
+  var doc = env.document || (typeof document !== "undefined" ? document : null);
+  var activeElement = doc && doc.activeElement;
+  try {
+    prepared.frame.contentWindow.focus();
+    if (!prepared.frame.contentDocument.execCommand("copy")) {
+      throw notSupportedPhotoCopy("The browser refused to copy the image.");
+    }
+  } catch (error) {
+    return Promise.reject(error);
+  } finally {
+    if (activeElement && typeof activeElement.focus === "function") {
+      try {
+        activeElement.focus({ preventScroll: true });
+      } catch (error) {
+        activeElement.focus();
+      }
+    }
+  }
+  return Promise.resolve();
+}
+
+function photoCopyFailureStatus(error) {
   if (error && (error.name === "NotAllowedError" || error.name === "SecurityError")) {
     return "blocked";
   }
@@ -3113,13 +3254,13 @@ function backIcon(h) {
   );
 }
 
-function photoDialogButton(h, label, icon, onPress, primary, disabled, accessibleLabel) {
+function photoDialogButton(h, label, icon, onPress, primary, disabled, accessibleLabel, busy) {
   return h(
     "button",
     {
       type: "button",
       "aria-label": accessibleLabel || label,
-      "aria-busy": disabled ? "true" : undefined,
+      "aria-busy": busy ? "true" : undefined,
       disabled: !!disabled,
       className: "kandev-kandy-control",
       onPointerDown: stopPhotoControlEvent,
@@ -3143,7 +3284,7 @@ function photoDialogButton(h, label, icon, onPress, primary, disabled, accessibl
         boxShadow: primary
           ? "0 1px 2px rgba(0,0,0,0.12),0 0 0 1px color-mix(in oklch,var(--primary) 78%,black)"
           : "0 0 0 1px color-mix(in oklch,var(--foreground) 8%,transparent)",
-        cursor: disabled ? "wait" : "pointer",
+        cursor: disabled || busy ? "wait" : "pointer",
         opacity: disabled ? 0.72 : 1,
         fontSize: "12px",
         fontWeight: 650,
@@ -3160,16 +3301,15 @@ function photoBoothPanel(h, DialogTitle, model, theme, svgRef, panelRef, status,
   if (status === "preparing") statusText = "Preparing a crisp image…";
   else if (status === "copying") statusText = "Copying image…";
   else if (status === "copied") statusText = "Copied to clipboard.";
-  else if (status === "insecure") statusText = "Copy requires HTTPS or localhost.";
   else if (status === "blocked")
     statusText = "Clipboard access was blocked. Allow it in site settings, then try again.";
   else if (status === "unsupported") statusText = "This browser cannot copy PNG images.";
   else if (status === "render-error")
     statusText = "Could not prepare the image. Reopen Photo Booth and try again.";
   else if (status === "error") statusText = "Could not copy the image. Try again.";
-  var copyDisabled = status === "preparing" || status === "copying" || status === "render-error";
+  var copyDisabled = status === "preparing" || status === "render-error";
+  var copyBusy = status === "preparing" || status === "copying";
   var failed =
-    status === "insecure" ||
     status === "blocked" ||
     status === "unsupported" ||
     status === "render-error" ||
@@ -3239,6 +3379,7 @@ function photoBoothPanel(h, DialogTitle, model, theme, svgRef, panelRef, status,
         true,
         copyDisabled,
         "Copy image to clipboard",
+        copyBusy,
       ),
     ),
     h(
@@ -3554,7 +3695,7 @@ function makeKandyWidget(host) {
     var mountedRef = React.useRef(true);
     var prevRef = React.useRef(null);
     var photoSvgRef = React.useRef(null);
-    var photoPngRef = React.useRef(null);
+    var photoCopyRef = React.useRef(null);
     var photoPanelRef = React.useRef(null);
     var photoEntryRef = React.useRef(null);
     var returnToPhotoEntryRef = React.useRef(false);
@@ -3573,6 +3714,11 @@ function makeKandyWidget(host) {
     // pointerTypeRef remembers the last pointer type: touch long-presses
     // fire contextmenu on some mobile browsers and must NOT bonk.
     var pointerTypeRef = React.useRef("mouse");
+
+    function clearPreparedPhoto() {
+      if (photoCopyRef.current) disposePreparedPhoto(photoCopyRef.current);
+      photoCopyRef.current = null;
+    }
 
     function celebrate(kind) {
       setCelebration({ kind: kind });
@@ -3728,7 +3874,7 @@ function makeKandyWidget(host) {
 
     function openPhotoBooth() {
       returnToPhotoEntryRef.current = true;
-      photoPngRef.current = null;
+      clearPreparedPhoto();
       setPhotoTheme(currentPhotoTheme());
       setPhotoStatus("preparing");
       setPhotoOpen(true);
@@ -3736,14 +3882,14 @@ function makeKandyWidget(host) {
     }
 
     function showKandyCard() {
-      photoPngRef.current = null;
+      clearPreparedPhoto();
       setPhotoStatus("idle");
       setPhotoOpen(false);
     }
 
     function copyPhoto() {
       if (
-        !photoPngRef.current ||
+        !photoCopyRef.current ||
         photoStatus === "preparing" ||
         photoStatus === "copying" ||
         photoStatus === "render-error"
@@ -3751,7 +3897,7 @@ function makeKandyWidget(host) {
         return;
       }
       setPhotoStatus("copying");
-      copyPhotoBlob(photoPngRef.current)
+      copyPreparedPhoto(photoCopyRef.current)
         .then(function () {
           if (mountedRef.current) setPhotoStatus("copied");
         })
@@ -3764,7 +3910,7 @@ function makeKandyWidget(host) {
       setDialogOpen(nextOpen);
       if (!nextOpen) {
         returnToPhotoEntryRef.current = false;
-        photoPngRef.current = null;
+        clearPreparedPhoto();
         setPhotoOpen(false);
         setPhotoStatus("idle");
       }
@@ -3788,6 +3934,7 @@ function makeKandyWidget(host) {
         if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);
         if (distrustTimerRef.current) clearTimeout(distrustTimerRef.current);
         if (sleepyTimerRef.current) clearTimeout(sleepyTimerRef.current);
+        clearPreparedPhoto();
         var i = refreshListeners.indexOf(load);
         if (i >= 0) refreshListeners.splice(i, 1);
       };
@@ -3895,12 +4042,22 @@ function makeKandyWidget(host) {
       function () {
         if (!photoOpen) return;
         var active = true;
-        photoPngRef.current = null;
+        var preparedCopy = null;
+        clearPreparedPhoto();
         setPhotoStatus("preparing");
         renderPhotoPng(photoSvgRef.current)
           .then(function (pngBlob) {
-            if (!active || !mountedRef.current) return;
-            photoPngRef.current = pngBlob;
+            if (!active || !mountedRef.current) return null;
+            return preparePhotoCopy(pngBlob);
+          })
+          .then(function (prepared) {
+            if (!prepared) return;
+            preparedCopy = prepared;
+            if (!active || !mountedRef.current) {
+              disposePreparedPhoto(prepared);
+              return;
+            }
+            photoCopyRef.current = prepared;
             setPhotoStatus("ready");
           })
           .catch(function () {
@@ -3909,6 +4066,10 @@ function makeKandyWidget(host) {
           });
         return function () {
           active = false;
+          if (preparedCopy) {
+            if (photoCopyRef.current === preparedCopy) photoCopyRef.current = null;
+            disposePreparedPhoto(preparedCopy);
+          }
         };
       },
       [photoOpen, photoRenderKey],
@@ -4044,6 +4205,9 @@ window.registerKandevPlugin(PLUGIN_ID, {
     photoBoothPanel: photoBoothPanel,
     renderPhotoPng: renderPhotoPng,
     copyPhotoBlob: copyPhotoBlob,
+    preparePhotoCopy: preparePhotoCopy,
+    copyPreparedPhoto: copyPreparedPhoto,
+    disposePreparedPhoto: disposePreparedPhoto,
     photoCopyFailureStatus: photoCopyFailureStatus,
     setJsx: function (jsx) {
       h0 = jsx;

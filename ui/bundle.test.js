@@ -300,6 +300,21 @@ test("Photo Booth view exposes a focus target and native keyboard controls", () 
     preparingPanel,
     (node) => node.props && node.props["aria-label"] === "Copy image to clipboard",
   );
+  const copyingPanel = render.photoBoothPanel(
+    jsx,
+    "DialogTitle",
+    render.photoModelFor(sampleKandy(), 13),
+    "light",
+    { current: null },
+    { current: null },
+    "copying",
+    () => {},
+    () => {},
+  );
+  const copyingCopy = findNode(
+    copyingPanel,
+    (node) => node.props && node.props["aria-label"] === "Copy image to clipboard",
+  );
 
   assert.equal(panel.props.ref, focusRef);
   assert.equal(panel.props.tabIndex, -1);
@@ -312,6 +327,8 @@ test("Photo Booth view exposes a focus target and native keyboard controls", () 
   assert.match(textContent(copiedPanel), /Copied to clipboard\./);
   assert.equal(preparingCopy.props.disabled, true);
   assert.match(textContent(preparingCopy), /Preparing image/);
+  assert.equal(copyingCopy.props.disabled, false);
+  assert.equal(copyingCopy.props["aria-busy"], "true");
 });
 
 test("PNG rendering uses only the supplied portrait and revokes local URLs", async () => {
@@ -428,10 +445,116 @@ test("PNG copy writes a pre-rendered Blob during the initiating click", async ()
   await pending;
 });
 
-test("clipboard failures distinguish insecure, blocked, and unsupported contexts", () => {
+test("insecure HTTP prepares the PNG in an offscreen image document", async () => {
+  const render = loadBundle().plugin.__render;
+  const png = new Blob(["png"], { type: "image/png" });
+  const attributes = {};
+  const revokedUrls = [];
+  let appendedFrame = null;
+  let removedFrame = null;
+
+  const frame = {
+    style: {},
+    contentDocument: { contentType: "text/html" },
+    setAttribute(name, value) {
+      attributes[name] = value;
+    },
+    set src(value) {
+      this.source = value;
+      queueMicrotask(() => {
+        this.contentDocument.contentType = "image/png";
+        if (this.onload) this.onload();
+      });
+    },
+  };
+  const env = {
+    isSecureContext: false,
+    document: {
+      body: {
+        appendChild(node) {
+          appendedFrame = node;
+          queueMicrotask(() => {
+            if (node.onload) node.onload();
+          });
+        },
+        removeChild(node) {
+          removedFrame = node;
+        },
+      },
+      createElement(tagName) {
+        assert.equal(tagName, "iframe");
+        return frame;
+      },
+    },
+    URL: {
+      createObjectURL(blob) {
+        assert.equal(blob, png);
+        return "blob:local-photo";
+      },
+      revokeObjectURL(value) {
+        revokedUrls.push(value);
+      },
+    },
+  };
+
+  const prepared = await render.preparePhotoCopy(png, env);
+
+  assert.equal(prepared.method, "image-document");
+  assert.equal(appendedFrame, frame);
+  assert.equal(frame.source, "blob:local-photo");
+  assert.equal(frame.style.position, "fixed");
+  assert.equal(frame.style.left, "-10000px");
+  assert.equal(frame.style.opacity, "0");
+  assert.equal(attributes["aria-hidden"], "true");
+  assert.equal(attributes.tabindex, "-1");
+
+  render.disposePreparedPhoto(prepared, env);
+  assert.equal(removedFrame, frame);
+  assert.deepEqual(revokedUrls, ["blob:local-photo"]);
+});
+
+test("insecure HTTP copy uses the image document and restores keyboard focus", async () => {
+  const render = loadBundle().plugin.__render;
+  let frameFocused = 0;
+  let restoredFocus = 0;
+  let copyCommands = 0;
+  const activeElement = {
+    focus(options) {
+      restoredFocus++;
+      assert.equal(options.preventScroll, true);
+    },
+  };
+  const prepared = {
+    method: "image-document",
+    frame: {
+      contentWindow: {
+        focus() {
+          frameFocused++;
+        },
+      },
+      contentDocument: {
+        contentType: "image/png",
+        execCommand(command) {
+          assert.equal(command, "copy");
+          copyCommands++;
+          return true;
+        },
+      },
+    },
+  };
+
+  await render.copyPreparedPhoto(prepared, {
+    document: { activeElement },
+  });
+
+  assert.equal(frameFocused, 1);
+  assert.equal(copyCommands, 1);
+  assert.equal(restoredFocus, 1);
+});
+
+test("clipboard failures distinguish blocked and unsupported copies", () => {
   const render = loadBundle().plugin.__render;
 
-  assert.equal(render.photoCopyFailureStatus(new Error("failed"), { isSecureContext: false }), "insecure");
   assert.equal(
     render.photoCopyFailureStatus({ name: "NotAllowedError" }, { isSecureContext: true }),
     "blocked",
@@ -440,6 +563,7 @@ test("clipboard failures distinguish insecure, blocked, and unsupported contexts
     render.photoCopyFailureStatus({ name: "NotSupportedError" }, { isSecureContext: true }),
     "unsupported",
   );
+  assert.equal(render.photoCopyFailureStatus(new Error("failed"), { isSecureContext: false }), "error");
   assert.equal(render.photoCopyFailureStatus(new Error("failed"), { isSecureContext: true }), "error");
 });
 
