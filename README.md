@@ -11,7 +11,7 @@ an egg. It never stops.
 - **Hover or click/tap**: the kandy card — its current scene, the creature
   with idle animations, its stage name, an XP bar, and a mood badge
   (Happy, Bored, Gloomy, ...).
-- **Photo Booth**: click/tap the kandy, then use the picture icon at the
+- **Photo Booth**: click/tap the kandy, then use the camera icon at the
   card's top-right to frame its current appearance, habitat and time of day,
   stage name, level, mood, and bond as a polished portrait. Copy the crisp
   PNG directly to your clipboard. Rendering and copying happen entirely in

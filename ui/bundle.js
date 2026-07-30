@@ -2051,11 +2051,12 @@ var KANDY_CSS =
   ".kandev-kandy-control{transition-property:transform,background-color,box-shadow;transition-duration:150ms;transition-timing-function:ease-out}" +
   ".kandev-kandy-control:active:not(:disabled){transform:scale(0.96)}" +
   ".kandev-kandy-control:focus-visible{outline:2px solid var(--ring);outline-offset:2px}" +
-  ".kandev-kandy-photo-entry:hover{background:color-mix(in oklch,var(--background) 92%,var(--foreground) 8%);box-shadow:0 0 0 1px color-mix(in oklch,var(--foreground) 14%,transparent),0 3px 10px rgba(0,0,0,0.14)}" +
+  ".kandev-kandy-photo-entry-surface{transition-property:background-color,box-shadow;transition-duration:150ms;transition-timing-function:ease-out}" +
+  ".kandev-kandy-photo-entry:hover .kandev-kandy-photo-entry-surface{background:color-mix(in oklch,var(--background) 94%,var(--foreground) 6%);box-shadow:0 0 0 1px color-mix(in oklch,var(--foreground) 10%,transparent),0 2px 6px rgba(0,0,0,0.10)}" +
   ".kandev-kandy-photo-panel:focus{outline:none}" +
   ".kandev-kandy-photo-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz{animation:none}.kandev-kandy-control{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz{animation:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -2882,27 +2883,30 @@ function stopPhotoControlEvent(event) {
   if (event && event.stopPropagation) event.stopPropagation();
 }
 
-function pictureIcon(h) {
+function cameraIcon(h) {
   return h(
     "svg",
-    { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", "aria-hidden": "true" },
-    h("rect", {
-      x: 3,
-      y: 4,
-      width: 18,
-      height: 16,
-      rx: 3,
-      stroke: "currentColor",
-      strokeWidth: 1.8,
-      strokeLinejoin: "round",
-    }),
-    h("circle", { cx: 8.5, cy: 9.5, r: 1.5, fill: "currentColor" }),
+    {
+      width: 17,
+      height: 17,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      "aria-hidden": "true",
+      "data-icon": "camera",
+    },
     h("path", {
-      d: "m5.5 17 4.1-4.2 2.9 2.7 2.3-2.2 3.7 3.7",
+      d: "M8.25 6.5 9.4 4.75h5.2l1.15 1.75H19A2.25 2.25 0 0 1 21.25 8.75v8A2.25 2.25 0 0 1 19 19H5a2.25 2.25 0 0 1-2.25-2.25v-8A2.25 2.25 0 0 1 5 6.5h3.25Z",
       stroke: "currentColor",
-      strokeWidth: 1.8,
+      strokeWidth: 1.6,
       strokeLinecap: "round",
       strokeLinejoin: "round",
+    }),
+    h("circle", {
+      cx: 12,
+      cy: 12.5,
+      r: 3.35,
+      stroke: "currentColor",
+      strokeWidth: 1.6,
     }),
   );
 }
@@ -2934,16 +2938,32 @@ function photoBoothButton(h, onOpen, buttonRef) {
         padding: 0,
         border: "none",
         borderRadius: "10px",
-        background: "color-mix(in oklch,var(--background) 82%,transparent)",
+        background: "transparent",
         color: "inherit",
-        boxShadow:
-          "0 0 0 1px color-mix(in oklch,var(--foreground) 10%,transparent),0 2px 8px rgba(0,0,0,0.10)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
+        boxShadow: "none",
         cursor: "pointer",
       },
     },
-    pictureIcon(h),
+    h(
+      "span",
+      {
+        className: "kandev-kandy-photo-entry-surface",
+        style: {
+          width: "32px",
+          height: "32px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: "8px",
+          background: "color-mix(in oklch,var(--background) 86%,transparent)",
+          boxShadow:
+            "0 0 0 1px color-mix(in oklch,var(--foreground) 7%,transparent),0 1px 4px rgba(0,0,0,0.08)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+        },
+      },
+      cameraIcon(h),
+    ),
   );
 }
 
@@ -3009,26 +3029,52 @@ function renderPhotoPng(svgNode, suppliedEnv) {
   });
 }
 
-function copyPhotoPng(svgNode, suppliedEnv) {
+function copyPhotoBlob(pngBlob, suppliedEnv) {
   var env = suppliedEnv || {};
   var root = typeof window !== "undefined" ? window : {};
   var ClipboardItemCtor = env.ClipboardItem || root.ClipboardItem;
   var clipboard = env.clipboard || (root.navigator && root.navigator.clipboard);
   if (!ClipboardItemCtor || !clipboard || typeof clipboard.write !== "function") {
-    return Promise.reject(new Error("Image copying is not available in this browser."));
+    var unsupported = new Error("Image copying is not available in this browser.");
+    unsupported.name = "NotSupportedError";
+    return Promise.reject(unsupported);
+  }
+  if (!pngBlob || pngBlob.type !== PHOTO_EXPORT.mimeType) {
+    var invalid = new Error("A rendered PNG is required.");
+    invalid.name = "NotSupportedError";
+    return Promise.reject(invalid);
+  }
+  if (
+    typeof ClipboardItemCtor.supports === "function" &&
+    !ClipboardItemCtor.supports(PHOTO_EXPORT.mimeType)
+  ) {
+    var unsupportedType = new Error("This browser cannot copy PNG images.");
+    unsupportedType.name = "NotSupportedError";
+    return Promise.reject(unsupportedType);
   }
 
-  // Pass a promised PNG into ClipboardItem so clipboard.write runs during
-  // the initiating click. Waiting for SVG rasterization first can lose the
-  // browser's transient user activation and make a valid copy get rejected.
-  var pngPromise = renderPhotoPng(svgNode, env);
   var content = {};
-  content[PHOTO_EXPORT.mimeType] = pngPromise;
+  content[PHOTO_EXPORT.mimeType] = pngBlob;
   try {
     return Promise.resolve(clipboard.write([new ClipboardItemCtor(content)]));
   } catch (error) {
     return Promise.reject(error);
   }
+}
+
+function photoCopyFailureStatus(error, suppliedEnv) {
+  var env = suppliedEnv || {};
+  var root = typeof window !== "undefined" ? window : {};
+  var secure =
+    Object.prototype.hasOwnProperty.call(env, "isSecureContext") === true
+      ? env.isSecureContext
+      : root.isSecureContext;
+  if (secure === false) return "insecure";
+  if (error && (error.name === "NotAllowedError" || error.name === "SecurityError")) {
+    return "blocked";
+  }
+  if (error && error.name === "NotSupportedError") return "unsupported";
+  return "error";
 }
 
 function copyIcon(h) {
@@ -3111,9 +3157,23 @@ function photoDialogButton(h, label, icon, onPress, primary, disabled, accessibl
 function photoBoothPanel(h, DialogTitle, model, theme, svgRef, panelRef, status, onBack, onCopy) {
   var palette = photoPaletteFor(theme);
   var statusText = "Copies a PNG to your clipboard. Nothing is uploaded.";
-  if (status === "copying") statusText = "Rendering a crisp image…";
+  if (status === "preparing") statusText = "Preparing a crisp image…";
+  else if (status === "copying") statusText = "Copying image…";
   else if (status === "copied") statusText = "Copied to clipboard.";
+  else if (status === "insecure") statusText = "Copy requires HTTPS or localhost.";
+  else if (status === "blocked")
+    statusText = "Clipboard access was blocked. Allow it in site settings, then try again.";
+  else if (status === "unsupported") statusText = "This browser cannot copy PNG images.";
+  else if (status === "render-error")
+    statusText = "Could not prepare the image. Reopen Photo Booth and try again.";
   else if (status === "error") statusText = "Could not copy the image. Try again.";
+  var copyDisabled = status === "preparing" || status === "copying" || status === "render-error";
+  var failed =
+    status === "insecure" ||
+    status === "blocked" ||
+    status === "unsupported" ||
+    status === "render-error" ||
+    status === "error";
   return h(
     "div",
     {
@@ -3169,11 +3229,15 @@ function photoBoothPanel(h, DialogTitle, model, theme, svgRef, panelRef, status,
       photoDialogButton(h, "Back to Kandy", backIcon(h), onBack, false, false),
       photoDialogButton(
         h,
-        status === "copying" ? "Copying image" : "Copy image",
+        status === "preparing"
+          ? "Preparing image"
+          : status === "copying"
+            ? "Copying image"
+            : "Copy image",
         copyIcon(h),
         onCopy,
         true,
-        status === "copying",
+        copyDisabled,
         "Copy image to clipboard",
       ),
     ),
@@ -3187,8 +3251,8 @@ function photoBoothPanel(h, DialogTitle, model, theme, svgRef, panelRef, status,
           padding: "7px 2px 0",
           fontSize: "10px",
           lineHeight: 1.4,
-          opacity: status === "error" ? 0.9 : 0.55,
-          color: status === "error" ? "var(--destructive)" : "inherit",
+          opacity: failed ? 0.9 : 0.55,
+          color: failed ? "var(--destructive)" : "inherit",
           textWrap: "pretty",
         },
       },
@@ -3490,6 +3554,7 @@ function makeKandyWidget(host) {
     var mountedRef = React.useRef(true);
     var prevRef = React.useRef(null);
     var photoSvgRef = React.useRef(null);
+    var photoPngRef = React.useRef(null);
     var photoPanelRef = React.useRef(null);
     var photoEntryRef = React.useRef(null);
     var returnToPhotoEntryRef = React.useRef(false);
@@ -3663,26 +3728,35 @@ function makeKandyWidget(host) {
 
     function openPhotoBooth() {
       returnToPhotoEntryRef.current = true;
+      photoPngRef.current = null;
       setPhotoTheme(currentPhotoTheme());
-      setPhotoStatus("idle");
+      setPhotoStatus("preparing");
       setPhotoOpen(true);
       setDialogOpen(true);
     }
 
     function showKandyCard() {
+      photoPngRef.current = null;
       setPhotoStatus("idle");
       setPhotoOpen(false);
     }
 
     function copyPhoto() {
-      if (photoStatus === "copying") return;
+      if (
+        !photoPngRef.current ||
+        photoStatus === "preparing" ||
+        photoStatus === "copying" ||
+        photoStatus === "render-error"
+      ) {
+        return;
+      }
       setPhotoStatus("copying");
-      copyPhotoPng(photoSvgRef.current)
+      copyPhotoBlob(photoPngRef.current)
         .then(function () {
           if (mountedRef.current) setPhotoStatus("copied");
         })
-        .catch(function () {
-          if (mountedRef.current) setPhotoStatus("error");
+        .catch(function (error) {
+          if (mountedRef.current) setPhotoStatus(photoCopyFailureStatus(error));
         });
     }
 
@@ -3690,6 +3764,7 @@ function makeKandyWidget(host) {
       setDialogOpen(nextOpen);
       if (!nextOpen) {
         returnToPhotoEntryRef.current = false;
+        photoPngRef.current = null;
         setPhotoOpen(false);
         setPhotoStatus("idle");
       }
@@ -3800,6 +3875,44 @@ function makeKandyWidget(host) {
       hint: HEARTS_BY_MOOD[(data || EGG_PLACEHOLDER).mood || "content"] <= 4,
     };
     var photoModel = photoModelFor(data || EGG_PLACEHOLDER, timeOfDay);
+    var photoRenderKey = JSON.stringify([
+      photoTheme,
+      photoModel.stageName,
+      photoModel.level,
+      photoModel.mood,
+      photoModel.temperamentBand,
+      photoModel.scarred,
+      photoModel.habitat,
+      photoModel.dayPhase,
+      photoModel.sleepState,
+      photoModel.family,
+      photoModel.archetype,
+      photoModel.biome,
+      photoModel.lineageSeed,
+    ]);
+
+    React.useEffect(
+      function () {
+        if (!photoOpen) return;
+        var active = true;
+        photoPngRef.current = null;
+        setPhotoStatus("preparing");
+        renderPhotoPng(photoSvgRef.current)
+          .then(function (pngBlob) {
+            if (!active || !mountedRef.current) return;
+            photoPngRef.current = pngBlob;
+            setPhotoStatus("ready");
+          })
+          .catch(function () {
+            if (!active || !mountedRef.current) return;
+            setPhotoStatus("render-error");
+          });
+        return function () {
+          active = false;
+        };
+      },
+      [photoOpen, photoRenderKey],
+    );
 
     return h(
       React.Fragment,
@@ -3929,7 +4042,9 @@ window.registerKandevPlugin(PLUGIN_ID, {
     photoPortraitSvg: photoPortraitSvg,
     photoBoothButton: photoBoothButton,
     photoBoothPanel: photoBoothPanel,
-    copyPhotoPng: copyPhotoPng,
+    renderPhotoPng: renderPhotoPng,
+    copyPhotoBlob: copyPhotoBlob,
+    photoCopyFailureStatus: photoCopyFailureStatus,
     setJsx: function (jsx) {
       h0 = jsx;
     },

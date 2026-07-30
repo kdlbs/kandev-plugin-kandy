@@ -234,16 +234,24 @@ test("Photo Booth control isolates pointer, context-menu, and click events", () 
   assert.equal(stopped, 3);
 });
 
-test("Photo Booth entry is an icon-only 40px picture control", () => {
+test("Photo Booth entry is a camera control with a compact surface and 40px hit area", () => {
   const render = loadBundle().plugin.__render;
   const button = render.photoBoothButton(jsx, () => {});
   const icon = findNode(button, (node) => node.type === "svg");
+  const surface = findNode(
+    button,
+    (node) => node.type === "span" && node.props.className === "kandev-kandy-photo-entry-surface",
+  );
 
   assert.equal(button.props.style.width, "40px");
   assert.equal(button.props.style.height, "40px");
   assert.equal(button.props.style.minHeight, "40px");
   assert.equal(textContent(button).trim(), "");
   assert.equal(icon.props["aria-hidden"], "true");
+  assert.equal(icon.props["data-icon"], "camera");
+  assert.equal(surface.props.style.width, "32px");
+  assert.equal(surface.props.style.height, "32px");
+  assert.equal(surface.props.style.borderRadius, "8px");
 });
 
 test("Photo Booth view exposes a focus target and native keyboard controls", () => {
@@ -277,6 +285,21 @@ test("Photo Booth view exposes a focus target and native keyboard controls", () 
     () => {},
     () => {},
   );
+  const preparingPanel = render.photoBoothPanel(
+    jsx,
+    "DialogTitle",
+    render.photoModelFor(sampleKandy(), 13),
+    "light",
+    { current: null },
+    { current: null },
+    "preparing",
+    () => {},
+    () => {},
+  );
+  const preparingCopy = findNode(
+    preparingPanel,
+    (node) => node.props && node.props["aria-label"] === "Copy image to clipboard",
+  );
 
   assert.equal(panel.props.ref, focusRef);
   assert.equal(panel.props.tabIndex, -1);
@@ -287,18 +310,18 @@ test("Photo Booth view exposes a focus target and native keyboard controls", () 
   assert.equal(copy.props.type, "button");
   assert.match(textContent(copy), /Copy image/);
   assert.match(textContent(copiedPanel), /Copied to clipboard\./);
+  assert.equal(preparingCopy.props.disabled, true);
+  assert.match(textContent(preparingCopy), /Preparing image/);
 });
 
-test("PNG copy writes only the supplied portrait to the clipboard and revokes local URLs", async () => {
+test("PNG rendering uses only the supplied portrait and revokes local URLs", async () => {
   const render = loadBundle().plugin.__render;
   const portrait = { nodeName: "svg", marker: "PORTRAIT-ONLY" };
   const createdUrls = [];
   const revokedUrls = [];
   const drawCalls = [];
-  const clipboardWrites = [];
   let serializedNode = null;
   let canvas = null;
-  let canvasEncoded = false;
 
   class FakeXMLSerializer {
     serializeToString(node) {
@@ -321,15 +344,8 @@ test("PNG copy writes only the supplied portrait to the clipboard and revokes lo
     }
   }
 
-  class FakeClipboardItem {
-    constructor(items) {
-      this.items = items;
-    }
-  }
-
   const env = {
     Blob: FakeBlob,
-    ClipboardItem: FakeClipboardItem,
     Image: FakeImage,
     XMLSerializer: FakeXMLSerializer,
     URL: {
@@ -359,7 +375,6 @@ test("PNG copy writes only the supplied portrait to the clipboard and revokes lo
             toBlob(callback, type) {
               assert.equal(type, "image/png");
               queueMicrotask(() => {
-                canvasEncoded = true;
                 callback(new FakeBlob(["png"], { type }));
               });
             },
@@ -369,29 +384,63 @@ test("PNG copy writes only the supplied portrait to the clipboard and revokes lo
         throw new Error(`unexpected element: ${tagName}`);
       },
     },
-    clipboard: {
-      write(items) {
-        assert.equal(canvasEncoded, false, "clipboard write preserves the initiating user gesture");
-        clipboardWrites.push(items);
-        return Promise.all(items.map((item) => item.items["image/png"]));
-      },
-    },
   };
 
-  assert.equal(typeof render.copyPhotoPng, "function");
-  await render.copyPhotoPng(portrait, env);
+  assert.equal(typeof render.renderPhotoPng, "function");
+  const png = await render.renderPhotoPng(portrait, env);
 
   assert.equal(serializedNode, portrait);
   assert.equal(canvas.width, 1600);
   assert.equal(canvas.height, 2000);
   assert.equal(drawCalls.length, 1);
   assert.deepEqual(drawCalls[0].slice(1), [0, 0, 1600, 2000]);
-  assert.equal(clipboardWrites.length, 1);
-  assert.equal(clipboardWrites[0].length, 1);
-  assert.deepEqual(Object.keys(clipboardWrites[0][0].items), ["image/png"]);
-  const copiedBlob = await clipboardWrites[0][0].items["image/png"];
-  assert.equal(copiedBlob.type, "image/png");
+  assert.equal(png.type, "image/png");
   assert.deepEqual(revokedUrls, ["blob:local-1"]);
+});
+
+test("PNG copy writes a pre-rendered Blob during the initiating click", async () => {
+  const render = loadBundle().plugin.__render;
+  const png = new Blob(["png"], { type: "image/png" });
+  const clipboardWrites = [];
+  let clipboardItem = null;
+
+  class FakeClipboardItem {
+    constructor(items) {
+      clipboardItem = this;
+      this.items = items;
+    }
+  }
+
+  const pending = render.copyPhotoBlob(png, {
+    ClipboardItem: FakeClipboardItem,
+    clipboard: {
+      write(items) {
+        clipboardWrites.push(items);
+        return Promise.resolve();
+      },
+    },
+  });
+
+  assert.equal(clipboardWrites.length, 1, "clipboard write happens synchronously with the click");
+  assert.equal(clipboardWrites[0][0], clipboardItem);
+  assert.equal(clipboardItem.items["image/png"], png);
+  assert.equal(typeof clipboardItem.items["image/png"].then, "undefined");
+  await pending;
+});
+
+test("clipboard failures distinguish insecure, blocked, and unsupported contexts", () => {
+  const render = loadBundle().plugin.__render;
+
+  assert.equal(render.photoCopyFailureStatus(new Error("failed"), { isSecureContext: false }), "insecure");
+  assert.equal(
+    render.photoCopyFailureStatus({ name: "NotAllowedError" }, { isSecureContext: true }),
+    "blocked",
+  );
+  assert.equal(
+    render.photoCopyFailureStatus({ name: "NotSupportedError" }, { isSecureContext: true }),
+    "unsupported",
+  );
+  assert.equal(render.photoCopyFailureStatus(new Error("failed"), { isSecureContext: true }), "error");
 });
 
 test("widget includes accessible dialog Photo Booth entry while hover card stays action-free", () => {
