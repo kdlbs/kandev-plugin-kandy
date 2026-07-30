@@ -1,0 +1,58 @@
+name: Release
+
+# A version tag creates the marketplace-installable package. The Kandev
+# marketplace does not build plugins: it resolves this release asset instead.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # The SDK is a local go.mod replacement, so Actions needs this exact
+      # sibling layout: plugin/../kandev/apps/backend.
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - name: Checkout Kandev SDK
+        uses: actions/checkout@v4
+        with:
+          repository: kdlbs/kandev
+          path: kandev
+          sparse-checkout: apps/backend
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: plugin/go.mod
+          cache-dependency-path: plugin/go.sum
+
+      - name: Verify
+        working-directory: plugin
+        run: |
+          test -z "$(gofmt -l ./server)" || { echo "gofmt needed:"; gofmt -l ./server; exit 1; }
+          go vet ./server/...
+          go test ./server/...
+
+      - name: Package all supported platforms
+        working-directory: plugin
+        run: make package
+
+      - name: Extract checksums release asset
+        working-directory: plugin
+        run: tar -xzf kandev-plugin-kandy-*.tar.gz checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            plugin/kandev-plugin-kandy-*.tar.gz
+            plugin/checksums.txt
+          generate_release_notes: true

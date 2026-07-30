@@ -45,6 +45,34 @@ Build a package (`make package-host` for your platform, `make package` for
 all platforms) and install the tarball via **Settings > Plugins > Install**
 or `POST /api/plugins/install`.
 
+## How it works and what it reads
+
+Kandy is a visual, instance-wide companion. It does not call an agent, read a
+conversation, or analyze work. Kandev sends it three activity notifications:
+
+- a message was added;
+- an agent turn completed; or
+- an agent run completed.
+
+For each notification, Kandy uses only its type to update an aggregate XP
+ledger. It deliberately does **not** inspect event payloads, so it does not
+read message text, prompts, responses, tool calls, files, agent identity, or
+session identity. The top-bar UI listens for session updates only to know when
+to refresh its own card; it ignores the update data. One Kandy is shared by
+the whole Kandev instance, rather than being tied to a person, task, agent, or
+session.
+
+The plugin stores one small instance-scoped ledger in Kandev Host state:
+aggregate XP and activity counts, timestamps, a random appearance seed, and
+the pet/bonk temperament state. It stores no conversation content or token
+data. Its browser UI uses the local clock only for the day/night scene and
+sleep schedule, and calls only Kandy's own Kandev-hosted webhooks; it has no
+external service or analytics integration.
+
+Kandy does not use, request, or spend LLM tokens. Agent work can consume
+tokens independently, but Kandy sees only the three completed activity
+signals above—not token counts—and adds no model calls or token cost.
+
 ## Development
 
 Developed against a local checkout of the kandev monorepo (see the
@@ -56,10 +84,17 @@ make fmt vet     # gofmt + go vet
 make package-host
 ```
 
+## Automation and releases
+
+Pull requests to `master` run separate verification and packaging workflows.
+They check module tidiness, formatting, `go vet`, tests, a host build, and a
+cross-platform package build. Pushing a `v*` tag verifies the plugin, builds
+the all-platform package, and publishes a GitHub Release with the package and
+its `checksums.txt` asset.
+
 ## State
 
 One small JSON ledger in kandev Host state (scope `instance`), so the kandy
 participates in kandev backups, survives plugin upgrades, and is removed on
 uninstall. Uninstalling the plugin is, in the kindest possible terms, the end
 of that kandy's story.
-
