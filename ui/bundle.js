@@ -2081,6 +2081,52 @@ var HEARTS_BY_MOOD = { elated: 5, happy: 5, content: 4, bored: 3, sad: 2, gloomy
 var HEART_PATH =
   "M5 8.8 C2.2 6.6 0.9 4.9 0.9 3.4 C0.9 2 2 1 3.3 1 C4 1 4.7 1.4 5 2 C5.3 1.4 6 1 6.7 1 C8 1 9.1 2 9.1 3.4 C9.1 4.9 7.8 6.6 5 8.8 Z";
 
+// Bond meter — temperament as hearts (trust is what hearts are for): how
+// the kandy has been TREATED, distinct from the mood badge (how fed it is).
+var BOND_HEARTS_BY_BAND = { beloved: 5, content: 4, neutral: 3, wary: 2, fearful: 1 };
+
+// bondHearts renders the trust meter: filled hearts by temperament band; a
+// scarred kandy shows its last heart with a permanent crack, forever.
+function bondHearts(h, band, scarred) {
+  var filled = BOND_HEARTS_BY_BAND[band] || 3;
+  var hearts = [];
+  for (var i = 0; i < 5; i++) {
+    var isCracked = scarred && i === 4;
+    hearts.push(
+      h(
+        "svg",
+        { key: "bond" + i, width: 10, height: 10, viewBox: "0 0 10 10", "aria-hidden": "true" },
+        h("path", {
+          d: HEART_PATH,
+          fill: i < filled ? "#f43f5e" : "none",
+          stroke: "#f43f5e",
+          strokeWidth: 0.9,
+          opacity: i < filled ? 1 : 0.4,
+        }),
+        isCracked
+          ? h("path", {
+              // jagged crack down the middle of the last heart
+              d: "M5 1.6 L4.2 3.4 L5.4 5 L4.4 6.8 L5.2 8.4",
+              fill: "none",
+              stroke: "#7f1d1d",
+              strokeWidth: 0.8,
+              strokeLinecap: "round",
+            })
+          : null,
+      ),
+    );
+  }
+  return h(
+    "span",
+    {
+      role: "img",
+      "aria-label": "bond: " + band + (scarred ? ", scarred" : ""),
+      style: { display: "inline-flex", gap: "2px", alignItems: "center", flexShrink: 0 },
+    },
+    hearts,
+  );
+}
+
 // Mood dot colors — warm when fed, cooling toward gray as it stagnates.
 var MOOD_COLORS = {
   elated: "#f59e0b",
@@ -2678,11 +2724,23 @@ function kandyCard(h, data, celebration, care, timeOfDay) {
         ),
         h(
           "div",
-          { style: { fontSize: "10px", opacity: 0.65, fontVariantNumeric: "tabular-nums" } },
-          // progress_pct is completion WITHIN the current level — say so
-          // plainly ("64% through level 12"), not "to next evolution",
-          // which read as 64% remaining.
-          Math.floor(data.progress_pct) + "% through level " + data.level,
+          {
+            style: {
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "8px",
+            },
+          },
+          h(
+            "span",
+            { style: { fontSize: "10px", opacity: 0.65, fontVariantNumeric: "tabular-nums" } },
+            // progress_pct is completion WITHIN the current level — say so
+            // plainly ("64% through level 12"), not "to next evolution",
+            // which read as 64% remaining.
+            Math.floor(data.progress_pct) + "% through level " + data.level,
+          ),
+          bondHearts(h, data.temperament_band || "neutral", !!data.scarred),
         ),
       ),
       h(
