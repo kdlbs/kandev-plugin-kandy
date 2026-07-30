@@ -1946,6 +1946,11 @@ var KANDY_CSS =
   // reads as a stray floating square — hide it. :has() keeps the OTHER
   // direct span (Radix's visually-hidden a11y clone) intact.
   ".kandev-kandy-tooltip > span:has(> svg){display:none!important}" +
+  // Dialog card at L size (248px design x 1.45 = ~360px) — zoom keeps every
+  // vector crisp and scales hit-targets consistently. Phones keep 1.0 so the
+  // card fits the viewport.
+  ".kandev-kandy-dialogzoom{zoom:1.45}" +
+  "@media (max-width: 480px){.kandev-kandy-dialogzoom{zoom:1}}" +
   "@keyframes kandev-kandy-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}" +
   "@keyframes kandev-kandy-bobsad{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.7px)}}" +
   "@keyframes kandev-kandy-blink{0%,90%,100%{transform:scaleY(1)}93%,96%{transform:scaleY(0.08)}}" +
@@ -3120,11 +3125,14 @@ function makeKandyWidget(host) {
           DialogContent,
           {
             id: "kandev-kandy-dialog",
-            className: "w-auto max-w-[280px] p-0 gap-0 overflow-hidden rounded-xl",
+            className: "w-auto max-w-none p-0 gap-0 overflow-hidden rounded-xl",
             showCloseButton: false,
           },
           h(DialogTitle, { className: "sr-only" }, "Kandy"),
-          kandyCard(h, shown, celebration, careProps, timeOfDay),
+          // The dialog is the deliberate "look at my kandy" surface — scale
+          // the 248px card design up (L, ~360px) via zoom so every vector
+          // stays crisp. The hover tooltip keeps the compact 1.0 size.
+          h("div", { className: "kandev-kandy-dialogzoom" }, kandyCard(h, shown, celebration, careProps, timeOfDay)),
         ),
       ),
     );
