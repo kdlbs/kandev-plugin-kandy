@@ -676,3 +676,140 @@ test("initialize and destroy remain repeatable", () => {
   runtime.plugin.destroy();
   assert.equal(runtime.document.head.children.length, 0);
 });
+
+test("dialog zoom clamps to [1.0, 2.2] and to viewport fit with runtime design dims", () => {
+  const render = loadBundle().plugin.__render;
+  // Plenty of viewport: only the [1.0, 2.2] band applies.
+  assert.equal(render.clampDialogZoom(1.45, 248, 364, 1600, 1200), 1.45);
+  assert.equal(render.clampDialogZoom(0.4, 248, 364, 1600, 1200), 1);
+  assert.equal(render.clampDialogZoom(9, 248, 364, 1600, 1200), 2.2);
+  // Viewport-fit bound: a 400px-wide viewport caps zoom at (400-48)/248.
+  assert.ok(Math.abs(render.clampDialogZoom(9, 248, 364, 400, 2000) - 352 / 248) < 1e-9);
+  // Height binds too, using the measured (not hardcoded) design height.
+  assert.ok(Math.abs(render.clampDialogZoom(9, 248, 364, 2000, 500) - 452 / 364) < 1e-9);
+  // A viewport too small even for zoom 1 still floors at 1 (card >= 248px).
+  assert.equal(render.clampDialogZoom(2, 248, 364, 260, 300), 1);
+});
+
+test("dialog zoom drag mapping averages both axes and ignores degenerate dims", () => {
+  const render = loadBundle().plugin.__render;
+  // A full-design-width horizontal pull adds 0.5; matching both axes adds 1.
+  assert.ok(Math.abs(render.dialogZoomFromDrag(1.45, 248, 0, 248, 364) - 1.95) < 1e-9);
+  assert.ok(Math.abs(render.dialogZoomFromDrag(1.45, 248, 364, 248, 364) - 2.45) < 1e-9);
+  // Dragging up-left shrinks.
+  assert.ok(render.dialogZoomFromDrag(1.45, -80, -80, 248, 364) < 1.45);
+  // Unmeasurable design dims leave the zoom untouched.
+  assert.equal(render.dialogZoomFromDrag(1.45, 40, 40, 0, 0), 1.45);
+});
+
+test("dialog zoom persists via localStorage and reset clears the stored value", () => {
+  const render = loadBundle().plugin.__render;
+  const store = new Map();
+  const storage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, value),
+    removeItem: (key) => store.delete(key),
+  };
+  // Absent or garbage values fall back to the 1.45 default.
+  assert.equal(render.storedDialogZoom(storage), 1.45);
+  storage.setItem("kandev-kandy-dialog-zoom", "not-a-number");
+  assert.equal(render.storedDialogZoom(storage), 1.45);
+  // Round trip; out-of-range stored values clamp on read.
+  render.persistDialogZoom(1.8123456, storage);
+  assert.equal(store.get("kandev-kandy-dialog-zoom"), "1.812");
+  assert.equal(render.storedDialogZoom(storage), 1.812);
+  storage.setItem("kandev-kandy-dialog-zoom", "99");
+  assert.equal(render.storedDialogZoom(storage), 2.2);
+  // Reset (double-click) removes the key entirely.
+  render.persistDialogZoom(null, storage);
+  assert.equal(store.has("kandev-kandy-dialog-zoom"), false);
+  assert.equal(render.storedDialogZoom(storage), 1.45);
+});
+
+test("dialog renders an unscaled Resize grip and state-driven inline zoom", () => {
+  const cleanups = [];
+  const React = {
+    Fragment: "Fragment",
+    useEffect(effect) {
+      cleanups.push(effect());
+    },
+    useRef(value) {
+      return { current: value };
+    },
+    useState(value) {
+      return [typeof value === "function" ? value() : value, () => {}];
+    },
+  };
+  let Widget = null;
+  const runtime = loadBundle();
+  runtime.plugin.initialize(
+    {
+      registerComponent(slot, component) {
+        Widget = component;
+      },
+      registerWsHandler() {},
+    },
+    {
+      React,
+      api: {
+        fetch() {
+          return Promise.resolve({ json: () => Promise.resolve(sampleKandy()) });
+        },
+      },
+      jsx,
+      ui: {
+        Dialog: "Dialog",
+        DialogContent: "DialogContent",
+        DialogTitle: "DialogTitle",
+        Tooltip: "Tooltip",
+        TooltipContent: "TooltipContent",
+        TooltipTrigger: "TooltipTrigger",
+      },
+    },
+  );
+
+  const tree = Widget();
+  const dialog = findNode(tree, (node) => node.type === "DialogContent");
+  const frame = findNode(
+    dialog,
+    (node) => node.type === "div" && node.props.className === "kandev-kandy-dialogframe",
+  );
+  const zoomed = findNode(
+    frame,
+    (node) => node.type === "div" && node.props.className === "kandev-kandy-dialogzoom",
+  );
+  const grip = findNode(
+    frame,
+    (node) => node.type === "button" && node.props["aria-label"] === "Resize",
+  );
+
+  // Default zoom 1.45 arrives as inline styles (no localStorage in this
+  // harness), with the frame width tracking 248 x zoom.
+  assert.ok(frame, "dialog renders the card frame");
+  assert.equal(zoomed.props.style.zoom, 1.45);
+  assert.equal(frame.props.style.width, 248 * 1.45 + "px");
+  // The grip is a sibling of the zoomed wrapper (its hit area never
+  // scales) and wires the full pointer-capture drag + double-click reset.
+  assert.ok(grip, "dialog exposes the resize grip");
+  // Regression: the host DialogContent base carries sm:max-w-lg (512px);
+  // without the sm-tier override the card clips past zoom ~2.06 and the
+  // grip's corner falls onto the overlay, dismissing the dialog mid-drag.
+  assert.match(dialog.props.className, /sm:max-w-none/);
+  assert.equal(
+    findNode(zoomed, (node) => node.type === "button" && node.props["aria-label"] === "Resize"),
+    null,
+    "grip lives outside the zoomed wrapper",
+  );
+  assert.equal(typeof grip.props.onPointerDown, "function");
+  assert.equal(typeof grip.props.onPointerMove, "function");
+  assert.equal(typeof grip.props.onPointerUp, "function");
+  assert.equal(typeof grip.props.onPointerCancel, "function");
+  assert.equal(typeof grip.props.onDoubleClick, "function");
+  // The injected stylesheet hides the grip and pins zoom 1 on phones.
+  const css = runtime.document.head.children[0].textContent;
+  assert.match(css, /max-width: 480px.*kandev-kandy-resizegrip\{display:none\}/);
+  assert.match(css, /kandev-kandy-dialogzoom\{zoom:1!important\}/);
+
+  cleanups.forEach((cleanup) => cleanup && cleanup());
+  runtime.plugin.destroy();
+});

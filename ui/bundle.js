@@ -29,6 +29,13 @@
 //   portrait sleeps too. Pets while asleep get a half-woken grumpy squint
 //   (one subdued heart); the water bucket is the rude awakening it already
 //   looks like. Pure presentation: the server is untouched.
+//
+// v0.6.2 — resize the dialog at will: a drag grip in the dialog's bottom-
+//   right corner maps the pointer delta onto a CONTINUOUS zoom of the same
+//   248px card design (clamped to [1.0, 2.2] and to viewport fit). The
+//   chosen zoom persists in localStorage; double-clicking the grip snaps
+//   back to the 1.45 default. Phones (≤480px) keep the fixed compact card
+//   with no grip. Pure presentation: the server is untouched.
 
 var PLUGIN_ID = "kandev-plugin-kandy";
 var STYLE_ID = "kandev-kandy-style";
@@ -1946,12 +1953,21 @@ var KANDY_CSS =
   // reads as a stray floating square — hide it. :has() keeps the OTHER
   // direct span (Radix's visually-hidden a11y clone) intact.
   ".kandev-kandy-tooltip > span:has(> svg){display:none!important}" +
-  // Dialog card at L size (248px design x 1.45 = ~360px) — zoom keeps every
-  // vector crisp and scales hit-targets consistently. Phones keep 1.0 so the
-  // card fits the viewport.
-  ".kandev-kandy-dialogzoom{zoom:1.45}" +
-  ".kandev-kandy-dialogframe{position:relative;width:360px}" +
-  "@media (max-width: 480px){.kandev-kandy-dialogzoom{zoom:1}.kandev-kandy-dialogframe{width:248px}}" +
+  // Dialog card: the 248px design scaled by a CONTINUOUS zoom (default
+  // 1.45 = ~360px) — zoom keeps every vector crisp and scales hit-targets
+  // consistently. Since v0.6.2 the zoom (and the matching frame width) are
+  // INLINE styles driven by widget state so the corner grip can drag them;
+  // the classes remain as hooks for the phone override below.
+  ".kandev-kandy-dialogframe{position:relative}" +
+  // Resize grip: a ~16px muted diagonal-lines affordance hugging the
+  // dialog's bottom-right corner, OUTSIDE the zoomed wrapper so its hit
+  // area never scales. touch-action:none keeps pointer-captured drags from
+  // turning into scrolls on touch-capable desktops/tablets.
+  ".kandev-kandy-resizegrip{position:absolute;right:0;bottom:0;z-index:3;width:16px;height:16px;display:flex;align-items:flex-end;justify-content:flex-end;padding:0 3px 3px 0;margin:0;border:none;background:transparent;color:var(--muted-foreground);opacity:0.55;cursor:nwse-resize;touch-action:none}" +
+  ".kandev-kandy-resizegrip:hover,.kandev-kandy-resizegrip:focus-visible{opacity:0.9}" +
+  // Phones: fixed compact card, no resizing — !important so the media
+  // query beats the inline zoom/width the resize state writes.
+  "@media (max-width: 480px){.kandev-kandy-dialogzoom{zoom:1!important}.kandev-kandy-dialogframe{width:248px!important}.kandev-kandy-resizegrip{display:none}}" +
   "@keyframes kandev-kandy-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}" +
   "@keyframes kandev-kandy-bobsad{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.7px)}}" +
   "@keyframes kandev-kandy-blink{0%,90%,100%{transform:scaleY(1)}93%,96%{transform:scaleY(0.08)}}" +
@@ -3636,6 +3652,72 @@ function kandyCard(h, data, celebration, care, timeOfDay) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Dialog resize (v0.6.2) — pure helpers. The dialog card is always the same
+// 248px design; the grip only drags a continuous zoom factor. Radix centers
+// DialogContent with translate(-50%,-50%), so growth stays centered on its
+// own — the drag never has to reposition anything.
+// ---------------------------------------------------------------------------
+
+var DIALOG_CARD_DESIGN_W = 248; // the card's fixed design width (kandyCard)
+var DIALOG_ZOOM_DEFAULT = 1.45;
+var DIALOG_ZOOM_MIN = 1;
+var DIALOG_ZOOM_MAX = 2.2;
+var DIALOG_ZOOM_KEY = "kandev-kandy-dialog-zoom";
+// Breathing room the zoomed card must keep per viewport axis (24px a side).
+var DIALOG_ZOOM_VIEWPORT_PAD = 48;
+
+// clampDialogZoom — the single clamp: [1.0, 2.2] AND viewport fit (the card
+// must stay fully on screen with 48px spare per axis). designW/designH are
+// the UNZOOMED card layout dims measured at drag start — the height is
+// whatever the card currently lays out at (hint row, wrapped stage names),
+// never hardcoded. A viewport too small even for zoom 1 still floors at 1.
+function clampDialogZoom(zoom, designW, designH, viewportW, viewportH) {
+  var max = DIALOG_ZOOM_MAX;
+  if (designW > 0 && isFinite(viewportW)) {
+    max = Math.min(max, (viewportW - DIALOG_ZOOM_VIEWPORT_PAD) / designW);
+  }
+  if (designH > 0 && isFinite(viewportH)) {
+    max = Math.min(max, (viewportH - DIALOG_ZOOM_VIEWPORT_PAD) / designH);
+  }
+  if (max < DIALOG_ZOOM_MIN) max = DIALOG_ZOOM_MIN;
+  return Math.min(Math.max(zoom, DIALOG_ZOOM_MIN), max);
+}
+
+// dialogZoomFromDrag — maps a bottom-right-corner pointer delta onto zoom:
+// +designW px of horizontal drag (or +designH vertical) is +1.0 zoom, and a
+// diagonal drag averages both axes so the corner tracks the pointer at a
+// natural 1:1-ish rate whichever way it moves.
+function dialogZoomFromDrag(startZoom, dx, dy, designW, designH) {
+  if (!(designW > 0) || !(designH > 0)) return startZoom;
+  return startZoom + (dx / designW + dy / designH) / 2;
+}
+
+// storedDialogZoom / persistDialogZoom — localStorage round-trip. Absent,
+// unparsable, or out-of-range values fall back to the default; storage
+// being unavailable (private mode, the node test harness) is fine too.
+// `storage` is injectable for tests; production uses window.localStorage.
+function storedDialogZoom(storage) {
+  try {
+    var s = storage || window.localStorage;
+    var z = parseFloat(s.getItem(DIALOG_ZOOM_KEY));
+    if (!isFinite(z)) return DIALOG_ZOOM_DEFAULT;
+    return Math.min(Math.max(z, DIALOG_ZOOM_MIN), DIALOG_ZOOM_MAX);
+  } catch (err) {
+    return DIALOG_ZOOM_DEFAULT;
+  }
+}
+
+function persistDialogZoom(zoom, storage) {
+  try {
+    var s = storage || window.localStorage;
+    if (zoom === null) s.removeItem(DIALOG_ZOOM_KEY);
+    else s.setItem(DIALOG_ZOOM_KEY, String(Math.round(zoom * 1000) / 1000));
+  } catch (err) {
+    /* storage unavailable — the session keeps its in-memory zoom */
+  }
+}
+
 function makeKandyWidget(host) {
   var React = host.React;
   var h = host.jsx;
@@ -3693,6 +3775,14 @@ function makeKandyWidget(host) {
     var timeHook = React.useState(localHour());
     var timeOfDay = timeHook[0];
     var setTimeOfDay = timeHook[1];
+    // dialogZoom: the continuous card zoom the corner grip drags. Seeded
+    // from localStorage (so it applies on every dialog open, across
+    // reloads) and re-persisted when a drag ends.
+    var zoomHook = React.useState(function () {
+      return storedDialogZoom();
+    });
+    var dialogZoom = zoomHook[0];
+    var setDialogZoom = zoomHook[1];
     var mountedRef = React.useRef(true);
     var prevRef = React.useRef(null);
     var photoSvgRef = React.useRef(null);
@@ -3715,6 +3805,10 @@ function makeKandyWidget(host) {
     // pointerTypeRef remembers the last pointer type: touch long-presses
     // fire contextmenu on some mobile browsers and must NOT bonk.
     var pointerTypeRef = React.useRef("mouse");
+    // dialogFrameRef measures the dialog card frame; zoomDragRef holds the
+    // in-flight grip drag (null when idle).
+    var dialogFrameRef = React.useRef(null);
+    var zoomDragRef = React.useRef(null);
 
     function clearPreparedPhoto() {
       if (photoCopyRef.current) disposePreparedPhoto(photoCopyRef.current);
@@ -3873,6 +3967,73 @@ function makeKandyWidget(host) {
         });
     }
 
+    // --- Dialog resize grip (v0.6.2) ---------------------------------
+    // Pointer-capture drag: pointerdown on the grip captures the pointer,
+    // so moves and the final release land on the grip even when the cursor
+    // leaves the dialog (or the window) — releasing outside still ends
+    // cleanly. Text selection is suppressed for the drag's duration only.
+
+    function endZoomDragCleanup() {
+      zoomDragRef.current = null;
+      if (document.body) document.body.style.userSelect = "";
+    }
+
+    function startZoomDrag(e) {
+      if (!dialogFrameRef.current || typeof e.clientX !== "number") return;
+      if (e.preventDefault) e.preventDefault();
+      var rect = dialogFrameRef.current.getBoundingClientRect();
+      // CSS zoom scales layout, so the measured frame box is design-size x
+      // zoom; dividing by the current zoom recovers the UNZOOMED design
+      // dims — including the card's real current height, never hardcoded.
+      zoomDragRef.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        startZoom: dialogZoom,
+        designW: rect.width / dialogZoom,
+        designH: rect.height / dialogZoom,
+        zoom: dialogZoom,
+      };
+      if (e.target && e.target.setPointerCapture && e.pointerId !== undefined) {
+        try {
+          e.target.setPointerCapture(e.pointerId);
+        } catch (err) {
+          /* capture is an enhancement — the drag still works over the grip */
+        }
+      }
+      if (document.body) document.body.style.userSelect = "none";
+    }
+
+    function moveZoomDrag(e) {
+      var drag = zoomDragRef.current;
+      if (!drag || e.pointerId !== drag.pointerId) return;
+      var next = dialogZoomFromDrag(
+        drag.startZoom,
+        e.clientX - drag.startX,
+        e.clientY - drag.startY,
+        drag.designW,
+        drag.designH,
+      );
+      next = clampDialogZoom(next, drag.designW, drag.designH, window.innerWidth, window.innerHeight);
+      drag.zoom = next;
+      setDialogZoom(next);
+    }
+
+    function endZoomDrag(e) {
+      var drag = zoomDragRef.current;
+      if (!drag || e.pointerId !== drag.pointerId) return;
+      endZoomDragCleanup();
+      persistDialogZoom(drag.zoom);
+    }
+
+    // Double-click the grip: snap back to the default zoom and forget the
+    // stored value (a fresh install and a reset install behave the same).
+    function resetDialogZoom() {
+      endZoomDragCleanup();
+      setDialogZoom(DIALOG_ZOOM_DEFAULT);
+      persistDialogZoom(null);
+    }
+
     function openPhotoBooth() {
       returnToPhotoEntryRef.current = true;
       clearPreparedPhoto();
@@ -3935,6 +4096,7 @@ function makeKandyWidget(host) {
         if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);
         if (distrustTimerRef.current) clearTimeout(distrustTimerRef.current);
         if (sleepyTimerRef.current) clearTimeout(sleepyTimerRef.current);
+        endZoomDragCleanup();
         clearPreparedPhoto();
         var i = refreshListeners.indexOf(load);
         if (i >= 0) refreshListeners.splice(i, 1);
@@ -4114,7 +4276,12 @@ function makeKandyWidget(host) {
           DialogContent,
           {
             id: "kandev-kandy-dialog",
-            className: "w-auto max-w-none p-0 gap-0 overflow-hidden rounded-2xl",
+            // sm:max-w-none matters: the host DialogContent base carries
+            // sm:max-w-lg (512px), and a bare max-w-none only replaces the
+            // unprefixed tier — without it the card visually clips past
+            // zoom ~2.06 and the corner grip lands on the overlay
+            // (dismissing the dialog on the next drag).
+            className: "w-auto max-w-none sm:max-w-none p-0 gap-0 overflow-hidden rounded-2xl",
             style: photoOpen ? { maxWidth: "420px" } : undefined,
             showCloseButton: false,
           },
@@ -4136,10 +4303,17 @@ function makeKandyWidget(host) {
                 h(DialogTitle, { className: "sr-only" }, "Kandy"),
                 h(
                   "div",
-                  { className: "kandev-kandy-dialogframe" },
+                  {
+                    className: "kandev-kandy-dialogframe",
+                    ref: dialogFrameRef,
+                    // Frame width tracks the zoomed design width so the
+                    // w-auto DialogContent hugs the card at any zoom (the
+                    // ≤480px media query overrides both with !important).
+                    style: { width: DIALOG_CARD_DESIGN_W * dialogZoom + "px" },
+                  },
                   h(
                     "div",
-                    { className: "kandev-kandy-dialogzoom" },
+                    { className: "kandev-kandy-dialogzoom", style: { zoom: dialogZoom } },
                     kandyCard(h, shown, celebration, careProps, timeOfDay),
                   ),
                   h(
@@ -4153,6 +4327,34 @@ function makeKandyWidget(host) {
                       },
                     },
                     photoBoothButton(h, openPhotoBooth, photoEntryRef),
+                  ),
+                  // The resize grip lives OUTSIDE the zoomed wrapper (its
+                  // 16px hit area never scales) but inside the relative
+                  // frame, pinned to the dialog's bottom-right corner.
+                  h(
+                    "button",
+                    {
+                      id: "kandev-kandy-resize-grip",
+                      type: "button",
+                      "aria-label": "Resize",
+                      className: "kandev-kandy-resizegrip",
+                      onPointerDown: startZoomDrag,
+                      onPointerMove: moveZoomDrag,
+                      onPointerUp: endZoomDrag,
+                      onPointerCancel: endZoomDrag,
+                      onDoubleClick: resetDialogZoom,
+                    },
+                    h(
+                      "svg",
+                      { width: 10, height: 10, viewBox: "0 0 10 10", "aria-hidden": "true" },
+                      h("path", {
+                        d: "M9 3 L3 9 M9 6.5 L6.5 9",
+                        stroke: "currentColor",
+                        strokeWidth: 1.3,
+                        strokeLinecap: "round",
+                        fill: "none",
+                      }),
+                    ),
                   ),
                 ),
               ),
@@ -4198,6 +4400,10 @@ window.registerKandevPlugin(PLUGIN_ID, {
     dayPhaseFor: dayPhaseFor,
     sleepScheduleFor: sleepScheduleFor,
     isAsleep: isAsleep,
+    clampDialogZoom: clampDialogZoom,
+    dialogZoomFromDrag: dialogZoomFromDrag,
+    storedDialogZoom: storedDialogZoom,
+    persistDialogZoom: persistDialogZoom,
     photoModelFor: photoModelFor,
     photoExportPlan: photoExportPlan,
     photoPaletteFor: photoPaletteFor,
