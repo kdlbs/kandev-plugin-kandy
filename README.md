@@ -16,7 +16,9 @@ an egg. It never stops.
 - **Care**: left-click drops it a treat; right-click dumps a bucket of cold
   water on it. Neither ever feeds it — only real work does — but it
   remembers how you treat it, and how you treat it shapes how it grows up.
-  Be kind. Or don't, and live with what you raise.
+  A row of bond hearts on the card shows how much it trusts you — and a
+  heart can crack in a way that never quite heals. Be kind. Or don't, and
+  live with what you raise.
 - **Day and night**: scenes follow your local clock, and every kandy has its
   own bedtime — at night it sleeps in the top bar, and waking it is on your
   conscience.
@@ -28,11 +30,11 @@ an egg. It never stops.
 
 The first week — an egg hatches and starts to grow:
 
-![Your first week](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/9fd3c2b764245379e756e1e6640943c6583d1cdc/first-week-light.png)
+![Your first week](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/a228250c2914897a58182fe4e502dc39a6303559/first-week-light.png)
 
 At night, it sleeps:
 
-![Fast asleep](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/9fd3c2b764245379e756e1e6640943c6583d1cdc/night-light.png)
+![Fast asleep](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/a228250c2914897a58182fe4e502dc39a6303559/night-light.png)
 
 What it grows into — the species your install rolls, the places it lives,
 what it looks like months from now — is yours to find out. Ship and see.
