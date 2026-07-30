@@ -3059,6 +3059,24 @@ function makeKandyWidget(host) {
       creatureSvg(h, chipShown, 22, "", true),
     );
 
+    // Shared interaction wiring for BOTH card surfaces (hover preview and
+    // click dialog): treat on click, bucket on right-click, plus the fx
+    // state each reaction animates through.
+    var careProps = {
+      fx: petFx,
+      onPet: triggerPet,
+      bonkFx: bonkFx,
+      distrustFx: distrustFx,
+      sleepyFx: sleepyFx,
+      onBonk: triggerBonk,
+      onPointerDown: function (e) {
+        pointerTypeRef.current = (e && e.pointerType) || "mouse";
+      },
+      // Hint presence follows the underlying mood (not the celebration
+      // override) so the row doesn't pop in/out mid-celebration.
+      hint: HEARTS_BY_MOOD[(data || EGG_PLACEHOLDER).mood || "content"] <= 4,
+    };
+
     return h(
       React.Fragment,
       null,
@@ -3074,7 +3092,10 @@ function makeKandyWidget(host) {
         h(
           TooltipContent,
           { side: "bottom", align: "end", className: "p-0 overflow-hidden pointer-events-auto" },
-          kandyCard(h, shown, celebration, null, timeOfDay),
+          // Same care wiring as the dialog: the hover card is a first-class
+          // surface — treat and bucket work here too. (Both cards are never
+          // mounted at once: the dialog's overlay blocks chip hover.)
+          kandyCard(h, shown, celebration, careProps, timeOfDay),
         ),
       ),
       h(
@@ -3088,26 +3109,7 @@ function makeKandyWidget(host) {
             showCloseButton: false,
           },
           h(DialogTitle, { className: "sr-only" }, "Kandy"),
-          kandyCard(
-            h,
-            shown,
-            celebration,
-            {
-              fx: petFx,
-              onPet: triggerPet,
-              bonkFx: bonkFx,
-              distrustFx: distrustFx,
-              sleepyFx: sleepyFx,
-              onBonk: triggerBonk,
-              onPointerDown: function (e) {
-                pointerTypeRef.current = (e && e.pointerType) || "mouse";
-              },
-              // Hint presence follows the underlying mood (not the celebration
-              // override) so the row doesn't pop in/out mid-celebration.
-              hint: HEARTS_BY_MOOD[(data || EGG_PLACEHOLDER).mood || "content"] <= 4,
-            },
-            timeOfDay,
-          ),
+          kandyCard(h, shown, celebration, careProps, timeOfDay),
         ),
       ),
     );
