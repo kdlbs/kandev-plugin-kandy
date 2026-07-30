@@ -1,6 +1,6 @@
 id: "kandev-plugin-kandy"
 api_version: 1
-version: "0.5.4"
+version: "0.5.5"
 display_name: "Kandy"
 description: "A tiny creature that grows as your agents work — it feeds on agent runs, turns, and conversation, and evolves forever in your session top bar."
 author: "kandev"

@@ -1941,6 +1941,11 @@ function sceneFor(biome, level, seed, timeOfDay) {
 // ---------------------------------------------------------------------------
 
 var KANDY_CSS =
+  // The shared TooltipContent always renders a small rotated-square arrow
+  // (a direct span child wrapping an svg). On our full-bleed scene card it
+  // reads as a stray floating square — hide it. :has() keeps the OTHER
+  // direct span (Radix's visually-hidden a11y clone) intact.
+  ".kandev-kandy-tooltip > span:has(> svg){display:none!important}" +
   "@keyframes kandev-kandy-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}" +
   "@keyframes kandev-kandy-bobsad{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.7px)}}" +
   "@keyframes kandev-kandy-blink{0%,90%,100%{transform:scaleY(1)}93%,96%{transform:scaleY(0.08)}}" +
@@ -3091,7 +3096,11 @@ function makeKandyWidget(host) {
         h(TooltipTrigger, { asChild: true }, trigger),
         h(
           TooltipContent,
-          { side: "bottom", align: "end", className: "p-0 overflow-hidden pointer-events-auto" },
+          {
+            side: "bottom",
+            align: "end",
+            className: "p-0 overflow-hidden pointer-events-auto kandev-kandy-tooltip",
+          },
           // Same care wiring as the dialog: the hover card is a first-class
           // surface — treat and bucket work here too. (Both cards are never
           // mounted at once: the dialog's overlay blocks chip hover.)
