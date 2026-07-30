@@ -1950,7 +1950,8 @@ var KANDY_CSS =
   // vector crisp and scales hit-targets consistently. Phones keep 1.0 so the
   // card fits the viewport.
   ".kandev-kandy-dialogzoom{zoom:1.45}" +
-  "@media (max-width: 480px){.kandev-kandy-dialogzoom{zoom:1}}" +
+  ".kandev-kandy-dialogframe{position:relative;width:360px}" +
+  "@media (max-width: 480px){.kandev-kandy-dialogzoom{zoom:1}.kandev-kandy-dialogframe{width:248px}}" +
   "@keyframes kandev-kandy-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}" +
   "@keyframes kandev-kandy-bobsad{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.7px)}}" +
   "@keyframes kandev-kandy-blink{0%,90%,100%{transform:scaleY(1)}93%,96%{transform:scaleY(0.08)}}" +
@@ -4113,8 +4114,8 @@ function makeKandyWidget(host) {
           DialogContent,
           {
             id: "kandev-kandy-dialog",
-            className: "w-auto p-0 gap-0 overflow-hidden rounded-2xl",
-            style: { maxWidth: photoOpen ? "420px" : "280px" },
+            className: "w-auto max-w-none p-0 gap-0 overflow-hidden rounded-2xl",
+            style: photoOpen ? { maxWidth: "420px" } : undefined,
             showCloseButton: false,
           },
           photoOpen
@@ -4135,14 +4136,14 @@ function makeKandyWidget(host) {
                 h(DialogTitle, { className: "sr-only" }, "Kandy"),
                 h(
                   "div",
-                  {
-                    style: {
-                      position: "relative",
-                    },
-                  },
-                   kandyCard(h, shown, celebration, careProps, timeOfDay),
-                   h(
-                     "div",
+                  { className: "kandev-kandy-dialogframe" },
+                  h(
+                    "div",
+                    { className: "kandev-kandy-dialogzoom" },
+                    kandyCard(h, shown, celebration, careProps, timeOfDay),
+                  ),
+                  h(
+                    "div",
                     {
                       style: {
                         position: "absolute",
@@ -4152,11 +4153,11 @@ function makeKandyWidget(host) {
                       },
                     },
                     photoBoothButton(h, openPhotoBooth, photoEntryRef),
-                   ),
-                 ),
-               ),
-         ),
-       ),
+                  ),
+                ),
+              ),
+        ),
+      ),
     );
   };
 }

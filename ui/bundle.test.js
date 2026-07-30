@@ -626,13 +626,27 @@ test("widget includes accessible dialog Photo Booth entry while hover card stays
     dialogEntry,
     (node) => node.type === "button" && node.props["aria-label"] === "Open Kandy Photo Booth",
   );
+  const zoomedCard = findNode(
+    dialog,
+    (node) => node.type === "div" && node.props.className === "kandev-kandy-dialogzoom",
+  );
   const tooltipButton = findNode(
     tooltip,
     (node) => node.type === "button" && node.props["aria-label"] === "Open Kandy Photo Booth",
   );
 
   assert.ok(dialogEntry, "dialog positions Photo Booth at the top right");
-  assert.ok(dialogButton, "dialog exposes the picture control");
+  assert.ok(dialogButton, "dialog exposes the camera control");
+  assert.match(dialog.props.className, /max-w-none/, "dialog keeps current L-sized card layout");
+  assert.ok(zoomedCard, "dialog keeps current L-sized card zoom");
+  assert.equal(
+    findNode(
+      zoomedCard,
+      (node) => node.type === "button" && node.props["aria-label"] === "Open Kandy Photo Booth",
+    ),
+    null,
+    "camera hit target stays compact instead of inheriting card zoom",
+  );
   assert.equal(tooltipButton, null, "hover preview remains unchanged");
 
   cleanups.forEach((cleanup) => cleanup && cleanup());
