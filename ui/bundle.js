@@ -1950,7 +1950,8 @@ var KANDY_CSS =
   // vector crisp and scales hit-targets consistently. Phones keep 1.0 so the
   // card fits the viewport.
   ".kandev-kandy-dialogzoom{zoom:1.45}" +
-  "@media (max-width: 480px){.kandev-kandy-dialogzoom{zoom:1}}" +
+  ".kandev-kandy-dialogframe{position:relative;width:360px}" +
+  "@media (max-width: 480px){.kandev-kandy-dialogzoom{zoom:1}.kandev-kandy-dialogframe{width:248px}}" +
   "@keyframes kandev-kandy-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}" +
   "@keyframes kandev-kandy-bobsad{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.7px)}}" +
   "@keyframes kandev-kandy-blink{0%,90%,100%{transform:scaleY(1)}93%,96%{transform:scaleY(0.08)}}" +
@@ -2048,8 +2049,15 @@ var KANDY_CSS =
   // a visible base opacity so reduced motion shows a static single z.
   ".kandev-kandy-zzz{opacity:0;animation:kandev-kandy-zzz 2.7s ease-in-out infinite}" +
   ".kandev-kandy-zzz-lead{opacity:0.85}" +
+  ".kandev-kandy-control{transition-property:transform,background-color,box-shadow;transition-duration:150ms;transition-timing-function:ease-out}" +
+  ".kandev-kandy-control:active:not(:disabled){transform:scale(0.96)}" +
+  ".kandev-kandy-control:focus-visible{outline:2px solid var(--ring);outline-offset:2px}" +
+  ".kandev-kandy-photo-entry-surface{transition-property:background-color,box-shadow;transition-duration:150ms;transition-timing-function:ease-out}" +
+  ".kandev-kandy-photo-entry:hover .kandev-kandy-photo-entry-surface{background:color-mix(in oklch,var(--background) 94%,var(--foreground) 6%);box-shadow:0 0 0 1px color-mix(in oklch,var(--foreground) 10%,transparent),0 2px 6px rgba(0,0,0,0.10)}" +
+  ".kandev-kandy-photo-panel:focus{outline:none}" +
+  ".kandev-kandy-photo-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz{animation:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz{animation:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -2550,6 +2558,851 @@ function burstSparkles(h, big) {
   return h("div", { key: "burstwrap", style: { position: "absolute", inset: 0, pointerEvents: "none" } }, out);
 }
 
+// ---------------------------------------------------------------------------
+// Photo Booth — a dedicated, static SVG artboard. Clipboard copy rasterizes
+// this SVG only: no app DOM, task text, account data, upload, or external service.
+// ---------------------------------------------------------------------------
+
+var PHOTO_VIEWBOX = { width: 800, height: 1000 };
+var PHOTO_EXPORT = { width: 1600, height: 2000, mimeType: "image/png" };
+var PHOTO_HABITATS = ["Verdant", "Aquatic", "Alpine", "Ember"];
+var PHOTO_MOODS = { elated: true, happy: true, content: true, bored: true, sad: true, gloomy: true };
+var PHOTO_TEMPERAMENTS = { beloved: true, content: true, neutral: true, wary: true, fearful: true };
+
+function photoInt(value, fallback) {
+  var n = Number(value);
+  return isFinite(n) ? Math.floor(n) : fallback;
+}
+
+function photoLabel(value) {
+  var s = String(value || "");
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+}
+
+// photoModelFor is an explicit allowlist. The webhook response may grow over
+// time, but portrait output can only see the presentation fields below. In
+// particular, raw temperament, XP bookkeeping, flavor timestamps, and host
+// data have no path into the shareable image.
+function photoModelFor(data, timeOfDay) {
+  data = data || EGG_PLACEHOLDER;
+  var level = Math.max(photoInt(data.level, 1), 1);
+  var archetype = photoInt(data.archetype, 0);
+  var family = photoInt(data.family, 0);
+  var biome = ((photoInt(data.biome, 0) % PHOTO_HABITATS.length) + PHOTO_HABITATS.length) % PHOTO_HABITATS.length;
+  var lineageSeed = photoInt(data.lineage_seed, 1) >>> 0;
+  if (!lineageSeed) lineageSeed = 1;
+  var stageName = typeof data.stage_name === "string" ? data.stage_name.trim().slice(0, 80) : "";
+  if (!stageName) stageName = "Kandy";
+  var mood = PHOTO_MOODS[data.mood] ? data.mood : "content";
+  var temperamentBand = PHOTO_TEMPERAMENTS[data.temperament_band]
+    ? data.temperament_band
+    : "neutral";
+  var dayPhase = dayPhaseFor(timeOfDay);
+  return {
+    level: level,
+    archetype: archetype,
+    family: family,
+    biome: biome,
+    lineageSeed: lineageSeed,
+    stageName: stageName,
+    mood: mood,
+    temperamentBand: temperamentBand,
+    scarred: !!data.scarred,
+    dayPhase: dayPhase,
+    habitat: PHOTO_HABITATS[biome],
+    sleepState: level > 1 && isAsleep(lineageSeed, timeOfDay) ? "asleep" : null,
+  };
+}
+
+function photoExportPlan() {
+  return { width: PHOTO_EXPORT.width, height: PHOTO_EXPORT.height, mimeType: PHOTO_EXPORT.mimeType };
+}
+
+// Fixed SVG colors make the exported file self-contained. Theme variables
+// remain useful for the surrounding dialog, but never leak into the image or
+// disappear when a standalone PNG is opened elsewhere.
+function photoPaletteFor(theme) {
+  if (theme === "dark") {
+    return {
+      background: "#090e1a",
+      surface: "#151d2e",
+      text: "#f8fafc",
+      muted: "#b7c0d1",
+      accent: "#f4c96f",
+      chip: "#242f47",
+      divider: "#344058",
+      outline: "rgba(255,255,255,0.10)",
+    };
+  }
+  return {
+    background: "#eee6da",
+    surface: "#fffdf9",
+    text: "#28202d",
+    muted: "#675f6d",
+    accent: "#9a641c",
+    chip: "#f2ece4",
+    divider: "#ddd2c5",
+    outline: "rgba(0,0,0,0.10)",
+  };
+}
+
+function currentPhotoTheme() {
+  if (
+    typeof document !== "undefined" &&
+    document.documentElement &&
+    document.documentElement.classList &&
+    document.documentElement.classList.contains("dark")
+  ) {
+    return "dark";
+  }
+  if (typeof window !== "undefined" && window.matchMedia) {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return "light";
+}
+
+function photoPhaseHour(dayPhase) {
+  if (dayPhase === "dawn") return 7;
+  if (dayPhase === "dusk") return 19;
+  if (dayPhase === "night") return 1;
+  return TIME_OF_DAY_DEFAULT;
+}
+
+function photoSceneStops(scene) {
+  var colors = String((scene && scene.bg) || "").match(/#[0-9a-f]{6}/gi) || [];
+  if (colors.length >= 3) return colors.slice(-3);
+  return ["#b9dcea", "#9bc78d", "#659e65"];
+}
+
+function photoNameSize(stageName) {
+  var n = stageName.length;
+  if (n <= 16) return 50;
+  if (n <= 22) return 44;
+  if (n <= 30) return 38;
+  return 34;
+}
+
+function photoHeart(h, key, x, filled, cracked, palette) {
+  return h(
+    "g",
+    { key: key, transform: "translate(" + x + " 856) scale(3.2)" },
+    h("path", {
+      d: HEART_PATH,
+      fill: filled ? "#f43f5e" : "none",
+      stroke: filled ? "#e11d48" : palette.muted,
+      strokeWidth: 0.9,
+      opacity: filled ? 1 : 0.42,
+    }),
+    cracked
+      ? h("path", {
+          d: "M5 1.6 L4.2 3.4 L5.4 5 L4.4 6.8 L5.2 8.4",
+          fill: "none",
+          stroke: "#7f1d1d",
+          strokeWidth: 0.8,
+          strokeLinecap: "round",
+        })
+      : null,
+  );
+}
+
+function photoPortraitSvg(h, model, theme, svgRef) {
+  var palette = photoPaletteFor(theme);
+  var renderData = {
+    level: model.level,
+    archetype: model.archetype,
+    family: model.family,
+    biome: model.biome,
+    lineage_seed: model.lineageSeed,
+    stage_name: model.stageName,
+    mood: model.mood,
+    temperament_band: model.temperamentBand,
+    scarred: model.scarred,
+  };
+  if (model.sleepState) renderData.sleep_state = model.sleepState;
+  var scene = sceneFor(model.biome, model.level, model.lineageSeed, photoPhaseHour(model.dayPhase));
+  var stops = photoSceneStops(scene);
+  var key = "kandy-photo-" + model.lineageSeed + "-" + model.level;
+  var skyID = key + "-sky";
+  var clipID = key + "-clip";
+  var filled = BOND_HEARTS_BY_BAND[model.temperamentBand] || 3;
+  var hearts = [];
+  for (var i = 0; i < 5; i++) {
+    hearts.push(photoHeart(h, "photo-heart-" + i, 82 + i * 46, i < filled, model.scarred && i === 4, palette));
+  }
+  var aria =
+    "Photo Booth portrait of " +
+    model.stageName +
+    ", level " +
+    model.level +
+    ", mood " +
+    model.mood +
+    ", " +
+    model.temperamentBand +
+    " bond, " +
+    model.habitat +
+    " habitat at " +
+    model.dayPhase;
+  return h(
+    "svg",
+    {
+      ref: svgRef,
+      xmlns: "http://www.w3.org/2000/svg",
+      width: PHOTO_VIEWBOX.width,
+      height: PHOTO_VIEWBOX.height,
+      viewBox: "0 0 800 1000",
+      role: "img",
+      "aria-label": aria,
+      className: "kandev-kandy-static",
+      style: {
+        display: "block",
+        width: "100%",
+        height: "auto",
+        background: palette.background,
+        fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif",
+        WebkitFontSmoothing: "antialiased",
+      },
+    },
+    h("title", { id: key + "-title" }, model.stageName + " — Kandy Photo Booth"),
+    h(
+      "desc",
+      { id: key + "-desc" },
+      "A local portrait showing current Kandy appearance, habitat, level, mood, and bond.",
+    ),
+    h(
+      "defs",
+      null,
+      h(
+        "linearGradient",
+        { id: skyID, x1: "0", y1: "0", x2: "0", y2: "1" },
+        h("stop", { offset: "0%", stopColor: stops[0] }),
+        h("stop", { offset: "56%", stopColor: stops[1] }),
+        h("stop", { offset: "100%", stopColor: stops[2] }),
+      ),
+      h("clipPath", { id: clipID }, h("rect", { x: 52, y: 52, width: 696, height: 516, rx: 28 })),
+    ),
+    h("rect", { width: 800, height: 1000, fill: palette.background }),
+    h("rect", {
+      x: 28,
+      y: 28,
+      width: 744,
+      height: 944,
+      rx: 52,
+      fill: palette.surface,
+      stroke: palette.outline,
+      strokeWidth: 2,
+    }),
+    h(
+      "g",
+      { clipPath: "url(#" + clipID + ")" },
+      h("rect", { x: 52, y: 52, width: 696, height: 516, fill: "url(#" + skyID + ")" }),
+      h(
+        "svg",
+        {
+          x: 52,
+          y: 52,
+          width: 696,
+          height: 516,
+          viewBox: "0 0 240 120",
+          preserveAspectRatio: "xMidYMid slice",
+          "aria-hidden": "true",
+        },
+        scene.props,
+        h("g", { transform: "translate(70 14)" }, creatureParts(h, renderData, false)),
+      ),
+    ),
+    h("rect", {
+      x: 52,
+      y: 52,
+      width: 696,
+      height: 516,
+      rx: 28,
+      fill: "none",
+      stroke: palette.outline,
+      strokeWidth: 2,
+    }),
+    h(
+      "text",
+      { x: 80, y: 620, fill: palette.accent, fontSize: 15, fontWeight: 750, letterSpacing: 3.2 },
+      "KANDY PHOTO BOOTH",
+    ),
+    h(
+      "text",
+      {
+        x: 80,
+        y: 686,
+        fill: palette.text,
+        fontSize: photoNameSize(model.stageName),
+        fontWeight: 760,
+        letterSpacing: -1.2,
+      },
+      model.stageName,
+    ),
+    h("rect", { x: 620, y: 640, width: 98, height: 54, rx: 27, fill: palette.chip }),
+    h(
+      "text",
+      {
+        x: 669,
+        y: 675,
+        fill: palette.text,
+        fontSize: 22,
+        fontWeight: 700,
+        textAnchor: "middle",
+        style: { fontVariantNumeric: "tabular-nums" },
+      },
+      "Lv " + model.level,
+    ),
+    h("rect", { x: 80, y: 724, width: 176, height: 48, rx: 24, fill: palette.chip }),
+    h("circle", { cx: 105, cy: 748, r: 7, fill: MOOD_COLORS[model.mood] || MOOD_COLORS.content }),
+    h(
+      "text",
+      { x: 124, y: 756, fill: palette.text, fontSize: 20, fontWeight: 650 },
+      photoLabel(model.mood),
+    ),
+    h("rect", { x: 274, y: 724, width: 310, height: 48, rx: 24, fill: palette.chip }),
+    h(
+      "text",
+      { x: 298, y: 756, fill: palette.muted, fontSize: 19, fontWeight: 600 },
+      model.habitat + " · " + photoLabel(model.dayPhase),
+    ),
+    h("line", { x1: 80, y1: 804, x2: 720, y2: 804, stroke: palette.divider, strokeWidth: 2 }),
+    h("text", { x: 80, y: 842, fill: palette.muted, fontSize: 18, fontWeight: 650 }, "Bond"),
+    h(
+      "text",
+      { x: 720, y: 842, fill: palette.muted, fontSize: 18, fontWeight: 650, textAnchor: "end" },
+      photoLabel(model.temperamentBand) + (model.scarred ? " · Scarred" : ""),
+    ),
+    hearts,
+    h(
+      "text",
+      { x: 80, y: 934, fill: palette.muted, fontSize: 15, fontWeight: 550, letterSpacing: 0.4 },
+      "Raised in Kandev.",
+    ),
+  );
+}
+
+function stopPhotoControlEvent(event) {
+  if (event && event.stopPropagation) event.stopPropagation();
+}
+
+function cameraIcon(h) {
+  return h(
+    "svg",
+    {
+      width: 17,
+      height: 17,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      "aria-hidden": "true",
+      "data-icon": "camera",
+    },
+    h("path", {
+      d: "M8.25 6.5 9.4 4.75h5.2l1.15 1.75H19A2.25 2.25 0 0 1 21.25 8.75v8A2.25 2.25 0 0 1 19 19H5a2.25 2.25 0 0 1-2.25-2.25v-8A2.25 2.25 0 0 1 5 6.5h3.25Z",
+      stroke: "currentColor",
+      strokeWidth: 1.6,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+    }),
+    h("circle", {
+      cx: 12,
+      cy: 12.5,
+      r: 3.35,
+      stroke: "currentColor",
+      strokeWidth: 1.6,
+    }),
+  );
+}
+
+function photoBoothButton(h, onOpen, buttonRef) {
+  return h(
+    "button",
+    {
+      type: "button",
+      ref: buttonRef,
+      "aria-label": "Open Kandy Photo Booth",
+      title: "Photo Booth",
+      className: "kandev-kandy-control kandev-kandy-photo-entry",
+      onPointerDown: stopPhotoControlEvent,
+      onContextMenu: stopPhotoControlEvent,
+      onClick: function (event) {
+        stopPhotoControlEvent(event);
+        onOpen();
+      },
+      style: {
+        width: "40px",
+        height: "40px",
+        minHeight: "40px",
+        minWidth: "40px",
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        border: "none",
+        borderRadius: "10px",
+        background: "transparent",
+        color: "inherit",
+        boxShadow: "none",
+        cursor: "pointer",
+      },
+    },
+    h(
+      "span",
+      {
+        className: "kandev-kandy-photo-entry-surface",
+        style: {
+          width: "32px",
+          height: "32px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: "8px",
+          background: "color-mix(in oklch,var(--background) 86%,transparent)",
+          boxShadow:
+            "0 0 0 1px color-mix(in oklch,var(--foreground) 7%,transparent),0 1px 4px rgba(0,0,0,0.08)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+        },
+      },
+      cameraIcon(h),
+    ),
+  );
+}
+
+function renderPhotoPng(svgNode, suppliedEnv) {
+  return new Promise(function (resolve, reject) {
+    if (!svgNode) {
+      reject(new Error("Photo portrait is not ready."));
+      return;
+    }
+    var env = suppliedEnv || {};
+    var root = typeof window !== "undefined" ? window : {};
+    var doc = env.document || (typeof document !== "undefined" ? document : null);
+    var URLAPI = env.URL || root.URL;
+    var BlobCtor = env.Blob || root.Blob;
+    var ImageCtor = env.Image || root.Image;
+    var Serializer = env.XMLSerializer || root.XMLSerializer;
+    if (!doc || !URLAPI || !BlobCtor || !ImageCtor || !Serializer) {
+      reject(new Error("PNG rendering is not available in this browser."));
+      return;
+    }
+
+    var svgURL = null;
+    try {
+      var source = new Serializer().serializeToString(svgNode);
+      if (source.indexOf("xmlns=") < 0) {
+        source = source.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+      var svgBlob = new BlobCtor([source], { type: "image/svg+xml;charset=utf-8" });
+      svgURL = URLAPI.createObjectURL(svgBlob);
+      var image = new ImageCtor();
+      image.decoding = "async";
+      image.onerror = function () {
+        if (svgURL) URLAPI.revokeObjectURL(svgURL);
+        svgURL = null;
+        reject(new Error("Photo portrait could not be rendered."));
+      };
+      image.onload = function () {
+        if (svgURL) URLAPI.revokeObjectURL(svgURL);
+        svgURL = null;
+        try {
+          var canvas = doc.createElement("canvas");
+          canvas.width = PHOTO_EXPORT.width;
+          canvas.height = PHOTO_EXPORT.height;
+          var context = canvas.getContext("2d");
+          if (!context) throw new Error("Canvas is unavailable.");
+          context.drawImage(image, 0, 0, PHOTO_EXPORT.width, PHOTO_EXPORT.height);
+          canvas.toBlob(function (pngBlob) {
+            if (!pngBlob) {
+              reject(new Error("PNG encoding failed."));
+              return;
+            }
+            resolve(pngBlob);
+          }, PHOTO_EXPORT.mimeType);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      image.src = svgURL;
+    } catch (error) {
+      if (svgURL) URLAPI.revokeObjectURL(svgURL);
+      reject(error);
+    }
+  });
+}
+
+function copyPhotoBlob(pngBlob, suppliedEnv) {
+  var env = suppliedEnv || {};
+  var root = typeof window !== "undefined" ? window : {};
+  var ClipboardItemCtor = env.ClipboardItem || root.ClipboardItem;
+  var clipboard = env.clipboard || (root.navigator && root.navigator.clipboard);
+  if (!ClipboardItemCtor || !clipboard || typeof clipboard.write !== "function") {
+    var unsupported = new Error("Image copying is not available in this browser.");
+    unsupported.name = "NotSupportedError";
+    return Promise.reject(unsupported);
+  }
+  if (!pngBlob || pngBlob.type !== PHOTO_EXPORT.mimeType) {
+    var invalid = new Error("A rendered PNG is required.");
+    invalid.name = "NotSupportedError";
+    return Promise.reject(invalid);
+  }
+  if (
+    typeof ClipboardItemCtor.supports === "function" &&
+    !ClipboardItemCtor.supports(PHOTO_EXPORT.mimeType)
+  ) {
+    var unsupportedType = new Error("This browser cannot copy PNG images.");
+    unsupportedType.name = "NotSupportedError";
+    return Promise.reject(unsupportedType);
+  }
+
+  var content = {};
+  content[PHOTO_EXPORT.mimeType] = pngBlob;
+  try {
+    return Promise.resolve(clipboard.write([new ClipboardItemCtor(content)]));
+  } catch (error) {
+    return Promise.reject(error);
+  }
+}
+
+function notSupportedPhotoCopy(message) {
+  var error = new Error(message);
+  error.name = "NotSupportedError";
+  return error;
+}
+
+function disposePreparedPhoto(prepared, suppliedEnv) {
+  if (!prepared || prepared.disposed) return;
+  prepared.disposed = true;
+  var env = suppliedEnv || {};
+  var root = typeof window !== "undefined" ? window : {};
+  var doc = env.document || (typeof document !== "undefined" ? document : null);
+  var URLAPI = env.URL || root.URL;
+  if (prepared.frame) {
+    prepared.frame.onload = null;
+    prepared.frame.onerror = null;
+    var parent = prepared.frame.parentNode || (doc && doc.body);
+    if (parent && typeof parent.removeChild === "function") {
+      try {
+        parent.removeChild(prepared.frame);
+      } catch (error) {
+        /* already removed */
+      }
+    }
+  }
+  if (prepared.url && URLAPI && typeof URLAPI.revokeObjectURL === "function") {
+    URLAPI.revokeObjectURL(prepared.url);
+  }
+}
+
+function preparePhotoCopy(pngBlob, suppliedEnv) {
+  var env = suppliedEnv || {};
+  var root = typeof window !== "undefined" ? window : {};
+  var secure =
+    Object.prototype.hasOwnProperty.call(env, "isSecureContext") === true
+      ? env.isSecureContext
+      : root.isSecureContext;
+  var ClipboardItemCtor = env.ClipboardItem || root.ClipboardItem;
+  var clipboard = env.clipboard || (root.navigator && root.navigator.clipboard);
+  if (
+    secure !== false &&
+    ClipboardItemCtor &&
+    clipboard &&
+    typeof clipboard.write === "function"
+  ) {
+    return Promise.resolve({ method: "clipboard", pngBlob: pngBlob, disposed: false });
+  }
+
+  var doc = env.document || (typeof document !== "undefined" ? document : null);
+  var URLAPI = env.URL || root.URL;
+  if (
+    !pngBlob ||
+    pngBlob.type !== PHOTO_EXPORT.mimeType ||
+    !doc ||
+    !doc.body ||
+    typeof doc.createElement !== "function" ||
+    !URLAPI ||
+    typeof URLAPI.createObjectURL !== "function"
+  ) {
+    return Promise.reject(notSupportedPhotoCopy("Image copying is not available on this page."));
+  }
+
+  return new Promise(function (resolve, reject) {
+    var prepared = {
+      method: "image-document",
+      pngBlob: pngBlob,
+      frame: null,
+      url: null,
+      disposed: false,
+    };
+    try {
+      var frame = doc.createElement("iframe");
+      prepared.frame = frame;
+      prepared.url = URLAPI.createObjectURL(pngBlob);
+      frame.setAttribute("aria-hidden", "true");
+      frame.setAttribute("tabindex", "-1");
+      frame.style.position = "fixed";
+      frame.style.left = "-10000px";
+      frame.style.top = "0";
+      frame.style.width = "1px";
+      frame.style.height = "1px";
+      frame.style.border = "0";
+      frame.style.opacity = "0";
+      frame.style.pointerEvents = "none";
+      frame.onload = function () {
+        if (
+          !frame.contentDocument ||
+          frame.contentDocument.contentType !== PHOTO_EXPORT.mimeType
+        ) {
+          disposePreparedPhoto(prepared, env);
+          reject(notSupportedPhotoCopy("The PNG copy surface could not be prepared."));
+          return;
+        }
+        resolve(prepared);
+      };
+      frame.onerror = function () {
+        disposePreparedPhoto(prepared, env);
+        reject(notSupportedPhotoCopy("The PNG copy surface could not be prepared."));
+      };
+      frame.src = prepared.url;
+      doc.body.appendChild(frame);
+    } catch (error) {
+      disposePreparedPhoto(prepared, env);
+      reject(error);
+    }
+  });
+}
+
+function copyPreparedPhoto(prepared, suppliedEnv) {
+  if (!prepared || prepared.disposed) {
+    return Promise.reject(notSupportedPhotoCopy("The prepared image is no longer available."));
+  }
+  if (prepared.method === "clipboard") {
+    return copyPhotoBlob(prepared.pngBlob, suppliedEnv);
+  }
+  if (
+    prepared.method !== "image-document" ||
+    !prepared.frame ||
+    !prepared.frame.contentWindow ||
+    !prepared.frame.contentDocument ||
+    prepared.frame.contentDocument.contentType !== PHOTO_EXPORT.mimeType ||
+    typeof prepared.frame.contentDocument.execCommand !== "function"
+  ) {
+    return Promise.reject(notSupportedPhotoCopy("Image copying is not available in this browser."));
+  }
+
+  var env = suppliedEnv || {};
+  var doc = env.document || (typeof document !== "undefined" ? document : null);
+  var activeElement = doc && doc.activeElement;
+  try {
+    prepared.frame.contentWindow.focus();
+    if (!prepared.frame.contentDocument.execCommand("copy")) {
+      throw notSupportedPhotoCopy("The browser refused to copy the image.");
+    }
+  } catch (error) {
+    return Promise.reject(error);
+  } finally {
+    if (activeElement && typeof activeElement.focus === "function") {
+      try {
+        activeElement.focus({ preventScroll: true });
+      } catch (error) {
+        activeElement.focus();
+      }
+    }
+  }
+  return Promise.resolve();
+}
+
+function photoCopyFailureStatus(error) {
+  if (error && (error.name === "NotAllowedError" || error.name === "SecurityError")) {
+    return "blocked";
+  }
+  if (error && error.name === "NotSupportedError") return "unsupported";
+  return "error";
+}
+
+function copyIcon(h) {
+  return h(
+    "svg",
+    { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", "aria-hidden": "true" },
+    h("rect", {
+      x: 8,
+      y: 8,
+      width: 11,
+      height: 11,
+      rx: 2.5,
+      stroke: "currentColor",
+      strokeWidth: 1.8,
+    }),
+    h("path", {
+      d: "M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8",
+      stroke: "currentColor",
+      strokeWidth: 1.8,
+      strokeLinecap: "round",
+    }),
+  );
+}
+
+function backIcon(h) {
+  return h(
+    "svg",
+    { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", "aria-hidden": "true" },
+    h("path", {
+      d: "M15 5 8 12l7 7",
+      stroke: "currentColor",
+      strokeWidth: 1.9,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+    }),
+  );
+}
+
+function photoDialogButton(h, label, icon, onPress, primary, disabled, accessibleLabel, busy) {
+  return h(
+    "button",
+    {
+      type: "button",
+      "aria-label": accessibleLabel || label,
+      "aria-busy": busy ? "true" : undefined,
+      disabled: !!disabled,
+      className: "kandev-kandy-control",
+      onPointerDown: stopPhotoControlEvent,
+      onContextMenu: stopPhotoControlEvent,
+      onClick: function (event) {
+        stopPhotoControlEvent(event);
+        if (!disabled) onPress();
+      },
+      style: {
+        minHeight: "40px",
+        flex: primary ? "1 1 auto" : "0 0 auto",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "7px",
+        padding: primary ? "0 14px 0 16px" : "0 12px 0 10px",
+        border: "none",
+        borderRadius: "10px",
+        background: primary ? "var(--primary)" : "var(--muted)",
+        color: primary ? "var(--primary-foreground)" : "inherit",
+        boxShadow: primary
+          ? "0 1px 2px rgba(0,0,0,0.12),0 0 0 1px color-mix(in oklch,var(--primary) 78%,black)"
+          : "0 0 0 1px color-mix(in oklch,var(--foreground) 8%,transparent)",
+        cursor: disabled || busy ? "wait" : "pointer",
+        opacity: disabled ? 0.72 : 1,
+        fontSize: "12px",
+        fontWeight: 650,
+      },
+    },
+    icon,
+    label,
+  );
+}
+
+function photoBoothPanel(h, DialogTitle, model, theme, svgRef, panelRef, status, onBack, onCopy) {
+  var palette = photoPaletteFor(theme);
+  var statusText = "Copies a PNG to your clipboard. Nothing is uploaded.";
+  if (status === "preparing") statusText = "Preparing a crisp image…";
+  else if (status === "copying") statusText = "Copying image…";
+  else if (status === "copied") statusText = "Copied to clipboard.";
+  else if (status === "blocked")
+    statusText = "Clipboard access was blocked. Allow it in site settings, then try again.";
+  else if (status === "unsupported") statusText = "This browser cannot copy PNG images.";
+  else if (status === "render-error")
+    statusText = "Could not prepare the image. Reopen Photo Booth and try again.";
+  else if (status === "error") statusText = "Could not copy the image. Try again.";
+  var copyDisabled = status === "preparing" || status === "render-error";
+  var copyBusy = status === "preparing" || status === "copying";
+  var failed =
+    status === "blocked" ||
+    status === "unsupported" ||
+    status === "render-error" ||
+    status === "error";
+  return h(
+    "div",
+    {
+      ref: panelRef,
+      tabIndex: -1,
+      role: "region",
+      "aria-label": "Kandy Photo Booth",
+      className: "kandev-kandy-photo-panel",
+      style: {
+        width: "min(388px, calc(100vw - 32px))",
+        padding: "16px",
+        WebkitFontSmoothing: "antialiased",
+      },
+    },
+    h(
+      "div",
+      { style: { padding: "2px 2px 12px" } },
+      h(
+        DialogTitle,
+        { style: { fontSize: "16px", fontWeight: 700, lineHeight: 1.25, textWrap: "balance" } },
+        "Kandy Photo Booth",
+      ),
+      h(
+        "p",
+        {
+          style: {
+            margin: "4px 0 0",
+            fontSize: "11px",
+            lineHeight: 1.45,
+            opacity: 0.65,
+            textWrap: "pretty",
+          },
+        },
+        "A private snapshot of this Kandy — rendered here, never uploaded.",
+      ),
+    ),
+    h(
+      "div",
+      {
+        style: {
+          borderRadius: "16px",
+          overflow: "hidden",
+          background: palette.background,
+          boxShadow:
+            "0 0 0 1px " + palette.outline + ",0 1px 2px -1px rgba(0,0,0,0.08),0 8px 24px rgba(0,0,0,0.08)",
+        },
+      },
+      photoPortraitSvg(h, model, theme, svgRef),
+    ),
+    h(
+      "div",
+      { style: { display: "flex", alignItems: "center", gap: "8px", paddingTop: "14px" } },
+      photoDialogButton(h, "Back to Kandy", backIcon(h), onBack, false, false),
+      photoDialogButton(
+        h,
+        status === "preparing"
+          ? "Preparing image"
+          : status === "copying"
+            ? "Copying image"
+            : "Copy image",
+        copyIcon(h),
+        onCopy,
+        true,
+        copyDisabled,
+        "Copy image to clipboard",
+        copyBusy,
+      ),
+    ),
+    h(
+      "div",
+      {
+        role: "status",
+        "aria-live": "polite",
+        style: {
+          minHeight: "17px",
+          padding: "7px 2px 0",
+          fontSize: "10px",
+          lineHeight: 1.4,
+          opacity: failed ? 0.9 : 0.55,
+          color: failed ? "var(--destructive)" : "inherit",
+          textWrap: "pretty",
+        },
+      },
+      statusText,
+    ),
+  );
+}
+
 // celebration: null, or {kind: "gain"|"levelup"} — joyful hops + sparkles;
 // levelup also highlights the (new) stage name.
 // care (dialog only): null, or {fx, onPet, hint, bonkFx, distrustFx,
@@ -2801,6 +3654,17 @@ function makeKandyWidget(host) {
     var openHook = React.useState(false);
     var dialogOpen = openHook[0];
     var setDialogOpen = openHook[1];
+    var photoHook = React.useState(false);
+    var photoOpen = photoHook[0];
+    var setPhotoOpen = photoHook[1];
+    var photoThemeHook = React.useState(function () {
+      return currentPhotoTheme();
+    });
+    var photoTheme = photoThemeHook[0];
+    var setPhotoTheme = photoThemeHook[1];
+    var photoStatusHook = React.useState("idle");
+    var photoStatus = photoStatusHook[0];
+    var setPhotoStatus = photoStatusHook[1];
     // celebration: null | {kind: "gain"|"levelup"} — set when a refetch
     // shows award_seq/level increased, cleared after the animation window.
     var celebrationHook = React.useState(null);
@@ -2831,6 +3695,11 @@ function makeKandyWidget(host) {
     var setTimeOfDay = timeHook[1];
     var mountedRef = React.useRef(true);
     var prevRef = React.useRef(null);
+    var photoSvgRef = React.useRef(null);
+    var photoCopyRef = React.useRef(null);
+    var photoPanelRef = React.useRef(null);
+    var photoEntryRef = React.useRef(null);
+    var returnToPhotoEntryRef = React.useRef(false);
     var celebrationTimerRef = React.useRef(null);
     var petTimerRef = React.useRef(null);
     var bonkTimerRef = React.useRef(null);
@@ -2846,6 +3715,11 @@ function makeKandyWidget(host) {
     // pointerTypeRef remembers the last pointer type: touch long-presses
     // fire contextmenu on some mobile browsers and must NOT bonk.
     var pointerTypeRef = React.useRef("mouse");
+
+    function clearPreparedPhoto() {
+      if (photoCopyRef.current) disposePreparedPhoto(photoCopyRef.current);
+      photoCopyRef.current = null;
+    }
 
     function celebrate(kind) {
       setCelebration({ kind: kind });
@@ -2999,6 +3873,50 @@ function makeKandyWidget(host) {
         });
     }
 
+    function openPhotoBooth() {
+      returnToPhotoEntryRef.current = true;
+      clearPreparedPhoto();
+      setPhotoTheme(currentPhotoTheme());
+      setPhotoStatus("preparing");
+      setPhotoOpen(true);
+      setDialogOpen(true);
+    }
+
+    function showKandyCard() {
+      clearPreparedPhoto();
+      setPhotoStatus("idle");
+      setPhotoOpen(false);
+    }
+
+    function copyPhoto() {
+      if (
+        !photoCopyRef.current ||
+        photoStatus === "preparing" ||
+        photoStatus === "copying" ||
+        photoStatus === "render-error"
+      ) {
+        return;
+      }
+      setPhotoStatus("copying");
+      copyPreparedPhoto(photoCopyRef.current)
+        .then(function () {
+          if (mountedRef.current) setPhotoStatus("copied");
+        })
+        .catch(function (error) {
+          if (mountedRef.current) setPhotoStatus(photoCopyFailureStatus(error));
+        });
+    }
+
+    function changeDialogOpen(nextOpen) {
+      setDialogOpen(nextOpen);
+      if (!nextOpen) {
+        returnToPhotoEntryRef.current = false;
+        clearPreparedPhoto();
+        setPhotoOpen(false);
+        setPhotoStatus("idle");
+      }
+    }
+
     React.useEffect(function () {
       mountedRef.current = true;
       load();
@@ -3017,10 +3935,25 @@ function makeKandyWidget(host) {
         if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);
         if (distrustTimerRef.current) clearTimeout(distrustTimerRef.current);
         if (sleepyTimerRef.current) clearTimeout(sleepyTimerRef.current);
+        clearPreparedPhoto();
         var i = refreshListeners.indexOf(load);
         if (i >= 0) refreshListeners.splice(i, 1);
       };
     }, []);
+
+    React.useEffect(
+      function () {
+        if (photoOpen) {
+          if (photoPanelRef.current && photoPanelRef.current.focus) photoPanelRef.current.focus();
+          return;
+        }
+        if (returnToPhotoEntryRef.current) {
+          returnToPhotoEntryRef.current = false;
+          if (photoEntryRef.current && photoEntryRef.current.focus) photoEntryRef.current.focus();
+        }
+      },
+      [photoOpen],
+    );
 
     var shown = data || EGG_PLACEHOLDER;
     // While celebrating, the FACE is joyful regardless of prior mood — it
@@ -3063,6 +3996,9 @@ function makeKandyWidget(host) {
         onFocus: load,
         onClick: function () {
           load();
+          returnToPhotoEntryRef.current = false;
+          setPhotoOpen(false);
+          setPhotoStatus("idle");
           setDialogOpen(true);
         },
       },
@@ -3086,6 +4022,59 @@ function makeKandyWidget(host) {
       // override) so the row doesn't pop in/out mid-celebration.
       hint: HEARTS_BY_MOOD[(data || EGG_PLACEHOLDER).mood || "content"] <= 4,
     };
+    var photoModel = photoModelFor(data || EGG_PLACEHOLDER, timeOfDay);
+    var photoRenderKey = JSON.stringify([
+      photoTheme,
+      photoModel.stageName,
+      photoModel.level,
+      photoModel.mood,
+      photoModel.temperamentBand,
+      photoModel.scarred,
+      photoModel.habitat,
+      photoModel.dayPhase,
+      photoModel.sleepState,
+      photoModel.family,
+      photoModel.archetype,
+      photoModel.biome,
+      photoModel.lineageSeed,
+    ]);
+
+    React.useEffect(
+      function () {
+        if (!photoOpen) return;
+        var active = true;
+        var preparedCopy = null;
+        clearPreparedPhoto();
+        setPhotoStatus("preparing");
+        renderPhotoPng(photoSvgRef.current)
+          .then(function (pngBlob) {
+            if (!active || !mountedRef.current) return null;
+            return preparePhotoCopy(pngBlob);
+          })
+          .then(function (prepared) {
+            if (!prepared) return;
+            preparedCopy = prepared;
+            if (!active || !mountedRef.current) {
+              disposePreparedPhoto(prepared);
+              return;
+            }
+            photoCopyRef.current = prepared;
+            setPhotoStatus("ready");
+          })
+          .catch(function () {
+            if (!active || !mountedRef.current) return;
+            setPhotoStatus("render-error");
+          });
+        return function () {
+          active = false;
+          if (preparedCopy) {
+            if (photoCopyRef.current === preparedCopy) photoCopyRef.current = null;
+            disposePreparedPhoto(preparedCopy);
+          }
+        };
+      },
+      [photoOpen, photoRenderKey],
+    );
 
     return h(
       React.Fragment,
@@ -3120,19 +4109,53 @@ function makeKandyWidget(host) {
       ),
       h(
         Dialog,
-        { open: dialogOpen, onOpenChange: setDialogOpen },
+        { open: dialogOpen, onOpenChange: changeDialogOpen },
         h(
           DialogContent,
           {
             id: "kandev-kandy-dialog",
-            className: "w-auto max-w-none p-0 gap-0 overflow-hidden rounded-xl",
+            className: "w-auto max-w-none p-0 gap-0 overflow-hidden rounded-2xl",
+            style: photoOpen ? { maxWidth: "420px" } : undefined,
             showCloseButton: false,
           },
-          h(DialogTitle, { className: "sr-only" }, "Kandy"),
-          // The dialog is the deliberate "look at my kandy" surface — scale
-          // the 248px card design up (L, ~360px) via zoom so every vector
-          // stays crisp. The hover tooltip keeps the compact 1.0 size.
-          h("div", { className: "kandev-kandy-dialogzoom" }, kandyCard(h, shown, celebration, careProps, timeOfDay)),
+          photoOpen
+            ? photoBoothPanel(
+                h,
+                DialogTitle,
+                photoModel,
+                photoTheme,
+                photoSvgRef,
+                photoPanelRef,
+                photoStatus,
+                showKandyCard,
+                copyPhoto,
+              )
+            : h(
+                React.Fragment,
+                null,
+                h(DialogTitle, { className: "sr-only" }, "Kandy"),
+                h(
+                  "div",
+                  { className: "kandev-kandy-dialogframe" },
+                  h(
+                    "div",
+                    { className: "kandev-kandy-dialogzoom" },
+                    kandyCard(h, shown, celebration, careProps, timeOfDay),
+                  ),
+                  h(
+                    "div",
+                    {
+                      style: {
+                        position: "absolute",
+                        top: "8px",
+                        right: "8px",
+                        zIndex: 3,
+                      },
+                    },
+                    photoBoothButton(h, openPhotoBooth, photoEntryRef),
+                  ),
+                ),
+              ),
         ),
       ),
     );
@@ -3175,6 +4198,18 @@ window.registerKandevPlugin(PLUGIN_ID, {
     dayPhaseFor: dayPhaseFor,
     sleepScheduleFor: sleepScheduleFor,
     isAsleep: isAsleep,
+    photoModelFor: photoModelFor,
+    photoExportPlan: photoExportPlan,
+    photoPaletteFor: photoPaletteFor,
+    photoPortraitSvg: photoPortraitSvg,
+    photoBoothButton: photoBoothButton,
+    photoBoothPanel: photoBoothPanel,
+    renderPhotoPng: renderPhotoPng,
+    copyPhotoBlob: copyPhotoBlob,
+    preparePhotoCopy: preparePhotoCopy,
+    copyPreparedPhoto: copyPreparedPhoto,
+    disposePreparedPhoto: disposePreparedPhoto,
+    photoCopyFailureStatus: photoCopyFailureStatus,
     setJsx: function (jsx) {
       h0 = jsx;
     },
