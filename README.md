@@ -11,6 +11,11 @@ an egg. It never stops.
 - **Hover or click/tap**: the kandy card — its current scene, the creature
   with idle animations, its stage name, an XP bar, and a mood badge
   (Happy, Bored, Gloomy, ...).
+- **Photo Booth**: click/tap the kandy, then choose **Photo Booth** to frame
+  its current appearance, habitat and time of day, stage name, level, mood,
+  and bond as a polished portrait. Download it as a crisp PNG with a safe,
+  stable filename. Rendering and saving happen entirely in your browser —
+  nothing is uploaded, and no surrounding task or app UI enters the image.
 - **Moods**: it celebrates when XP lands and gets bored, sad, and eventually
   gloomy (rain cloud included) when nothing ships for days.
 - **Care**: left-click drops it a treat; right-click dumps a bucket of cold
@@ -79,7 +84,7 @@ Developed against a local checkout of the kandev monorepo (see the
 `replace` directive in `go.mod`).
 
 ```sh
-make test        # Go unit tests (XP curve, event mapping, webhook shape)
+make test        # Go unit tests + dependency-free UI render/export tests
 make fmt vet     # gofmt + go vet
 make package-host
 ```
