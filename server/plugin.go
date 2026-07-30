@@ -439,6 +439,10 @@ func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) kandyResp
 	// Band flavor: trauma dominates the idle/mood lines; adoration only
 	// speaks up when nothing more urgent (hunger, purring) is on screen.
 	band := temperamentBand(l.Temperament)
+	// Last, temperament caps the displayed mood (wary -> content,
+	// fearful -> bored): trust gates happiness, and no pet lift or fresh
+	// XP can bust the ceiling — only winning trust back raises it.
+	mood = capMoodForBand(mood, band)
 	if level > 1 {
 		switch band {
 		case "fearful":

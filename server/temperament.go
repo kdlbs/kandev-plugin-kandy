@@ -99,3 +99,35 @@ func lowerMood(mood string) string {
 	}
 	return mood
 }
+
+// moodIndex ranks a mood in moodOrder (0 = elated/best); unknown -> -1.
+func moodIndex(mood string) int {
+	for i, name := range moodOrder {
+		if name == mood {
+			return i
+		}
+	}
+	return -1
+}
+
+// capMoodForBand is the FINAL step of the mood pipeline: temperament caps
+// the displayed mood after every other modifier (pet lift, bonk drop) has
+// run. A mistreated kandy can't beam "Happy" at its abuser no matter how
+// much work is flowing — wary caps the mood at "content", fearful at
+// "bored"; winning trust back lifts the ceiling. The cap only lowers:
+// a mood already at or below the ceiling is never raised.
+func capMoodForBand(mood, band string) string {
+	var ceiling string
+	switch band {
+	case "wary":
+		ceiling = "content"
+	case "fearful":
+		ceiling = "bored"
+	default:
+		return mood
+	}
+	if i := moodIndex(mood); i >= 0 && i < moodIndex(ceiling) {
+		return ceiling
+	}
+	return mood
+}

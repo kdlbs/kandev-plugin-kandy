@@ -274,6 +274,90 @@ func TestWebhook_BandFlavorLines(t *testing.T) {
 	require.Contains(t, state.Flavor, "trembles")
 }
 
+// Trust gates happiness: wary caps the displayed mood at "content",
+// fearful at "bored"; all other bands leave it untouched, and the cap
+// never raises a mood already at or below the ceiling.
+func TestCapMoodForBand_Table(t *testing.T) {
+	moods := []string{"elated", "happy", "content", "bored", "sad", "gloomy"}
+	want := map[string][]string{
+		// band -> expected displayed mood per base mood (same order).
+		"beloved": {"elated", "happy", "content", "bored", "sad", "gloomy"},
+		"content": {"elated", "happy", "content", "bored", "sad", "gloomy"},
+		"neutral": {"elated", "happy", "content", "bored", "sad", "gloomy"},
+		"wary":    {"content", "content", "content", "bored", "sad", "gloomy"},
+		"fearful": {"bored", "bored", "bored", "bored", "sad", "gloomy"},
+	}
+	for band, expected := range want {
+		for i, mood := range moods {
+			require.Equal(t, expected[i], capMoodForBand(mood, band),
+				"band=%s mood=%s", band, mood)
+		}
+	}
+	// Unknown moods pass through untouched rather than snapping to a cap.
+	require.Equal(t, "???", capMoodForBand("???", "fearful"))
+}
+
+// End-to-end through the webhook: the cap runs LAST, after the pet lift
+// and bonk drop, so neither fresh XP (elated) nor petting can bust the
+// ceiling of a wary or fearful kandy.
+func TestTemperamentCap_GatesDisplayedMood(t *testing.T) {
+	host := newFakeHost(map[string]any{"debug": true})
+	p := newTestPlugin(t, host)
+	require.NoError(t, p.OnEvent(context.Background(), busEvent("turn.completed", map[string]any{})))
+	base := p.now()
+
+	// Two spaced bonks -> -16 (wary).
+	bonkKandy(t, p)
+	advance(p, base, 20*time.Second)
+	bonkKandy(t, p)
+	require.Equal(t, -16.0, persistedTemperament(t, host))
+
+	// Outside the 30min bonk-drop window: only the cap is in play.
+	advance(p, base, 2*time.Hour)
+	state := fetchKandy(t, p, "debug_idle_hours=0")
+	require.Equal(t, "wary", state.TemperamentBand)
+	require.Equal(t, "content", state.Mood, "elated capped at content when wary")
+	require.Equal(t, "bored", fetchKandy(t, p, "debug_idle_hours=60").Mood,
+		"bored is below the wary ceiling — unchanged")
+
+	// Pet lift never busts the ceiling: content would lift to happy, but
+	// the cap runs after the lift.
+	petKandy(t, p)
+	require.Equal(t, "content", fetchKandy(t, p, "debug_idle_hours=24").Mood,
+		"content + pet lift still capped at content")
+
+	// Four more spaced bonks -> -48 (fearful): ceiling drops to bored.
+	for i := 0; i < 4; i++ {
+		advance(p, base, 3*time.Hour+time.Duration(i)*11*time.Second)
+		bonkKandy(t, p)
+	}
+	advance(p, base, 5*time.Hour)
+	state = fetchKandy(t, p, "debug_idle_hours=0")
+	require.Equal(t, "fearful", state.TemperamentBand)
+	require.Equal(t, "bored", state.Mood, "elated capped at bored when fearful")
+	require.Equal(t, "gloomy", fetchKandy(t, p, "debug_idle_hours=200").Mood,
+		"gloomy is below the fearful ceiling — unchanged")
+}
+
+// A beloved kandy keeps its full mood range: the cap only exists for the
+// mistreated bands.
+func TestTemperamentCap_BelovedUncapped(t *testing.T) {
+	host := newFakeHost(map[string]any{"debug": true})
+	p := newTestPlugin(t, host)
+	require.NoError(t, p.OnEvent(context.Background(), busEvent("turn.completed", map[string]any{})))
+	base := p.now()
+	for i := 0; i < 30; i++ {
+		advance(p, base, time.Duration(i)*petEffectWindow)
+		petKandy(t, p)
+	}
+	require.Equal(t, 30.0, persistedTemperament(t, host))
+	// Past the 60min pet-lift window so the base mood shows raw.
+	advance(p, base, 30*petEffectWindow+2*time.Hour)
+	state := fetchKandy(t, p, "debug_idle_hours=0")
+	require.Equal(t, "beloved", state.TemperamentBand)
+	require.Equal(t, "elated", state.Mood, "beloved never caps")
+}
+
 // The hard integrity rule: an arbitrary pet/bonk sequence leaves every
 // XP-derived fact byte-identical, and never touches the ledger's xp,
 // award_seq, or last_award_at.
