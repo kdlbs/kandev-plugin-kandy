@@ -125,26 +125,6 @@ function sampleKandy(overrides = {}) {
   );
 }
 
-test("photo filenames are stable, filesystem-safe, and contain no path fragments", () => {
-  const render = loadBundle().plugin.__render;
-
-  assert.equal(
-    render.photoFilenameFor({ stage_name: "  Étoile / ../../ Wisp  ", level: 12 }),
-    "kandy-etoile-wisp-lv12.png",
-  );
-  assert.equal(render.photoFilenameFor({ stage_name: "✨", level: 7 }), "kandy-lv7.png");
-  assert.equal(render.photoFilenameFor({ stage_name: "Egg", level: -20 }), "kandy-egg-lv1.png");
-
-  const longName = render.photoFilenameFor({ stage_name: "A".repeat(200), level: 123 });
-  assert.match(longName, /^kandy-[a-z0-9-]+-lv123\.png$/);
-  assert.ok(longName.length <= 72);
-  assert.equal(longName, render.photoFilenameFor({ stage_name: "A".repeat(200), level: 123 }));
-
-  const extremeLevel = render.photoFilenameFor({ stage_name: "Egg", level: 1e100 });
-  assert.match(extremeLevel, /^kandy-egg-lv[0-9]+\.png$/);
-  assert.ok(extremeLevel.length <= 72);
-});
-
 test("photo model allowlists visible presentation fields and categorical temperament", () => {
   const render = loadBundle().plugin.__render;
   const model = render.photoModelFor(
@@ -222,6 +202,8 @@ test("photo portrait renders only shareable Kandy presentation", () => {
   assert.match(words, /Wary/);
   assert.match(words, /Alpine/);
   assert.match(words, /Night/);
+  assert.match(words, /Raised in Kandev\./);
+  assert.doesNotMatch(words, /Grown through work/);
   assert.equal(serialized.includes("SECRET"), false);
   assert.equal(serialized.includes("progress_pct"), false);
   assert.equal(serialized.includes("var(--"), false);
@@ -252,6 +234,18 @@ test("Photo Booth control isolates pointer, context-menu, and click events", () 
   assert.equal(stopped, 3);
 });
 
+test("Photo Booth entry is an icon-only 40px picture control", () => {
+  const render = loadBundle().plugin.__render;
+  const button = render.photoBoothButton(jsx, () => {});
+  const icon = findNode(button, (node) => node.type === "svg");
+
+  assert.equal(button.props.style.width, "40px");
+  assert.equal(button.props.style.height, "40px");
+  assert.equal(button.props.style.minHeight, "40px");
+  assert.equal(textContent(button).trim(), "");
+  assert.equal(icon.props["aria-hidden"], "true");
+});
+
 test("Photo Booth view exposes a focus target and native keyboard controls", () => {
   const render = loadBundle().plugin.__render;
   render.setJsx(jsx);
@@ -268,25 +262,43 @@ test("Photo Booth view exposes a focus target and native keyboard controls", () 
     () => {},
   );
   const back = findNode(panel, (node) => node.props && node.props["aria-label"] === "Back to Kandy");
-  const download = findNode(panel, (node) => node.props && node.props["aria-label"] === "Download PNG");
+  const copy = findNode(
+    panel,
+    (node) => node.props && node.props["aria-label"] === "Copy image to clipboard",
+  );
+  const copiedPanel = render.photoBoothPanel(
+    jsx,
+    "DialogTitle",
+    render.photoModelFor(sampleKandy(), 13),
+    "light",
+    { current: null },
+    { current: null },
+    "copied",
+    () => {},
+    () => {},
+  );
 
   assert.equal(panel.props.ref, focusRef);
   assert.equal(panel.props.tabIndex, -1);
   assert.equal(back.type, "button");
   assert.equal(back.props.type, "button");
-  assert.equal(download.type, "button");
-  assert.equal(download.props.type, "button");
+  assert.ok(copy, "Photo Booth exposes a clipboard action");
+  assert.equal(copy.type, "button");
+  assert.equal(copy.props.type, "button");
+  assert.match(textContent(copy), /Copy image/);
+  assert.match(textContent(copiedPanel), /Copied to clipboard\./);
 });
 
-test("PNG download rasterizes only supplied portrait and revokes local URLs", async () => {
+test("PNG copy writes only the supplied portrait to the clipboard and revokes local URLs", async () => {
   const render = loadBundle().plugin.__render;
   const portrait = { nodeName: "svg", marker: "PORTRAIT-ONLY" };
   const createdUrls = [];
   const revokedUrls = [];
   const drawCalls = [];
-  const clicks = [];
+  const clipboardWrites = [];
   let serializedNode = null;
   let canvas = null;
+  let canvasEncoded = false;
 
   class FakeXMLSerializer {
     serializeToString(node) {
@@ -309,8 +321,15 @@ test("PNG download rasterizes only supplied portrait and revokes local URLs", as
     }
   }
 
+  class FakeClipboardItem {
+    constructor(items) {
+      this.items = items;
+    }
+  }
+
   const env = {
     Blob: FakeBlob,
+    ClipboardItem: FakeClipboardItem,
     Image: FakeImage,
     XMLSerializer: FakeXMLSerializer,
     URL: {
@@ -339,37 +358,40 @@ test("PNG download rasterizes only supplied portrait and revokes local URLs", as
             },
             toBlob(callback, type) {
               assert.equal(type, "image/png");
-              queueMicrotask(() => callback(new FakeBlob(["png"], { type })));
+              queueMicrotask(() => {
+                canvasEncoded = true;
+                callback(new FakeBlob(["png"], { type }));
+              });
             },
           };
           return canvas;
         }
-        if (tagName === "a") {
-          return {
-            click() {
-              clicks.push({ download: this.download, href: this.href });
-            },
-          };
-        }
         throw new Error(`unexpected element: ${tagName}`);
       },
     },
-    setTimeout(fn) {
-      fn();
+    clipboard: {
+      write(items) {
+        assert.equal(canvasEncoded, false, "clipboard write preserves the initiating user gesture");
+        clipboardWrites.push(items);
+        return Promise.all(items.map((item) => item.items["image/png"]));
+      },
     },
   };
 
-  await render.downloadPhotoPng(portrait, "kandy-drowsy-sporeling-lv12.png", env);
+  assert.equal(typeof render.copyPhotoPng, "function");
+  await render.copyPhotoPng(portrait, env);
 
   assert.equal(serializedNode, portrait);
   assert.equal(canvas.width, 1600);
   assert.equal(canvas.height, 2000);
   assert.equal(drawCalls.length, 1);
   assert.deepEqual(drawCalls[0].slice(1), [0, 0, 1600, 2000]);
-  assert.deepEqual(clicks, [
-    { download: "kandy-drowsy-sporeling-lv12.png", href: "blob:local-2" },
-  ]);
-  assert.deepEqual(revokedUrls.sort(), ["blob:local-1", "blob:local-2"]);
+  assert.equal(clipboardWrites.length, 1);
+  assert.equal(clipboardWrites[0].length, 1);
+  assert.deepEqual(Object.keys(clipboardWrites[0][0].items), ["image/png"]);
+  const copiedBlob = await clipboardWrites[0][0].items["image/png"];
+  assert.equal(copiedBlob.type, "image/png");
+  assert.deepEqual(revokedUrls, ["blob:local-1"]);
 });
 
 test("widget includes accessible dialog Photo Booth entry while hover card stays action-free", () => {
@@ -418,8 +440,17 @@ test("widget includes accessible dialog Photo Booth entry while hover card stays
   const tree = Widget();
   const dialog = findNode(tree, (node) => node.type === "DialogContent");
   const tooltip = findNode(tree, (node) => node.type === "TooltipContent");
-  const dialogButton = findNode(
+  const dialogEntry = findNode(
     dialog,
+    (node) =>
+      node.type === "div" &&
+      node.props.style &&
+      node.props.style.position === "absolute" &&
+      node.props.style.top === "8px" &&
+      node.props.style.right === "8px",
+  );
+  const dialogButton = findNode(
+    dialogEntry,
     (node) => node.type === "button" && node.props["aria-label"] === "Open Kandy Photo Booth",
   );
   const tooltipButton = findNode(
@@ -427,7 +458,8 @@ test("widget includes accessible dialog Photo Booth entry while hover card stays
     (node) => node.type === "button" && node.props["aria-label"] === "Open Kandy Photo Booth",
   );
 
-  assert.ok(dialogButton, "dialog exposes Photo Booth");
+  assert.ok(dialogEntry, "dialog positions Photo Booth at the top right");
+  assert.ok(dialogButton, "dialog exposes the picture control");
   assert.equal(tooltipButton, null, "hover preview remains unchanged");
 
   cleanups.forEach((cleanup) => cleanup && cleanup());
