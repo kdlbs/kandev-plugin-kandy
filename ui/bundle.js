@@ -3099,6 +3099,12 @@ function makeKandyWidget(host) {
           {
             side: "bottom",
             align: "end",
+            // The shared TooltipContent defaults sideOffset to 0 and lets its
+            // arrow visually bridge trigger and content; we hide the arrow
+            // (stray square on a full-bleed card), so provide the breathing
+            // room explicitly. Radix's safe polygon covers the gap, so
+            // hovering from chip into card still works.
+            sideOffset: 8,
             className: "p-0 overflow-hidden pointer-events-auto kandev-kandy-tooltip",
           },
           // Same care wiring as the dialog: the hover card is a first-class
