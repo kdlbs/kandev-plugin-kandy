@@ -9,9 +9,10 @@
 // Design invariants (tested):
 //   - Pet and bonk NEVER touch xp, level, progress, award_seq or
 //     last_award_at. Temperament is presentation-conditioning only.
-//   - No passive healing: a negative temperament decays toward neutral
-//     ONLY through consistent care (accepted pets), and slowly — deep
-//     negative takes days of regular petting to heal, not minutes.
+//   - Time heals, but only toward neutral (v0.6.4 "forgiveness patch"):
+//     left alone for full days after a bonk, a hurt kandy passively drifts
+//     back toward 0 — and NEVER above it. Positive trust is built only
+//     through accepted pets.
 //   - Scarring is permanent: once temperament ever reaches scarThreshold
 //     the scarred latch is set and never clears, no matter how beloved the
 //     kandy later becomes.
@@ -40,23 +41,80 @@ const (
 
 	// Pets: at most one temperament EFFECT per petEffectWindow (extra pets
 	// still stamp last_petted_at for the mood lift). A content kandy gains
-	// petTemperamentGain per effective pet; a mistreated one heals at only
-	// petHealGain while below zero — and not at all within careCalmWindow
-	// of a bonk (care isn't "consistent" the same day you hit it).
+	// petTemperamentGain per effective pet; a mistreated one heals at
+	// petHealGain while below zero — but not at all within careCalmWindow
+	// of a bonk (care isn't "consistent" within hours of hitting it).
 	//
-	// Concrete pace: max healing is 0.5 per 10 minutes = +3/hour of
-	// obsessive petting, so a fearful -60 kandy needs 120 effective pets
-	// (20+ hours of petting every 10 minutes — several days of devoted
-	// care in practice; a casual few-pets-a-day pace takes weeks).
-	// Building beloved (+30) from neutral takes 30 effective pets.
-	petEffectWindow    = 10 * time.Minute
+	// Forgiveness patch (v0.6.4): healing a hurt kandy is humane now.
+	// Repair pets are worth MORE than trust-building pets (+3 vs +1), the
+	// effect window is 5 minutes, and the post-bonk embargo is 3 hours.
+	// Concrete pace: a fearful -60 kandy needs 20 effective pets (under
+	// 2 hours of devoted petting; a casual few-pets-a-day pace plus the
+	// passive drift below heals it in under a week). Building beloved
+	// (+30) from neutral still takes 30 effective pets.
+	petEffectWindow    = 5 * time.Minute
 	petTemperamentGain = 1.0
-	petHealGain        = 0.5
-	careCalmWindow     = 24 * time.Hour
+	petHealGain        = 3.0
+	careCalmWindow     = 3 * time.Hour
+
+	// Time heals (v0.6.4): once the last bonk is passiveHealDelay old, a
+	// negative temperament passively drifts up by passiveHealPerDay for
+	// every FULL elapsed day, clamped at 0 — passive healing never builds
+	// positive trust, it only lets wounds close. Applied lazily on webhook
+	// computation (like mood — no background jobs); last_passive_heal_at
+	// checkpoints the accrual so it is never double-applied.
+	passiveHealDelay  = 24 * time.Hour
+	passiveHealPerDay = 4.0
 
 	// scarThreshold: reaching this depth latches scarred forever.
 	scarThreshold = -60.0
 )
+
+// passiveHealUpdate applies the "time heals" rule to the ledger and reports
+// whether anything changed (callers persist only when it did). Rules:
+//
+//   - Only a hurt kandy (temperament < 0) heals passively; at or above 0
+//     this is a no-op and the checkpoint is left alone.
+//   - Migration semantics (deliberate, documented choice): the FIRST time a
+//     hurt ledger is seen without a last_passive_heal_at checkpoint, the
+//     checkpoint is set to now and NO healing is applied — no retro-heal
+//     lump on upgrade. Passive healing starts accruing from the moment the
+//     forgiveness patch first computes the ledger.
+//   - Nothing accrues within passiveHealDelay of the last bonk.
+//   - Otherwise +passiveHealPerDay per FULL elapsed day since
+//     max(last_bonked_at, last_passive_heal_at), clamped at 0 — passive
+//     healing NEVER raises temperament above 0.
+//   - The checkpoint advances by exactly the full days consumed, so partial
+//     days keep accruing and healing is never double-applied.
+func passiveHealUpdate(l *ledger, now time.Time) bool {
+	if l.Temperament >= 0 {
+		return false
+	}
+	start, err := time.Parse(time.RFC3339, l.LastPassiveHealAt)
+	if err != nil {
+		l.LastPassiveHealAt = now.Format(time.RFC3339)
+		return true
+	}
+	if bonk, err := time.Parse(time.RFC3339, l.LastBonkedAt); err == nil {
+		if now.Sub(bonk) < passiveHealDelay {
+			return false
+		}
+		if bonk.After(start) {
+			start = bonk
+		}
+	}
+	days := int(now.Sub(start) / (24 * time.Hour))
+	if days <= 0 {
+		return false
+	}
+	if healed := l.Temperament + passiveHealPerDay*float64(days); healed < 0 {
+		l.Temperament = healed
+	} else {
+		l.Temperament = 0 // wounds close; trust is only built by pets
+	}
+	l.LastPassiveHealAt = start.Add(time.Duration(days) * 24 * time.Hour).Format(time.RFC3339)
+	return true
+}
 
 func clampTemperament(v float64) float64 {
 	if v < temperamentMin {

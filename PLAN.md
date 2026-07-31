@@ -232,15 +232,18 @@ can't traumatize mobile kandys). Both are presentation/temperament only:
 (tested byte-identical across arbitrary pet/bonk sequences).
 
 Persistent ledger additions: `pets_given`, `bonks_given`, `last_bonked_at`,
-`last_pet_effect_at`, `temperament` (float in [-100, +100]), `scarred`.
+`last_pet_effect_at`, `temperament` (float in [-100, +100]), `scarred`,
+`last_passive_heal_at` (v0.6.4, the time-heals checkpoint).
 
-Constants (server-side, `temperament.go`):
+Constants (server-side, `temperament.go`; healing rebalanced in v0.6.4 —
+the "forgiveness patch"):
 
 | Knob | Value | Meaning |
 |---|---|---|
 | bonk effect | −8, max 1 effect / 10s | every bonk re-stamps `last_bonked_at`, so spam keeps resetting the window and never stacks trauma; deliberate spaced cruelty does (0 → scar = 8 bonks ≥ 10s apart) |
 | bonk fallout | mood −1 tier for 30min; pet lift cancelled; pets refused for 60s ("it doesn't trust you right now") | displayed-mood only |
-| pet effect | +1 (≥0) / +0.5 (<0), max 1 effect / 10min, none within 24h of a bonk | extra pets still stamp the mood lift; **no passive decay** — negative temperament heals only through consistent care, and slowly: −60 → 0 needs 120 effective pets (2.5 days of petting every 10 minutes; weeks at a casual pace) |
+| pet effect | +1 (≥0) / **+3 (<0)**, max 1 effect / **5min**, none within **3h** of a bonk | extra pets still stamp the mood lift; repair pets outweigh trust-building pets — healing a hurt kandy is humane now: −60 → 0 needs 20 effective pets (under 2 hours of devoted petting; a casual few-pets-a-day pace clears it in days, helped by the passive drift below) |
+| time heals (v0.6.4) | **+4 per full elapsed day** while temperament < 0 and the last bonk is > 24h old, **clamped at 0** | applied lazily on webhook computation (like mood — no background jobs) from max(`last_bonked_at`, `last_passive_heal_at`); the checkpoint advances by whole days so partial days keep accruing and nothing double-applies. Passive healing only closes wounds — it NEVER raises temperament above 0; positive trust is built only by pets. Migration: a pre-0.6.4 ledger has no checkpoint — it is set to *now* on first sight with **no retro-heal** (no lump payout for old neglect; earning starts at the upgrade moment) |
 | scar latch | temperament ≤ −60 ⇒ `scarred: true` forever | never clears, even fully redeemed |
 | bands | beloved ≥ +30, content ≥ +10, neutral (−10, +10), wary ≤ −10, fearful ≤ −40 | webhook exposes only `temperament_band` / `scarred` / `refusing_pets`, never the raw score |
 

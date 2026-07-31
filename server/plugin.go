@@ -85,6 +85,11 @@ type ledger struct {
 	LastBonkedAt string `json:"last_bonked_at,omitempty"`
 	// LastPetEffectAt (RFC3339) rate-limits pets' temperament effect.
 	LastPetEffectAt string `json:"last_pet_effect_at,omitempty"`
+	// LastPassiveHealAt (RFC3339) checkpoints the "time heals" accrual
+	// (v0.6.4) so passive healing is never double-applied. Missing on
+	// pre-0.6.4 state: initialized to now on first sight, deliberately
+	// with NO retroactive healing (see passiveHealUpdate).
+	LastPassiveHealAt string `json:"last_passive_heal_at,omitempty"`
 }
 
 // kandyResponse is everything the UI is allowed to know. Archetype,
@@ -249,6 +254,7 @@ func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookReques
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.healPassively(ctx)
 
 	if grant := query.Get("debug_grant"); grant != "" {
 		if resp := p.applyDebugGrant(ctx, grant); resp != nil {
@@ -281,6 +287,7 @@ func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookReques
 func (p *plugin) handlePet(ctx context.Context) *pluginsdk.WebhookResponse {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.healPassively(ctx)
 	l := p.loadLedger(ctx)
 	// Distrust: freshly bonked, the kandy refuses pets entirely — no
 	// stamp, no lift, no temperament change. The UI mirrors this with a
@@ -293,7 +300,8 @@ func (p *plugin) handlePet(ctx context.Context) *pluginsdk.WebhookResponse {
 	// Plain mutateLedger, not awardXP: no XP, no award_seq bump, no
 	// last_award_at change. The temperament effect is rate-limited to one
 	// per petEffectWindow, gains nothing within careCalmWindow of a bonk,
-	// and heals negative scores at only petHealGain (see temperament.go).
+	// and heals negative scores at petHealGain — a repair pet is worth
+	// more than a trust-building one (see temperament.go).
 	l = p.mutateLedger(ctx, func(l *ledger) {
 		l.PetsGiven++
 		l.LastPettedAt = p.now().UTC().Format(time.RFC3339)
@@ -319,6 +327,7 @@ func (p *plugin) handlePet(ctx context.Context) *pluginsdk.WebhookResponse {
 func (p *plugin) handleBonk(ctx context.Context) *pluginsdk.WebhookResponse {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.healPassively(ctx) // accrued days settle BEFORE the new bonk re-gates them
 	l := p.mutateLedger(ctx, func(l *ledger) {
 		l.BonksGiven++
 		if !p.within(l.LastBonkedAt, bonkEffectWindow) {
@@ -387,6 +396,22 @@ func (p *plugin) debugEnabled(ctx context.Context) bool {
 	}
 	enabled, _ := config[configKeyDebug].(bool)
 	return enabled
+}
+
+// healPassively applies the "time heals" rule (see passiveHealUpdate)
+// lazily on webhook computation — like mood, there are no background jobs;
+// the drift settles whenever the kandy is next looked at, petted or bonked.
+// Persists only when something actually changed (checkpoint init or heal
+// applied), so plain reads of a healthy kandy never write state. Callers
+// must hold p.mu.
+func (p *plugin) healPassively(ctx context.Context) {
+	l := p.loadLedger(ctx)
+	if !passiveHealUpdate(l, p.now().UTC()) {
+		return
+	}
+	// passiveHealUpdate already mutated the (cached) ledger; mutateLedger
+	// with a no-op just stamps UpdatedAt and persists it.
+	p.mutateLedger(ctx, func(*ledger) {})
 }
 
 // within reports whether the RFC3339 stamp is less than window old. An
