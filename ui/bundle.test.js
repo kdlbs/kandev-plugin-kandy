@@ -159,6 +159,25 @@ test("photo model allowlists visible presentation fields and categorical tempera
   assert.equal(JSON.stringify(model).includes("SECRET"), false);
 });
 
+test("chat topbar control uses desktop and phone geometry", () => {
+  const { document, plugin } = loadBundle();
+  plugin.initialize(
+    {
+      registerComponent() {},
+      registerWsHandler() {},
+    },
+    { jsx, ui: {} },
+  );
+
+  const style = document.getElementById("kandev-kandy-style");
+  assert.ok(style);
+  assert.match(style.textContent, /#kandev-kandy-widget[^}]*width:28px[^}]*height:28px/);
+  assert.match(
+    style.textContent,
+    /@media \(max-width:639px\)\{#kandev-kandy-widget[^}]*width:44px[^}]*height:44px/,
+  );
+});
+
 test("photo export uses fixed high-resolution PNG dimensions and explicit theme palettes", () => {
   const render = loadBundle().plugin.__render;
   const plan = render.photoExportPlan();
