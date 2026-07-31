@@ -36,6 +36,22 @@
 //   chosen zoom persists in localStorage; double-clicking the grip snaps
 //   back to the 1.45 default. Phones (≤480px) keep the fixed compact card
 //   with no grip. Pure presentation: the server is untouched.
+//
+// v0.6.5 — hold-to-tip the bucket on touch: COARSE pointers (pointerType
+//   "touch"/"pen") can finally bonk deliberately. Pressing and holding the
+//   creature starts a bucket-tip progress — a small bucket appears above
+//   the head (bonkContactFor) and tilts toward its pour angle over
+//   BONK_HOLD_MS (700ms). Holding to completion triggers the exact
+//   existing bonk flow (POST + drench + distrust window); the synthetic
+//   click that follows touchend is suppressed so it can't ALSO pet.
+//   Releasing early rights the bucket and fades it, and the release
+//   disambiguates by duration: < HOLD_TAP_MAX_MS (250ms) is a plain tap =
+//   pet ONLY; a 250-700ms held-then-released press does NOTHING (neither
+//   pet nor bonk — a hesitation). Desktop mouse is completely unchanged
+//   (click pet, right-click bonk, no hold behavior). Under reduced motion
+//   there is no progressive tilt: a static bucket appears at half-hold as
+//   the "about to commit" signal. The hint line gains a touch variant
+//   ("tap to treat · hold to douse") via matchMedia("(pointer: coarse)").
 
 var PLUGIN_ID = "kandev-plugin-kandy";
 var STYLE_ID = "kandev-kandy-style";
@@ -2280,6 +2296,14 @@ var KANDY_CSS =
   // pour: the water column grows from the lip to the head (~85ms after the
   // stream starts — POUR_HIT_MS syncs the splash/soak), holds, trails off.
   "@keyframes kandev-kandy-pour{0%{opacity:0;transform:scaleY(0)}9%{opacity:0.9;transform:scaleY(1)}72%{opacity:0.9;transform:scaleY(1)}100%{opacity:0;transform:scaleY(0.92) translateY(8px)}}" +
+  // holdtip: the hold-to-bonk progress — a quick fade-in, then a LINEAR
+  // rotation to the pour pose across the whole duration (BONK_HOLD_MS,
+  // set inline), so elapsed/BONK_HOLD_MS maps straight onto the current
+  // angle (transform is only keyed at 0%/100%; the 14% key is opacity).
+  "@keyframes kandev-kandy-holdtip{0%{opacity:0;transform:rotate(0deg)}14%{opacity:0.95}100%{opacity:0.95;transform:rotate(-104deg)}}" +
+  // holdcancel: released early — the bucket rights itself from wherever
+  // the hold left it (--kandy-holdrot, set inline) and fades away.
+  "@keyframes kandev-kandy-holdcancel{0%{opacity:0.95;transform:rotate(var(--kandy-holdrot,-52deg))}55%{opacity:0.8;transform:rotate(0deg)}100%{opacity:0;transform:rotate(0deg)}}" +
   "@keyframes kandev-kandy-splat{0%{opacity:0;transform:scale(0.2)}30%{opacity:0.85;transform:scale(1)}100%{opacity:0;transform:scale(1.6)}}" +
   "@keyframes kandev-kandy-drip{0%{opacity:0;transform:translateY(-2px)}22%{opacity:0.9}100%{opacity:0;transform:translateY(11px)}}" +
   // wettint: filter ONLY — a quick splash-white pop, then the soaked
@@ -2326,6 +2350,12 @@ var KANDY_CSS =
   ".kandev-kandy-treat-ignored{position:absolute;opacity:0;animation:kandev-kandy-treatbounce 1.3s both;pointer-events:none}" +
   ".kandev-kandy-crumb{position:absolute;opacity:0;animation:kandev-kandy-fleck 0.55s ease-out both;pointer-events:none}" +
   ".kandev-kandy-bucket{position:absolute;opacity:0;animation:kandev-kandy-buckettip 1.5s ease both;pointer-events:none}" +
+  // Hold-to-bonk progress bucket: tilt duration is inline (BONK_HOLD_MS).
+  // The static variant is the reduced-motion "about to commit" signal —
+  // no animation at all, just a visible tilted bucket from half-hold.
+  ".kandev-kandy-holdtip{position:absolute;opacity:0;animation:kandev-kandy-holdtip linear both;pointer-events:none}" +
+  ".kandev-kandy-holdcancel{position:absolute;animation:kandev-kandy-holdcancel 0.45s ease both;pointer-events:none}" +
+  ".kandev-kandy-holdtip-static{position:absolute;opacity:0.95;transform:rotate(-52deg);pointer-events:none}" +
   ".kandev-kandy-pour{position:absolute;opacity:0;animation:kandev-kandy-pour 0.95s ease 0.42s both;transform-origin:50% 0;pointer-events:none}" +
   ".kandev-kandy-splat{position:absolute;opacity:0;animation:kandev-kandy-splat 0.5s ease 0.5s both;pointer-events:none}" +
   ".kandev-kandy-splashdrop{position:absolute;opacity:0;animation:kandev-kandy-fleck 0.6s ease-out both;pointer-events:none}" +
@@ -2343,7 +2373,7 @@ var KANDY_CSS =
   ".kandev-kandy-photo-panel:focus{outline:none}" +
   ".kandev-kandy-photo-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz{animation:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz{animation:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -2494,6 +2524,34 @@ var TREAT_CATCH_MS = 450;
 // 420ms (28% of 1.5s) and the stream takes ~85ms to grow to the head. The
 // splash, splat, soaked tint (CSS delay), and drips are offset by this.
 var POUR_HIT_MS = 500;
+
+// Hold-to-bonk (v0.6.5, coarse pointers only). A press shorter than
+// HOLD_TAP_MAX_MS releases as a plain tap (= pet); holding through
+// BONK_HOLD_MS commits the bonk; anything between is a hesitation and
+// does NOTHING. HOLD_POUR_DEG matches buckettip's pouring pose so the
+// committed hold hands off visually into the drench choreography.
+var BONK_HOLD_MS = 700;
+var HOLD_TAP_MAX_MS = 250;
+var HOLD_CANCEL_MS = 450;
+var HOLD_POUR_DEG = -104;
+
+// isCoarsePointer / prefersReducedMotion — feature-detected at call time
+// (never cached: DevTools device emulation and OS settings flip live).
+// Guarded so the offline node harness (no matchMedia) stays on defaults.
+function isCoarsePointer() {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(pointer: coarse)").matches;
+}
+
+function prefersReducedMotion() {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// careHintText — the discoverability line under the card: pointer-aware.
+function careHintText(coarse) {
+  return coarse ? "tap to treat · hold to douse" : "psst — click your kandy";
+}
 
 // bonkContactFor — the effects' contact point in scene pixels, derived from
 // the SAME values the renderer uses: the archetype builder's `top` anchor
@@ -2649,6 +2707,61 @@ function petOverlay(h, seq, data) {
 // origin, straight above the contact point.
 var BUCKET_OFF = { x: 7, y: -42 };
 
+// bucketSvg — the shared water-bucket artwork (viewBox 0 0 44 44), used
+// full-size by the drench choreography and small by the hold-to-tip
+// progress indicator. Position/animation live on the passed style/class.
+function bucketSvg(h, key, className, px, style) {
+  return h(
+    "svg",
+    {
+      key: key,
+      className: className,
+      width: px,
+      height: px,
+      viewBox: "0 0 44 44",
+      style: style,
+      "aria-hidden": "true",
+    },
+    h("path", { key: "bhandle", d: "M10 12 Q22 -1 34 12", stroke: "#5b7181", strokeWidth: 2, fill: "none" }),
+    h("path", { key: "bbody", d: "M10 12 L34 12 L30 32 L14 32 Z", fill: "#8fa7b8", stroke: "#5b7181", strokeWidth: 1.6 }),
+    h("ellipse", { key: "bwater", cx: 22, cy: 12.5, rx: 10.5, ry: 2.2, fill: "#7fd7ff" }),
+    h("rect", { key: "brim", x: 8.5, y: 10, width: 27, height: 3.6, rx: 1.8, fill: "#a9bfcc", stroke: "#5b7181", strokeWidth: 1.2 }),
+    h("line", { key: "bband", x1: 12.6, y1: 23, x2: 31.4, y2: 23, stroke: "#7d94a5", strokeWidth: 1.4 }),
+  );
+}
+
+// holdTipOverlay — the hold-to-bonk progress visual: a small bucket
+// hovering above the creature at the contact point, tilting from upright
+// toward the pour pose in step with the hold. fx.mode:
+//   "tilt"   — the progressive rotation (linear, duration = BONK_HOLD_MS);
+//   "cancel" — released early: rights itself from fx.rot and fades;
+//   "static" — reduced motion: a fixed tilted bucket shown from half-hold
+//              as the "about to commit" signal (no progressive animation).
+function holdTipOverlay(h, fx, data) {
+  var c = bonkContactFor(data);
+  var size = 30;
+  var style = {
+    left: c.x - size / 2 + "px",
+    top: c.y - 36 - size / 2 + "px",
+    transformOrigin: "50% 50%",
+    overflow: "visible",
+  };
+  var cls = "kandev-kandy-holdtip";
+  if (fx.mode === "static") {
+    cls = "kandev-kandy-holdtip-static";
+  } else if (fx.mode === "cancel") {
+    cls = "kandev-kandy-holdcancel";
+    style["--kandy-holdrot"] = (fx.rot || 0).toFixed(1) + "deg";
+  } else {
+    style.animationDuration = BONK_HOLD_MS + "ms";
+  }
+  return h(
+    "div",
+    { key: "holdfx" + fx.seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } },
+    bucketSvg(h, "holdbucket", cls, size, style),
+  );
+}
+
 // Water splash at the pour's contact point: blues + one pale glint.
 var SPLASH_FLECKS = [
   [-16, -12, -20, -2, 3, 1, "#7fd7ff", 0],
@@ -2678,28 +2791,12 @@ function bonkOverlay(h, seq, data) {
   var c = bonkContactFor(data);
   var kids = [];
   kids.push(
-    h(
-      "svg",
-      {
-        key: "bucket",
-        className: "kandev-kandy-bucket",
-        width: 44,
-        height: 44,
-        viewBox: "0 0 44 44",
-        style: {
-          left: c.x + BUCKET_OFF.x - 22 + "px",
-          top: c.y + BUCKET_OFF.y - 20 + "px",
-          transformOrigin: "22px 20px",
-          overflow: "visible",
-        },
-        "aria-hidden": "true",
-      },
-      h("path", { key: "bhandle", d: "M10 12 Q22 -1 34 12", stroke: "#5b7181", strokeWidth: 2, fill: "none" }),
-      h("path", { key: "bbody", d: "M10 12 L34 12 L30 32 L14 32 Z", fill: "#8fa7b8", stroke: "#5b7181", strokeWidth: 1.6 }),
-      h("ellipse", { key: "bwater", cx: 22, cy: 12.5, rx: 10.5, ry: 2.2, fill: "#7fd7ff" }),
-      h("rect", { key: "brim", x: 8.5, y: 10, width: 27, height: 3.6, rx: 1.8, fill: "#a9bfcc", stroke: "#5b7181", strokeWidth: 1.2 }),
-      h("line", { key: "bband", x1: 12.6, y1: 23, x2: 31.4, y2: 23, stroke: "#7d94a5", strokeWidth: 1.4 }),
-    ),
+    bucketSvg(h, "bucket", "kandev-kandy-bucket", 44, {
+      left: c.x + BUCKET_OFF.x - 22 + "px",
+      top: c.y + BUCKET_OFF.y - 20 + "px",
+      transformOrigin: "22px 20px",
+      overflow: "visible",
+    }),
   );
   // Pour stream: from the tipped lip (BUCKET_OFF math above puts it at
   // ~(c.x, c.y-26.5)) straight down onto the head. Grows from the top
@@ -3692,7 +3789,8 @@ function photoBoothPanel(h, DialogTitle, model, theme, svgRef, panelRef, status,
 // celebration: null, or {kind: "gain"|"levelup"} — joyful hops + sparkles;
 // levelup also highlights the (new) stage name.
 // care (dialog only): null, or {fx, onPet, hint, bonkFx, distrustFx,
-// onBonk, onPointerDown} — a plain click/tap on the creature pets it
+// onBonk, onPointerDown, onPointerUp, onPointerCancel, holdFx} — a plain
+// click/tap on the creature pets it
 // (a treat drops, it munch-hops, crumbs + a few hearts); a desktop
 // right-click bonks it with a bucket of cold water (pour + splash +
 // soaked shiver); a pet during distrust turns it away and the treat
@@ -3738,15 +3836,20 @@ function kandyCard(h, data, celebration, care, timeOfDay) {
         "aria-label": "Pet your kandy",
         className: animCls,
         onClick: care.onPet,
-        // Right-click = bonk (cold water). contextmenu is desktop-only
-        // by policy: the handler checks the last pointer type and ignores
-        // touch long-presses (see triggerBonk). It never also fires pet —
-        // onClick only responds to the primary button.
+        // Right-click = bonk (cold water). contextmenu is mouse-only by
+        // policy: the handler checks the last pointer type and ignores
+        // touch/pen long-presses (see triggerBonk) — coarse pointers bonk
+        // via press-and-hold instead. It never also fires pet — onClick
+        // only responds to the primary button.
         onContextMenu: function (e) {
           if (e && e.preventDefault) e.preventDefault();
           if (care.onBonk) care.onBonk();
         },
+        // Hold-to-bonk (coarse pointers): down starts the hold, up/cancel
+        // ends it (tap / hesitation / commit disambiguated in the widget).
         onPointerDown: care.onPointerDown,
+        onPointerUp: care.onPointerUp,
+        onPointerCancel: care.onPointerCancel,
         style: {
           display: "block",
           background: "transparent",
@@ -3755,7 +3858,14 @@ function kandyCard(h, data, celebration, care, timeOfDay) {
           padding: "10px 14px 0",
           cursor: "pointer",
           color: "inherit",
-          touchAction: "manipulation",
+          // touch-action none (was "manipulation"): the press-and-hold
+          // must never turn into a scroll mid-hold, and pointer capture
+          // needs the gesture to stay ours. The callout/user-select
+          // suppression keeps iOS long-press from popping its magnifier.
+          touchAction: "none",
+          WebkitTouchCallout: "none",
+          WebkitUserSelect: "none",
+          userSelect: "none",
         },
       },
       creature,
@@ -3811,6 +3921,7 @@ function kandyCard(h, data, celebration, care, timeOfDay) {
       care && care.bonkFx ? bonkOverlay(h, care.bonkFx, data) : null,
       care && care.distrustFx ? distrustOverlay(h, care.distrustFx, data) : null,
       care && care.sleepyFx ? sleepyPetOverlay(h, care.sleepyFx, data) : null,
+      care && care.holdFx ? holdTipOverlay(h, care.holdFx, data) : null,
     ),
     h(
       "div",
@@ -3910,12 +4021,12 @@ function kandyCard(h, data, celebration, care, timeOfDay) {
                 fontSize: "10px",
                 opacity: 0.45,
                 visibility:
-                  care.hint && !care.fx && !care.bonkFx && !care.distrustFx && !care.sleepyFx && !sleepState
+                  care.hint && !care.fx && !care.bonkFx && !care.distrustFx && !care.sleepyFx && !care.holdFx && !sleepState
                     ? "visible"
                     : "hidden",
               },
             },
-            "psst — click your kandy",
+            careHintText(isCoarsePointer()),
           )
         : null,
     ),
@@ -4040,6 +4151,11 @@ function makeKandyWidget(host) {
     var sleepyFxHook = React.useState(0);
     var sleepyFx = sleepyFxHook[0];
     var setSleepyFx = sleepyFxHook[1];
+    // holdFx: null while idle, else {seq, mode: "tilt"|"static"|"cancel",
+    // rot} — the hold-to-bonk progress bucket (see holdTipOverlay).
+    var holdFxHook = React.useState(null);
+    var holdFx = holdFxHook[0];
+    var setHoldFx = holdFxHook[1];
     // timeOfDay: local-clock hour float driving the day/night scene and
     // the seeded sleep schedule; re-read every TIME_TICK_MS.
     var timeHook = React.useState(localHour());
@@ -4075,6 +4191,15 @@ function makeKandyWidget(host) {
     // pointerTypeRef remembers the last pointer type: touch long-presses
     // fire contextmenu on some mobile browsers and must NOT bonk.
     var pointerTypeRef = React.useRef("mouse");
+    // holdRef tracks the in-flight coarse-pointer hold (null when idle):
+    // {pointerId, startedAt, commitTimer, staticTimer}. suppressClickRef
+    // is a deadline: pointer-ups that must NOT pet (a completed hold-bonk,
+    // a 250-700ms hesitation) set it so the synthetic click that follows
+    // touchend is swallowed; the deadline (not a flag) means a click that
+    // never arrives can't eat a later, legitimate tap.
+    var holdRef = React.useRef(null);
+    var suppressClickRef = React.useRef(0);
+    var holdClearTimerRef = React.useRef(null);
     // dialogFrameRef measures the dialog card frame; zoomDragRef holds the
     // in-flight grip drag (null when idle).
     var dialogFrameRef = React.useRef(null);
@@ -4199,15 +4324,16 @@ function makeKandyWidget(host) {
         });
     }
 
-    // triggerBonk (desktop right-click on the creature): the bucket of
-    // cold water — local pour/splash/soak immediately, POST the bonk at
-    // most once per 3s, and open the local distrust window. Touch never
-    // bonks — long-press contextmenu is ignored so accidental long-presses
-    // can't traumatize mobile kandys. Bonking never drains XP: it darkens
-    // the persistent temperament, which only conditions how the creature
-    // is drawn.
-    function triggerBonk() {
-      if (pointerTypeRef.current === "touch") return;
+    // triggerBonk (desktop right-click, or a completed coarse-pointer
+    // hold): the bucket of cold water — local pour/splash/soak
+    // immediately, POST the bonk at most once per 3s, and open the local
+    // distrust window. contextmenu only bonks for a mouse: touch/pen
+    // long-press contextmenu is ignored (those pointers bonk deliberately
+    // via hold-to-tip, and an accidental long-press must not traumatize
+    // mobile kandys). Bonking never drains XP: it darkens the persistent
+    // temperament, which only conditions how the creature is drawn.
+    function triggerBonk(fromHold) {
+      if (!fromHold && pointerTypeRef.current !== "mouse") return;
       var nowMs = Date.now();
       setPetFx(0);
       setDistrustFx(0);
@@ -4235,6 +4361,92 @@ function makeKandyWidget(host) {
         .catch(function () {
           /* the local soaking already played */
         });
+    }
+
+    // --- Hold-to-bonk (v0.6.5, coarse pointers) -----------------------
+    // Touch and pen bonk deliberately: press and HOLD the creature. The
+    // release disambiguates by duration:
+    //   < HOLD_TAP_MAX_MS (250ms)        -> plain tap: the click pets;
+    //   250ms..BONK_HOLD_MS (hesitation) -> NOTHING (no pet, no bonk) —
+    //                                       the bucket rights and fades;
+    //   >= BONK_HOLD_MS (700ms)          -> commit: the exact bonk flow,
+    //                                       and the touchend's synthetic
+    //                                       click is suppressed.
+    // Mouse pointers never enter this path (desktop is unchanged).
+
+    function clearHoldTimers(hold) {
+      if (!hold) return;
+      if (hold.commitTimer) clearTimeout(hold.commitTimer);
+      if (hold.staticTimer) clearTimeout(hold.staticTimer);
+    }
+
+    function startHold(e) {
+      var hold = { pointerId: e && e.pointerId, startedAt: Date.now() };
+      clearHoldTimers(holdRef.current);
+      holdRef.current = hold;
+      if (holdClearTimerRef.current) clearTimeout(holdClearTimerRef.current);
+      // Capture the pointer so the up lands on the pet zone even if the
+      // finger drifts off it mid-hold (touch-action:none already keeps
+      // the browser from stealing the gesture for a scroll).
+      if (e && e.currentTarget && e.currentTarget.setPointerCapture && e.pointerId !== undefined) {
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch (err) {
+          /* capture is an enhancement — the hold still works in place */
+        }
+      }
+      if (prefersReducedMotion()) {
+        // Reduced motion: no progressive tilt. A static tilted bucket
+        // appears at half-hold as the "about to commit" signal.
+        hold.staticTimer = setTimeout(function () {
+          if (mountedRef.current && holdRef.current === hold) {
+            setHoldFx({ seq: hold.startedAt, mode: "static" });
+          }
+        }, BONK_HOLD_MS / 2);
+      } else {
+        setHoldFx({ seq: hold.startedAt, mode: "tilt" });
+      }
+      hold.commitTimer = setTimeout(function () {
+        if (holdRef.current !== hold) return;
+        holdRef.current = null;
+        // Swallow the synthetic click that follows touchend so a
+        // completed hold-bonk can't ALSO pet.
+        suppressClickRef.current = Date.now() + 800;
+        if (mountedRef.current) {
+          setHoldFx(null);
+          triggerBonk(true);
+        }
+      }, BONK_HOLD_MS);
+    }
+
+    function endHold(e, canceled) {
+      var hold = holdRef.current;
+      if (!hold) return;
+      if (e && e.pointerId !== undefined && hold.pointerId !== undefined && e.pointerId !== hold.pointerId) {
+        return;
+      }
+      holdRef.current = null;
+      clearHoldTimers(hold);
+      var elapsed = Date.now() - hold.startedAt;
+      if (!canceled && elapsed < HOLD_TAP_MAX_MS) {
+        // Quick tap: drop the (barely started) bucket and let the click
+        // that follows fire the pet.
+        setHoldFx(null);
+        return;
+      }
+      // Hesitation (or the browser canceled the pointer): neither pet nor
+      // bonk. The bucket rights itself and fades from its current angle.
+      suppressClickRef.current = Date.now() + 800;
+      if (prefersReducedMotion()) {
+        setHoldFx(null);
+        return;
+      }
+      var rot = HOLD_POUR_DEG * Math.min(elapsed / BONK_HOLD_MS, 1);
+      setHoldFx({ seq: Date.now(), mode: "cancel", rot: rot });
+      if (holdClearTimerRef.current) clearTimeout(holdClearTimerRef.current);
+      holdClearTimerRef.current = setTimeout(function () {
+        if (mountedRef.current) setHoldFx(null);
+      }, HOLD_CANCEL_MS + 80);
     }
 
     // --- Dialog resize grip (v0.6.2) ---------------------------------
@@ -4366,6 +4578,9 @@ function makeKandyWidget(host) {
         if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);
         if (distrustTimerRef.current) clearTimeout(distrustTimerRef.current);
         if (sleepyTimerRef.current) clearTimeout(sleepyTimerRef.current);
+        clearHoldTimers(holdRef.current);
+        holdRef.current = null;
+        if (holdClearTimerRef.current) clearTimeout(holdClearTimerRef.current);
         endZoomDragCleanup();
         clearPreparedPhoto();
         var i = refreshListeners.indexOf(load);
@@ -4442,13 +4657,32 @@ function makeKandyWidget(host) {
     // state each reaction animates through.
     var careProps = {
       fx: petFx,
-      onPet: triggerPet,
+      onPet: function () {
+        // A completed hold-bonk (or a hesitation release) already claimed
+        // this gesture — swallow the synthetic click so it can't pet.
+        if (Date.now() < suppressClickRef.current) {
+          suppressClickRef.current = 0;
+          return;
+        }
+        triggerPet();
+      },
       bonkFx: bonkFx,
       distrustFx: distrustFx,
       sleepyFx: sleepyFx,
+      holdFx: holdFx,
       onBonk: triggerBonk,
       onPointerDown: function (e) {
         pointerTypeRef.current = (e && e.pointerType) || "mouse";
+        // Coarse pointers start the hold-to-bonk; mouse never does.
+        if (pointerTypeRef.current === "touch" || pointerTypeRef.current === "pen") {
+          startHold(e);
+        }
+      },
+      onPointerUp: function (e) {
+        endHold(e, false);
+      },
+      onPointerCancel: function (e) {
+        endHold(e, true);
       },
       // Hint presence follows the underlying mood (not the celebration
       // override) so the row doesn't pop in/out mid-celebration.
@@ -4666,6 +4900,8 @@ window.registerKandevPlugin(PLUGIN_ID, {
     bonkOverlay: bonkOverlay,
     distrustOverlay: distrustOverlay,
     sleepyPetOverlay: sleepyPetOverlay,
+    holdTipOverlay: holdTipOverlay,
+    careHintText: careHintText,
     bonkContactFor: bonkContactFor,
     dayPhaseFor: dayPhaseFor,
     sleepScheduleFor: sleepScheduleFor,

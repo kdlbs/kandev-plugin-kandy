@@ -813,3 +813,110 @@ test("dialog renders an unscaled Resize grip and state-driven inline zoom", () =
   cleanups.forEach((cleanup) => cleanup && cleanup());
   runtime.plugin.destroy();
 });
+
+test("hold-to-tip overlay renders tilt, cancel, and reduced-motion static buckets", () => {
+  const render = loadBundle().plugin.__render;
+  const data = sampleKandy();
+
+  const tilt = render.holdTipOverlay(jsx, { seq: 1, mode: "tilt" }, data);
+  const tiltBucket = findNode(tilt, (node) => node.type === "svg");
+  assert.equal(tiltBucket.props.className, "kandev-kandy-holdtip");
+  // Duration inline so the CSS stays a single linear ramp the JS can map
+  // elapsed time back onto.
+  assert.equal(tiltBucket.props.style.animationDuration, "700ms");
+  assert.equal(tiltBucket.props.viewBox, "0 0 44 44");
+
+  const cancel = render.holdTipOverlay(jsx, { seq: 2, mode: "cancel", rot: -52.34 }, data);
+  const cancelBucket = findNode(cancel, (node) => node.type === "svg");
+  assert.equal(cancelBucket.props.className, "kandev-kandy-holdcancel");
+  assert.equal(cancelBucket.props.style["--kandy-holdrot"], "-52.3deg");
+
+  const still = render.holdTipOverlay(jsx, { seq: 3, mode: "static" }, data);
+  const stillBucket = findNode(still, (node) => node.type === "svg");
+  assert.equal(stillBucket.props.className, "kandev-kandy-holdtip-static");
+  assert.equal(stillBucket.props.style.animationDuration, undefined);
+
+  // All three hover above the same creature contact point.
+  const c = render.bonkContactFor(data);
+  assert.equal(tiltBucket.props.style.left, c.x - 15 + "px");
+  assert.equal(tiltBucket.props.style.top, c.y - 36 - 15 + "px");
+});
+
+test("care hint text is pointer-aware", () => {
+  const render = loadBundle().plugin.__render;
+  assert.equal(render.careHintText(false), "psst — click your kandy");
+  assert.equal(render.careHintText(true), "tap to treat · hold to douse");
+});
+
+test("pet zone wires the coarse-pointer hold and blocks gesture stealing", () => {
+  const cleanups = [];
+  const React = {
+    Fragment: "Fragment",
+    useEffect(effect) {
+      cleanups.push(effect());
+    },
+    useRef(value) {
+      return { current: value };
+    },
+    useState(value) {
+      return [typeof value === "function" ? value() : value, () => {}];
+    },
+  };
+  let Widget = null;
+  const runtime = loadBundle();
+  runtime.plugin.initialize(
+    {
+      registerComponent(slot, component) {
+        Widget = component;
+      },
+      registerWsHandler() {},
+    },
+    {
+      React,
+      api: {
+        fetch() {
+          return Promise.resolve({ json: () => Promise.resolve(sampleKandy()) });
+        },
+      },
+      jsx,
+      ui: {
+        Dialog: "Dialog",
+        DialogContent: "DialogContent",
+        DialogTitle: "DialogTitle",
+        Tooltip: "Tooltip",
+        TooltipContent: "TooltipContent",
+        TooltipTrigger: "TooltipTrigger",
+      },
+    },
+  );
+
+  const tree = Widget();
+  const dialog = findNode(tree, (node) => node.type === "DialogContent");
+  const petZone = findNode(
+    dialog,
+    (node) => node.type === "button" && node.props.id === "kandev-kandy-pet-zone",
+  );
+  assert.ok(petZone, "dialog renders the pet zone");
+  // The hold lifecycle: down starts (coarse only), up/cancel disambiguate.
+  assert.equal(typeof petZone.props.onPointerDown, "function");
+  assert.equal(typeof petZone.props.onPointerUp, "function");
+  assert.equal(typeof petZone.props.onPointerCancel, "function");
+  assert.equal(typeof petZone.props.onClick, "function");
+  assert.equal(typeof petZone.props.onContextMenu, "function");
+  // touch-action none: a mid-hold press must never turn into a scroll.
+  assert.equal(petZone.props.style.touchAction, "none");
+  assert.equal(petZone.props.style.userSelect, "none");
+
+  // The stylesheet carries the hold keyframes and suppresses the tilt and
+  // cancel animations (never the static signal) under reduced motion.
+  const css = runtime.document.head.children[0].textContent;
+  assert.match(css, /@keyframes kandev-kandy-holdtip\{0%\{opacity:0;transform:rotate\(0deg\)\}/);
+  assert.match(css, /@keyframes kandev-kandy-holdcancel\{0%\{opacity:0\.95;transform:rotate\(var\(--kandy-holdrot,-52deg\)\)\}/);
+  assert.match(css, /kandev-kandy-holdtip-static\{position:absolute;opacity:0\.95/);
+  const reduced = css.slice(css.indexOf("(prefers-reduced-motion: reduce)"));
+  assert.match(reduced, /\.kandev-kandy-holdtip,\.kandev-kandy-holdcancel/);
+  assert.ok(!/holdtip-static/.test(reduced), "static bucket survives reduced motion");
+
+  cleanups.forEach((cleanup) => cleanup && cleanup());
+  runtime.plugin.destroy();
+});
