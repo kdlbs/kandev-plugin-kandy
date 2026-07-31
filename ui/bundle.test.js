@@ -996,10 +996,10 @@ test("sceneFor without a season stays byte-identical; seasons compose on top", (
   assert.ok(celestialWinter.bg.includes("0.05"), "celestial tint is dimmer than the regular wash");
 });
 
-test("speech pool is 90-120 disciplined lines across bands and contexts", () => {
+test("speech pool is ~250 disciplined lines across bands and contexts", () => {
   const render = loadBundle().plugin.__render;
   const lines = render.speechLines;
-  assert.ok(lines.length >= 90 && lines.length <= 120, `pool size ${lines.length}`);
+  assert.ok(lines.length >= 240 && lines.length <= 320, `pool size ${lines.length}`);
 
   const bands = ["beloved", "content", "neutral", "wary", "fearful", "any"];
   const ctxs = [
@@ -1015,18 +1015,28 @@ test("speech pool is 90-120 disciplined lines across bands and contexts", () => 
     assert.ok(line.text.length > 0 && line.text.length <= 48, `${line.id}: ${line.text.length} chars`);
     assert.doesNotMatch(line.text, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, `${line.id}: no emoji`);
   }
-  // Every band has its own generic voice and its own greeting.
+  // Every band has a DEEP generic voice (the old 6-per-band pools made a
+  // fearful kandy cycle the same four sentences) and its own greetings.
   for (const band of ["beloved", "content", "neutral", "wary", "fearful"]) {
-    assert.ok(lines.some((l) => l.band === band && l.ctx === "generic"), `${band} generic`);
-    assert.ok(lines.some((l) => l.band === band && l.ctx === "greeting"), `${band} greeting`);
+    const generics = lines.filter((l) => l.band === band && l.ctx === "generic").length;
+    assert.ok(generics >= 18 && generics <= 24, `${band} generics: ${generics}`);
+    assert.ok(lines.filter((l) => l.band === band && l.ctx === "greeting").length >= 3, `${band} greeting`);
   }
-  // Each season and the scar have their own sub-pools; sleep-talk murmurs.
+  // Context sub-pools are deep enough that the 30min cadence never loops
+  // visibly: seasons 8+, time-of-day 10+/6+, moods 8+, refusal 8+,
+  // scarred 12+, sleep-talk 8+.
   for (const ctx of ["winter", "spring", "summer", "autumn"]) {
-    assert.ok(lines.filter((l) => l.ctx === ctx).length >= 3, `${ctx} pool`);
+    assert.ok(lines.filter((l) => l.ctx === ctx).length >= 8, `${ctx} pool`);
   }
-  assert.ok(lines.filter((l) => l.ctx === "scarred").length >= 4);
+  assert.ok(lines.filter((l) => l.ctx === "morning").length >= 10);
+  assert.ok(lines.filter((l) => l.ctx === "latenight").length >= 10);
+  assert.ok(lines.filter((l) => l.ctx === "dusk").length >= 6);
+  assert.ok(lines.filter((l) => l.ctx === "bored").length >= 8);
+  assert.ok(lines.filter((l) => l.ctx === "gloomy").length >= 8);
+  assert.ok(lines.filter((l) => l.ctx === "refusing").length >= 8);
+  assert.ok(lines.filter((l) => l.ctx === "scarred").length >= 12);
   const sleep = lines.filter((l) => l.ctx === "sleep");
-  assert.ok(sleep.length >= 3);
+  assert.ok(sleep.length >= 8);
   sleep.forEach((l) => assert.match(l.text, /zzz/));
 });
 
@@ -1070,16 +1080,27 @@ test("speech picker is deterministic and filters band + context first", () => {
     assert.equal(line.band, "fearful");
   }
 
-  // A beloved kandy never borrows another band's voice.
+  // On the degraded (no-storage) path a beloved kandy never borrows
+  // another band's voice — borrowing is a bag feature.
   const beloved = { temperament_band: "beloved", mood: "content", lineage_seed: 5150 };
   for (let t = 0; t < 200; t++) {
     const line = at(beloved, { timeOfDay: 2, tick: t });
     assert.ok(line.band === "beloved" || line.band === "any", `${line.id} at tick ${t}`);
   }
 
-  // The scar carries its own dark humor at any band.
+  // The scar no longer monopolizes the pool: a scarred kandy speaks its
+  // band's lines with scarred dark humor mixed in as ~15% bag spice.
   const scarred = { temperament_band: "content", mood: "content", scarred: true, lineage_seed: 3 };
-  assert.equal(at(scarred, { timeOfDay: 13, tick: 1 }).ctx, "scarred");
+  {
+    const resolved = render.speechPoolFor(scarred, { timeOfDay: 13 });
+    const size = resolved.pool.length + render.speechBagExtras(scarred, resolved, render.speechSliceSeed(3, resolved.slice), 0).length;
+    let scarCount = 0;
+    for (let p = 0; p < size; p++) {
+      if (at(scarred, { timeOfDay: 13, bagPos: p }).ctx === "scarred") scarCount++;
+    }
+    const frac = scarCount / size;
+    assert.ok(frac > 0.1 && frac < 0.2, `scarred spice ${frac}`);
+  }
 
   // Seasons contribute a pool when passed explicitly.
   const seasonal = at(d1, { timeOfDay: 13, tick: 2, season: "winter" });
@@ -1100,6 +1121,141 @@ test("speech picker is deterministic and filters band + context first", () => {
   const first = at(d1, { timeOfDay: 2, tick: 8 });
   const second = at(d1, { timeOfDay: 2, tick: 8, recentIds: [first.id] });
   assert.notEqual(second.id, first.id);
+});
+
+test("speech shuffle bag covers every line before any repeat, then reshuffles", () => {
+  const render = loadBundle().plugin.__render;
+  const fearful = { temperament_band: "fearful", mood: "content", scarred: true, lineage_seed: 5150 };
+  const ctx = (p) => ({ timeOfDay: 13, bagPos: p });
+  const resolved = render.speechPoolFor(fearful, { timeOfDay: 13 });
+  assert.equal(resolved.slice, "generic:fearful");
+  const size =
+    resolved.pool.length +
+    render.speechBagExtras(fearful, resolved, render.speechSliceSeed(5150, resolved.slice), 0).length;
+  // One full pass: every position yields a distinct line, and every base
+  // generic plays before anything repeats.
+  const firstPass = [];
+  for (let p = 0; p < size; p++) firstPass.push(render.pickSpeech(fearful, ctx(p)));
+  assert.equal(new Set(firstPass.map((l) => l.id)).size, size);
+  for (const l of resolved.pool) assert.ok(firstPass.some((x) => x.id === l.id), `${l.id} missed`);
+  // Deterministic: the same positions replay the same walk.
+  for (let p = 0; p < size; p++) assert.equal(render.pickSpeech(fearful, ctx(p)).id, firstPass[p].id);
+  // Reshuffle on exhaustion: pass 2 is a full distinct pass in a new
+  // order and never opens on pass 1's closing line.
+  const secondPass = [];
+  for (let p = size; p < 2 * size; p++) secondPass.push(render.pickSpeech(fearful, ctx(p)));
+  assert.equal(new Set(secondPass.map((l) => l.id)).size, size);
+  assert.notEqual(secondPass[0].id, firstPass[size - 1].id);
+  assert.notDeepEqual(secondPass.map((l) => l.id), firstPass.map((l) => l.id));
+  for (const l of resolved.pool) assert.ok(secondPass.some((x) => x.id === l.id), `${l.id} missed in pass 2`);
+});
+
+test("generic bags borrow ~25% from adjacent bands, deterministically", () => {
+  const render = loadBundle().plugin.__render;
+  const fearful = { temperament_band: "fearful", mood: "content", lineage_seed: 777 };
+  const resolved = render.speechPoolFor(fearful, { timeOfDay: 13 });
+  const size =
+    resolved.pool.length +
+    render.speechBagExtras(fearful, resolved, render.speechSliceSeed(777, resolved.slice), 0).length;
+  const walk = [];
+  for (let p = 0; p < size; p++) walk.push(render.pickSpeech(fearful, { timeOfDay: 13, bagPos: p }));
+  const frac = walk.filter((l) => l.band === "wary").length / size;
+  assert.ok(frac > 0.18 && frac < 0.3, `borrow fraction ${frac}`);
+  // Only the ladder-adjacent band is borrowed from, never a farther one.
+  for (const l of walk) assert.ok(["fearful", "wary"].includes(l.band), l.id);
+  // Deterministic from the counter: same positions, same lines.
+  for (let p = 0; p < size; p++) {
+    assert.equal(render.pickSpeech(fearful, { timeOfDay: 13, bagPos: p }).id, walk[p].id);
+  }
+  // A middle band borrows from both sides — and only from its sides.
+  const neutral = { temperament_band: "neutral", mood: "content", lineage_seed: 42 };
+  const nRes = render.speechPoolFor(neutral, { timeOfDay: 13 });
+  const nSize =
+    nRes.pool.length +
+    render.speechBagExtras(neutral, nRes, render.speechSliceSeed(42, nRes.slice), 0).length;
+  const nBands = new Set();
+  for (let p = 0; p < nSize; p++) {
+    const line = render.pickSpeech(neutral, { timeOfDay: 13, bagPos: p });
+    assert.ok(["neutral", "content", "wary"].includes(line.band), line.id);
+    nBands.add(line.band);
+  }
+  assert.ok(nBands.has("content") && nBands.has("wary"), "both neighbors show up");
+});
+
+test("speech bag walks a persistent per-slice localStorage counter", () => {
+  const render = loadBundle().plugin.__render;
+  const store = new Map();
+  const storage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, v),
+  };
+  const fearful = { temperament_band: "fearful", mood: "content", scarred: true, lineage_seed: 5150 };
+  const seen = [];
+  for (let i = 0; i < 12; i++) seen.push(render.pickSpeech(fearful, { timeOfDay: 13, storage }));
+  assert.equal(store.get("kandev-kandy-speech-bag:generic:fearful"), "12");
+  assert.equal(new Set(seen.map((l) => l.id)).size, 12, "no repeats inside the first pass");
+  // The storage walk IS the explicit-position walk.
+  for (let i = 0; i < 12; i++) {
+    assert.equal(seen[i].id, render.pickSpeech(fearful, { timeOfDay: 13, bagPos: i }).id);
+  }
+  // Sleep-talk has its own slice and counter.
+  const murmur = render.pickSpeech(fearful, { asleep: true, storage });
+  assert.match(murmur.text, /zzz/);
+  assert.equal(store.get("kandev-kandy-speech-bag:sleep"), "1");
+  // Broken storage degrades to the deterministic hash pick, not a crash.
+  const broken = {
+    getItem() {
+      throw new Error("nope");
+    },
+    setItem() {
+      throw new Error("nope");
+    },
+  };
+  const a = render.pickSpeech(fearful, { timeOfDay: 13, tick: 9, storage: broken });
+  assert.deepEqual(a, render.pickSpeech(fearful, { timeOfDay: 13, tick: 9, storage: broken }));
+});
+
+test("bubbles obey a shared 30min cooldown; arrival greetings bypass it", () => {
+  const render = loadBundle().plugin.__render;
+  const MIN = 60 * 1000;
+  const now = 1_700_000_000_000;
+  // Fresh install (no stamp): ready. Within 30min: blocked. At 30min: ready.
+  assert.equal(render.bubbleCooldownReady(0, now), true);
+  assert.equal(render.bubbleCooldownReady(now - 29 * MIN, now), false);
+  assert.equal(render.bubbleCooldownReady(now - 30 * MIN, now), true);
+  // Dialog open: a plain open respects the cooldown; an arrival always
+  // speaks (it just re-stamps via showSpeech like every other bubble).
+  assert.equal(render.openGreetingAllowed(false, now - 5 * MIN, now), false);
+  assert.equal(render.openGreetingAllowed(false, now - 31 * MIN, now), true);
+  assert.equal(render.openGreetingAllowed(true, now - 5 * MIN, now), true);
+  // The stamp round-trips through storage and moves on every write.
+  const store = new Map();
+  const storage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, v),
+  };
+  assert.equal(render.readLastBubble(storage), 0);
+  render.writeLastBubble(now, storage);
+  assert.equal(store.get("kandev-kandy-last-bubble"), String(now));
+  assert.equal(render.readLastBubble(storage), now);
+  render.writeLastBubble(now + MIN, storage);
+  assert.equal(render.readLastBubble(storage), now + MIN);
+  assert.equal(render.bubbleCooldownReady(render.readLastBubble(storage), now + 10 * MIN), false);
+  assert.equal(render.bubbleCooldownReady(render.readLastBubble(storage), now + 32 * MIN), true);
+  // Broken storage: the cooldown never blocks and never crashes.
+  assert.equal(
+    render.readLastBubble({
+      getItem() {
+        throw new Error("nope");
+      },
+    }),
+    0,
+  );
+  render.writeLastBubble(now, {
+    setItem() {
+      throw new Error("nope");
+    },
+  });
 });
 
 test("arrival gap logic and last-seen storage round-trip", () => {
@@ -1148,6 +1304,18 @@ test("speech bubble is an app-styled comic bubble anchored to the head", () => {
   const serpentBubble = render.speechBubble(jsx, line, serpent);
   assert.ok(serpentBubble.props.style.right, "serpent bubble anchors from the right");
   assert.equal(serpentBubble.props.style.left, undefined);
+
+  // Two-axis clamping (scene is 248x124): the bottom offset caps at
+  // h-46 so even a two-line bubble stays inside the top edge on tall
+  // creatures, and each side's maxWidth caps to the room it has left.
+  for (const data of [blob, serpent, sampleKandy({ archetype: 3, level: 60, mood: "content" })]) {
+    const b = render.speechBubble(jsx, line, data);
+    assert.ok(parseFloat(b.props.style.bottom) <= 124 - 46, `bottom ${b.props.style.bottom}`);
+    const width = parseFloat(b.props.style.maxWidth);
+    assert.ok(width <= 158, `maxWidth ${b.props.style.maxWidth}`);
+    const inset = parseFloat(b.props.style.right || b.props.style.left);
+    assert.ok(inset + width <= 248 - 8, `bubble fits: inset ${inset} + width ${width}`);
+  }
 });
 
 test("kandyCard renders the bubble as content but never over reactions", () => {
@@ -1238,8 +1406,10 @@ test("v0.7.0 visuals respect reduced motion (bubble stays, frills freeze)", () =
   // opacity with base 1 (content shows statically when animations are off).
   assert.match(css, /@keyframes kandev-kandy-snowdrift/);
   assert.match(css, /@keyframes kandev-kandy-bubblelife/);
-  assert.match(css, /kandev-kandy-bubble\{position:absolute[^}]*background:var\(--popover\)[^}]*font-style:italic/);
-  assert.match(css, /kandev-kandy-bubbletail\{[^}]*transform:rotate\(45deg\)/);
+  // The bubble is always white with dark text — it lives inside the
+  // illustrated scene, not the theme-colored UI chrome.
+  assert.match(css, /kandev-kandy-bubble\{position:absolute[^}]*background:#ffffff[^}]*color:#414b5c[^}]*font-style:italic/);
+  assert.match(css, /kandev-kandy-bubbletail\{[^}]*background:#ffffff[^}]*transform:rotate\(45deg\)/);
   const reduced = css.slice(css.indexOf("(prefers-reduced-motion: reduce)"));
   for (const cls of ["snow", "petal", "leaf", "firefly", "bubble", "greetarc"]) {
     assert.ok(reduced.includes(`.kandev-kandy-${cls}`), `${cls} silenced under reduced motion`);
