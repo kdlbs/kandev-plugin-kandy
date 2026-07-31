@@ -2939,17 +2939,25 @@ var WANDER_BUCKET_MS = 10000; // gate granularity: one stroll vote per 10s
 var WANDER_FRAME_MS = 40; // ~25fps position updates while a leg plays
 var COG_STEP_PX = 3; // the cogling's discrete step size
 
-// Mood-modulated stroll odds per 10s bucket. Expected stroll cadence:
-// elated/happy ~25s, content ~40s, bored ~2min, sad/gloomy ~8min+ (they
-// mostly just stand there). Asleep and eggs never vote at all (widget).
+// Mood-modulated stroll odds per 10s bucket (v0.8.1: roughly doubled —
+// "it should move more often... feeling more alive"). Expected stroll
+// cadence: elated ~12s, happy ~13s, content ~18s, bored ~40s, sad ~2min,
+// gloomy ~4min. Asleep and eggs never vote at all (widget).
 var WANDER_GATE_P = {
-  elated: 0.4,
-  happy: 0.4,
-  content: 0.25,
-  bored: 0.08,
-  sad: 0.02,
-  gloomy: 0.02,
+  elated: 0.85,
+  happy: 0.75,
+  content: 0.55,
+  bored: 0.25,
+  sad: 0.08,
+  gloomy: 0.04,
 };
+
+// v0.8.1: strolls chain into small journeys (1-3 legs with brief pauses),
+// and idle gaps get micro-life (a curious look-flip) so the creature never
+// feels frozen between walks.
+var WANDER_CHAIN_PAUSE_MS = 550;
+var LOOK_GATE_P = 0.35;
+var LOOK_HOLD_MS = 1600;
 
 // Crying bouts (v0.8.0): sad ~every 4min of open-card time, gloomy ~2x.
 var CRY_BUCKET_MS = 15000;
@@ -3099,8 +3107,19 @@ function motionDecide(state, inp) {
     if (wb !== state.lastWanderBucket && wanderGate(seed, wb, mood)) {
       var leg = wanderLegFor(d, wb, state.x);
       if (Math.abs(leg.to - leg.from) >= 1) {
-        return { type: "start-leg", leg: leg, facing: leg.to >= leg.from ? 1 : -1 };
+        return {
+          type: "start-leg",
+          leg: leg,
+          facing: leg.to >= leg.from ? 1 : -1,
+          // 0-2 follow-up legs make the stroll a small journey.
+          chain: Math.floor(speechHash01(seed, wb, 8) * 3),
+        };
       }
+    }
+    // No stroll this bucket: maybe a bit of idle micro-life instead — a
+    // curious look-flip keeps it feeling alive between walks.
+    if (wb !== state.lastWanderBucket && speechHash01(seed, wb, 9) < LOOK_GATE_P) {
+      return { type: "look" };
     }
   }
   return { type: "none" };
@@ -5633,6 +5652,8 @@ function makeKandyWidget(host) {
     });
     var wanderFrameTimerRef = React.useRef(null);
     var cryEndTimerRef = React.useRef(null);
+    var chainTimerRef = React.useRef(null);
+    var lookTimerRef = React.useRef(null);
     // liveRef mirrors the latest render values for the interval callbacks
     // (the mount-effect closures would otherwise see mount-time state).
     var liveRef = React.useRef({});
@@ -5703,12 +5724,65 @@ function makeKandyWidget(host) {
           stopWanderFrames();
           // A bout that came due mid-stroll starts the moment it lands.
           if (m.cryPending) {
+            m.chainLeft = 0;
             startCryBout();
             return; // startCryBout already published
           }
+          // v0.8.1: chained journeys — after a brief pause, amble on.
+          if (m.chainLeft > 0) scheduleChainLeg();
         }
         publishMotion();
       }, WANDER_FRAME_MS);
+    }
+
+    // scheduleChainLeg — the pause between journey legs. Skips silently if
+    // anything intervened (fx froze motion and cleared chainLeft, a cry
+    // started, or a fresh leg somehow began).
+    function scheduleChainLeg() {
+      if (chainTimerRef.current) clearTimeout(chainTimerRef.current);
+      chainTimerRef.current = setTimeout(function () {
+        if (!mountedRef.current) return;
+        var m = motionRef.current;
+        var live = liveRef.current;
+        var fxActive = !!(
+          live.celebration || live.petFx || live.bonkFx || live.distrustFx ||
+          live.sleepyFx || live.holdFx || live.greetFx
+        );
+        if (m.chainLeft <= 0 || m.leg || m.cryUntil > Date.now() || m.cryPending || fxActive) return;
+        var d = live.data;
+        if (!d || !(d.level > 1) || prefersReducedMotion()) return;
+        var seed = ((d && d.lineage_seed) || 1) >>> 0;
+        if (isAsleep(seed, localHour())) return;
+        var leg = wanderLegFor(d, Math.floor(Date.now() / 1000), m.x);
+        if (Math.abs(leg.to - leg.from) < 1) { m.chainLeft = 0; return; }
+        m.chainLeft--;
+        m.leg = Object.assign({ startedAt: Date.now() }, leg);
+        m.facing = leg.to >= leg.from ? 1 : -1;
+        publishMotion();
+        beginWanderFrames();
+      }, WANDER_CHAIN_PAUSE_MS);
+    }
+
+    // doLookFlip — idle micro-life: face the other way for a beat, then
+    // (fx permitting) turn back. A leg starting meanwhile owns facing.
+    function doLookFlip() {
+      var m = motionRef.current;
+      m.facing = -m.facing;
+      publishMotion();
+      if (lookTimerRef.current) clearTimeout(lookTimerRef.current);
+      lookTimerRef.current = setTimeout(function () {
+        if (!mountedRef.current) return;
+        var mm = motionRef.current;
+        if (mm.leg) return; // the walk already re-owned facing
+        var live = liveRef.current;
+        var fxActive = !!(
+          live.celebration || live.petFx || live.bonkFx || live.distrustFx ||
+          live.sleepyFx || live.holdFx || live.greetFx
+        );
+        if (fxActive) return; // don't yank anchors mid-reaction
+        mm.facing = -mm.facing;
+        publishMotion();
+      }, LOOK_HOLD_MS);
     }
 
     // haltMotion — freeze any in-flight leg exactly where it stands and
@@ -5716,6 +5790,9 @@ function makeKandyWidget(host) {
     // (sleep/reduced-motion arrived) and by interactions.
     function haltMotion() {
       var m = motionRef.current;
+      m.chainLeft = 0;
+      if (chainTimerRef.current) clearTimeout(chainTimerRef.current);
+      if (lookTimerRef.current) clearTimeout(lookTimerRef.current);
       if (m.leg) {
         m.x = wanderXAt(m.leg, Date.now() - m.leg.startedAt);
         m.leg = null;
@@ -5784,10 +5861,13 @@ function makeKandyWidget(host) {
       } else if (action.type === "cry-pending") {
         m.cryPending = true;
       } else if (action.type === "start-leg") {
+        m.chainLeft = action.chain || 0;
         m.leg = Object.assign({ startedAt: now }, action.leg);
         m.facing = action.facing;
         publishMotion();
         beginWanderFrames();
+      } else if (action.type === "look") {
+        doLookFlip();
       }
     }
 
@@ -6262,6 +6342,8 @@ function makeKandyWidget(host) {
         clearInterval(motionTimer);
         stopWanderFrames();
         if (cryEndTimerRef.current) clearTimeout(cryEndTimerRef.current);
+        if (chainTimerRef.current) clearTimeout(chainTimerRef.current);
+        if (lookTimerRef.current) clearTimeout(lookTimerRef.current);
         if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
         if (petTimerRef.current) clearTimeout(petTimerRef.current);
         if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);

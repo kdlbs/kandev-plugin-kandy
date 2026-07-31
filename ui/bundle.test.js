@@ -1479,10 +1479,11 @@ test("wander and cry gates are deterministic with mood-shaped cadence", () => {
   const pContent = count((b) => render.wanderGate(seed, b, "content"));
   const pBored = count((b) => render.wanderGate(seed, b, "bored"));
   const pSad = count((b) => render.wanderGate(seed, b, "sad"));
-  assert.ok(Math.abs(pHappy - 0.4) < 0.05, `happy ~0.4 (${pHappy})`);
-  assert.ok(Math.abs(pContent - 0.25) < 0.05, `content ~0.25 (${pContent})`);
-  assert.ok(Math.abs(pBored - 0.08) < 0.03, `bored ~0.08 (${pBored})`);
-  assert.ok(pSad < 0.05, `sad almost never (${pSad})`);
+  // v0.8.1 livelier gates: happy 0.75, content 0.55, bored 0.25, sad 0.08.
+  assert.ok(Math.abs(pHappy - 0.75) < 0.05, `happy ~0.75 (${pHappy})`);
+  assert.ok(Math.abs(pContent - 0.55) < 0.05, `content ~0.55 (${pContent})`);
+  assert.ok(Math.abs(pBored - 0.25) < 0.05, `bored ~0.25 (${pBored})`);
+  assert.ok(pSad < 0.12, `sad rarely (${pSad})`);
   assert.ok(pHappy > pContent && pContent > pBored && pBored > pSad, "ordering holds");
   // Cry: sad ~1/16 of 15s buckets (~4min), gloomy roughly double, and a
   // fed kandy never cries.
@@ -1576,6 +1577,27 @@ test("motionDecide encodes mood, sleep, egg, reduced-motion, and yield rules", (
   assert.equal(start.type, "start-leg");
   assert.ok(Math.abs(start.leg.to - start.leg.from) >= 14 - 1e-9);
   assert.equal(start.facing, start.leg.to >= start.leg.from ? 1 : -1);
+  // v0.8.1: strolls carry a deterministic 0-2 leg chain.
+  assert.ok(Number.isInteger(start.chain) && start.chain >= 0 && start.chain <= 2, `chain 0-2 (${start.chain})`);
+  assert.equal(render.motionDecide(idleState, { ...baseInp, now: walkNow }).chain, start.chain);
+  // v0.8.1: a bucket where the wander gate misses can yield an idle
+  // look-flip instead — scan behaviorally for one and assert it repeats
+  // deterministically.
+  {
+    let look = null;
+    for (let b = 0; b < 4000 && !look; b++) {
+      if (render.wanderGate(seed, b, "happy")) continue;
+      const a = render.motionDecide(idleState, { ...baseInp, now: b * T.WANDER_BUCKET_MS + 1 });
+      if (a.type === "look") {
+        look = a;
+        assert.equal(
+          render.motionDecide(idleState, { ...baseInp, now: b * T.WANDER_BUCKET_MS + 1 }).type,
+          "look",
+        );
+      }
+    }
+    assert.ok(look, "found a look bucket");
+  }
   // ...but the same bucket never votes twice...
   assert.equal(
     render.motionDecide({ ...idleState, lastWanderBucket: walkBucket }, { ...baseInp, now: walkNow }).type,
