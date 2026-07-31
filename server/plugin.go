@@ -90,6 +90,14 @@ type ledger struct {
 	// pre-0.6.4 state: initialized to now on first sight, deliberately
 	// with NO retroactive healing (see passiveHealUpdate).
 	LastPassiveHealAt string `json:"last_passive_heal_at,omitempty"`
+	// Anti-tamper seal (v0.9.0, see seal.go): Sealv tags the canonical
+	// serialization scheme and Sig is the hex HMAC-SHA256 over it, keyed
+	// from kandev's encrypted secrets vault. Neither ever leaves the
+	// server. Counterfeit latches true FOREVER when tampering is detected
+	// — it is itself sealed, survives every write and every rebirth.
+	Sealv       int    `json:"sealv,omitempty"`
+	Sig         string `json:"sig,omitempty"`
+	Counterfeit bool   `json:"counterfeit,omitempty"`
 }
 
 // kandyResponse is everything the UI is allowed to know. Archetype,
@@ -115,18 +123,24 @@ type kandyResponse struct {
 	// and the pet interaction respectively.
 	TemperamentBand string `json:"temperament_band"`
 	Scarred         bool   `json:"scarred"`
-	RefusingPets    bool   `json:"refusing_pets"`
-	Flavor          string `json:"flavor"`
-	AliveSince      string `json:"alive_since"`
+	// Counterfeit is the permanent tamper mark (see seal.go). The UI gets
+	// the boolean only — never the signature or the key.
+	Counterfeit  bool   `json:"counterfeit"`
+	RefusingPets bool   `json:"refusing_pets"`
+	Flavor       string `json:"flavor"`
+	AliveSince   string `json:"alive_since"`
 }
 
 type plugin struct {
 	pluginsdk.UnimplementedPlugin
 
-	// mu guards cached: OnEvent deliveries are sequential per plugin, but a
-	// webhook debug_grant can race an event delivery.
+	// mu guards cached and sealKey: OnEvent deliveries are sequential per
+	// plugin, but a webhook debug_grant can race an event delivery.
 	mu     sync.Mutex
 	cached *ledger
+	// sealKey is the decoded ledger HMAC key, cached for the process
+	// lifetime after the first successful vault read (see seal.go).
+	sealKey []byte
 
 	// Seams injected for tests; production values set in newPlugin.
 	now      func() time.Time
@@ -141,8 +155,9 @@ func newPlugin() *plugin {
 }
 
 // loadLedger returns the current ledger, reading it through Host state on
-// first use (and creating a fresh egg when none is persisted yet). Callers
-// must hold p.mu.
+// first use (and creating a fresh egg when none is persisted yet). A
+// persisted ledger passes through the anti-tamper decision table (seal.go)
+// before being served. Callers must hold p.mu.
 func (p *plugin) loadLedger(ctx context.Context) *ledger {
 	if p.cached != nil {
 		return p.cached
@@ -163,17 +178,25 @@ func (p *plugin) loadLedger(ctx context.Context) *ledger {
 		log.Printf("kandy: reading state: %v", err)
 		return fresh
 	}
-	if found {
-		p.cached = ledgerFromMap(value)
-	} else {
+	if !found {
+		// A fully deleted row is murder, not fraud: a clean fresh egg,
+		// WITHOUT the counterfeit mark, even when a seal key exists.
 		p.cached = fresh
+		return p.cached
 	}
-	return p.cached
+	l, cacheable := p.verifyLoadedLedger(ctx, host, ledgerFromMap(value))
+	if cacheable {
+		p.cached = l
+	}
+	return l
 }
 
-// mutateLedger applies fn to the ledger and persists the result. Returns
-// the ledger actually served (persisted or best-effort). Callers must hold
-// p.mu.
+// mutateLedger applies fn to the ledger and persists the result sealed.
+// Returns the ledger actually served (persisted or best-effort). When the
+// seal key cannot be obtained (vault error), the mutation is served from
+// memory but NOT persisted: writing an unsealable ledger would read as
+// tampering after the vault recovers, and a false counterfeit verdict is
+// worse than losing an award to an outage. Callers must hold p.mu.
 func (p *plugin) mutateLedger(ctx context.Context, fn func(*ledger)) *ledger {
 	l := p.loadLedger(ctx)
 	fn(l)
@@ -182,6 +205,12 @@ func (p *plugin) mutateLedger(ctx context.Context, fn func(*ledger)) *ledger {
 	if host == nil {
 		return l
 	}
+	key, _, err := p.ensureSealKey(ctx, host)
+	if err != nil {
+		log.Printf("kandy: seal key unavailable, skipping persist: %v", err)
+		return l
+	}
+	sealLedger(l, key)
 	if err := host.SetState(ctx, stateScope, "", stateKey, ledgerToMap(l)); err != nil {
 		log.Printf("kandy: persisting state: %v", err)
 	}
@@ -495,6 +524,7 @@ func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) kandyResp
 		LastAwardAt:     l.LastAwardAt,
 		TemperamentBand: band,
 		Scarred:         l.Scarred,
+		Counterfeit:     l.Counterfeit,
 		RefusingPets:    p.within(l.LastBonkedAt, distrustWindow),
 		Flavor:          flavor,
 		AliveSince:      l.CreatedAt,

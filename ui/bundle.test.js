@@ -139,6 +139,7 @@ test("photo model allowlists visible presentation fields and categorical tempera
   assert.deepEqual(Object.keys(model).sort(), [
     "archetype",
     "biome",
+    "counterfeit",
     "dayPhase",
     "family",
     "habitat",
@@ -1004,7 +1005,7 @@ test("speech pool is ~250 disciplined lines across bands and contexts", () => {
   const bands = ["beloved", "content", "neutral", "wary", "fearful", "any"];
   const ctxs = [
     "generic", "greeting", "morning", "latenight", "dusk", "bored", "gloomy",
-    "refusing", "winter", "spring", "summer", "autumn", "scarred", "sleep",
+    "refusing", "winter", "spring", "summer", "autumn", "scarred", "counterfeit", "sleep",
   ];
   const ids = new Set();
   for (const line of lines) {
@@ -1035,6 +1036,7 @@ test("speech pool is ~250 disciplined lines across bands and contexts", () => {
   assert.ok(lines.filter((l) => l.ctx === "gloomy").length >= 8);
   assert.ok(lines.filter((l) => l.ctx === "refusing").length >= 8);
   assert.ok(lines.filter((l) => l.ctx === "scarred").length >= 12);
+  assert.ok(lines.filter((l) => l.ctx === "counterfeit").length >= 8);
   const sleep = lines.filter((l) => l.ctx === "sleep");
   assert.ok(sleep.length >= 8);
   sleep.forEach((l) => assert.match(l.text, /zzz/));
@@ -1895,4 +1897,112 @@ test("facing flips mirror the contact point and eye anchors (asymmetric bodies)"
   const pour = findNode(card, (n) => n.props && n.props.className === "kandev-kandy-pour");
   const expected = render.bonkContactFor(serpent, -26, true);
   assert.equal(parseFloat(pour.props.style.left), expected.x - 2.5);
+});
+
+// ---------------------------------------------------------------------------
+// Counterfeit mark (v0.9.0) — the permanent stitched patch and speech spice
+// a tamper-detected rebirth carries forever.
+// ---------------------------------------------------------------------------
+
+const findPatch = (root) => findNode(root, (n) => n.props && n.props.key === "cftpatch");
+
+test("counterfeit kandys wear the stitched patch at every level, portrait included", () => {
+  const render = loadBundle().plugin.__render;
+  const marked = sampleKandy({ counterfeit: true, scarred: false });
+
+  // Grown body: patch in the ordinary card render AND the chip portrait.
+  const grown = render.creatureParts(jsx, marked);
+  const patch = findPatch(grown);
+  assert.ok(patch, "patch renders on the body");
+  assert.ok(findPatch(render.creatureParts(jsx, marked, true)), "patch in the chip portrait");
+
+  // The patch is fabric with cross-stitches, distinct from the scar line.
+  const fabric = findNode(patch, (n) => n.type === "rect" && n.props.key === "cftfabric");
+  assert.ok(fabric, "off-color fabric square");
+  assert.ok(fabric.props.strokeDasharray, "sewn-on dashed border");
+  let stitches = 0;
+  visit(patch, (n) => {
+    if (n.type === "line") stitches++;
+  });
+  assert.equal(stitches, 8, "four cross-stitch x marks");
+
+  // The counterfeit EGG is patched too — a rebirth is visibly marked from
+  // day one, in card and portrait mode.
+  const egg = sampleKandy({ level: 1, counterfeit: true, scarred: false });
+  assert.ok(findPatch(render.creatureParts(jsx, egg)), "patched egg");
+  assert.ok(findPatch(render.creatureParts(jsx, egg, true)), "patched egg portrait");
+
+  // An honest kandy (and an honest egg) never shows one.
+  assert.equal(findPatch(render.creatureParts(jsx, sampleKandy({ counterfeit: false }))), null);
+  assert.equal(
+    findPatch(render.creatureParts(jsx, sampleKandy({ level: 1, counterfeit: false }))),
+    null,
+  );
+});
+
+test("counterfeit patch placement is deterministic from the lineage seed", () => {
+  const render = loadBundle().plugin.__render;
+  const marked = sampleKandy({ counterfeit: true, scarred: false });
+  const a = findPatch(render.creatureParts(jsx, marked));
+  const b = findPatch(render.creatureParts(jsx, marked));
+  assert.equal(JSON.stringify(a), JSON.stringify(b), "same lineage, same patch");
+  const other = findPatch(
+    render.creatureParts(jsx, sampleKandy({ counterfeit: true, scarred: false, lineage_seed: 5150 })),
+  );
+  assert.notEqual(a.props.transform, other.props.transform, "different lineage, different placement");
+  // Patch and scar coexist without sharing geometry (different rand salt).
+  const both = render.creatureParts(jsx, sampleKandy({ counterfeit: true, scarred: true }));
+  assert.ok(findPatch(both));
+  assert.ok(findNode(both, (n) => n.props && n.props.key === "scar"), "scar still renders");
+});
+
+test("photo booth model and portrait carry the counterfeit mark", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const model = render.photoModelFor(sampleKandy({ counterfeit: true, scarred: false }), 13);
+  assert.equal(model.counterfeit, true);
+  const portrait = render.photoPortraitSvg(jsx, model, "light", { current: null });
+  assert.ok(findPatch(portrait), "patch appears in the shareable portrait");
+  const honest = render.photoModelFor(sampleKandy({ counterfeit: false }), 13);
+  assert.equal(honest.counterfeit, false);
+  assert.equal(findPatch(render.photoPortraitSvg(jsx, honest, "light", { current: null })), null);
+});
+
+test("counterfeit speech spice mixes in at ~15%, deterministically", () => {
+  const render = loadBundle().plugin.__render;
+  const at = (data, ctx) => render.pickSpeech(data, ctx);
+  const marked = { temperament_band: "content", mood: "content", counterfeit: true, lineage_seed: 3 };
+
+  const resolved = render.speechPoolFor(marked, { timeOfDay: 13 });
+  const size =
+    resolved.pool.length +
+    render.speechBagExtras(marked, resolved, render.speechSliceSeed(3, resolved.slice), 0).length;
+  let cftCount = 0;
+  for (let p = 0; p < size; p++) {
+    const line = at(marked, { timeOfDay: 13, bagPos: p });
+    assert.deepEqual(line, at(marked, { timeOfDay: 13, bagPos: p }), "picks are deterministic");
+    if (line.ctx === "counterfeit") cftCount++;
+  }
+  const frac = cftCount / size;
+  assert.ok(frac > 0.1 && frac < 0.2, `counterfeit spice ${frac}`);
+
+  // A counterfeit that is ALSO scarred speaks both dark pools.
+  const both = { temperament_band: "wary", mood: "content", scarred: true, counterfeit: true, lineage_seed: 7 };
+  const resolvedBoth = render.speechPoolFor(both, { timeOfDay: 13 });
+  const sizeBoth =
+    resolvedBoth.pool.length +
+    render.speechBagExtras(both, resolvedBoth, render.speechSliceSeed(7, resolvedBoth.slice), 0).length;
+  const ctxsSeen = new Set();
+  for (let p = 0; p < sizeBoth; p++) ctxsSeen.add(at(both, { timeOfDay: 13, bagPos: p }).ctx);
+  assert.ok(ctxsSeen.has("counterfeit"), "counterfeit lines present");
+  assert.ok(ctxsSeen.has("scarred"), "scarred lines still present");
+
+  // An honest kandy never draws a counterfeit line, storage or not.
+  const honest = { temperament_band: "content", mood: "content", lineage_seed: 3 };
+  for (let p = 0; p < 80; p++) {
+    assert.notEqual(at(honest, { timeOfDay: 13, bagPos: p }).ctx, "counterfeit");
+  }
+  // Asleep, the marked kandy only sleep-talks — the mark stays quiet.
+  const murmur = at(marked, { timeOfDay: 23.9, tick: 3, asleep: true });
+  assert.equal(murmur.ctx, "sleep");
 });

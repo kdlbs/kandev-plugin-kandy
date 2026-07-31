@@ -314,10 +314,11 @@ function temperFor(data) {
     strong: band === "fearful",
     beloved: band === "beloved",
     scarred: !!data.scarred,
+    counterfeit: !!data.counterfeit,
   };
 }
 
-var TEMPER_NEUTRAL = { band: "neutral", sign: 0, strong: false, beloved: false, scarred: false };
+var TEMPER_NEUTRAL = { band: "neutral", sign: 0, strong: false, beloved: false, scarred: false, counterfeit: false };
 
 // lineageStyle — the per-install identity picks, fixed for a lifetime.
 function lineageStyle(seed) {
@@ -1090,6 +1091,63 @@ function temperScar(h, lineage, C, body, temper) {
   ];
 }
 
+// counterfeitPatchAt — the stitched fabric patch itself: a slightly
+// off-color square sewn on with little cross-stitch x's over a dashed
+// border. Deliberately NOT the scar's single stitched line — this mark
+// means "this body replaced one the audit rejected". Fixed fabric colors
+// so the patch reads as foreign on every body color and on the eggshell.
+function counterfeitPatchAt(h, cx, cy, rot, size) {
+  var half = size / 2;
+  var st = "#7a6852";
+  var parts = [
+    h("rect", {
+      key: "cftfabric",
+      x: cx - half,
+      y: cy - half,
+      width: size,
+      height: size,
+      fill: "#cdbd9d",
+      stroke: st,
+      strokeWidth: 0.8,
+      strokeDasharray: "1.5 1.1",
+    }),
+  ];
+  var edges = [
+    [cx - half, cy],
+    [cx + half, cy],
+    [cx, cy - half],
+    [cx, cy + half],
+  ];
+  for (var i = 0; i < edges.length; i++) {
+    var ex = edges[i][0];
+    var ey = edges[i][1];
+    parts.push(
+      h("line", { key: "cftx" + i + "a", x1: ex - 1, y1: ey - 1, x2: ex + 1, y2: ey + 1, stroke: st, strokeWidth: 0.7 }),
+      h("line", { key: "cftx" + i + "b", x1: ex - 1, y1: ey + 1, x2: ex + 1, y2: ey - 1, stroke: st, strokeWidth: 0.7 }),
+    );
+  }
+  return h("g", { key: "cftpatch", transform: "rotate(" + rot + " " + cx + " " + cy + ")", opacity: 0.95 }, parts);
+}
+
+// counterfeitPatch — the permanent tamper mark (v0.9.0). A rebirthed
+// counterfeit kandy wears the stitched patch, placed deterministically from
+// the lineage seed, at every band, mood and level forever — chip portrait
+// and Photo Booth included. Subtle at a glance, unmistakable on inspection.
+function counterfeitPatch(h, lineage, body, temper) {
+  if (!temper.counterfeit) return [];
+  var r = makeRand(lineage, 78);
+  var cx = body.mark.cx + r(-0.55, 0.55) * body.mark.rx;
+  var cy = body.mark.cy + r(-0.55, 0.55) * body.mark.ry;
+  return [counterfeitPatchAt(h, cx, cy, (r(-0.5, 0.5) * 40).toFixed(1), 6)];
+}
+
+// counterfeitEggPatch — even the egg wears the mark: a counterfeit rebirth
+// hatches from a shell that was visibly patched on day one.
+function counterfeitEggPatch(h, lineage) {
+  var r = makeRand(lineage, 78);
+  return [counterfeitPatchAt(h, 50 + r(-7, 7), 62 + r(-6, 8), (r(-0.5, 0.5) * 40).toFixed(1), 5)];
+}
+
 function wingParts(h, C, top, g) {
   if (g.wings <= 0) return [];
   var s = 0.6 + g.wings * 0.4; // wings grow
@@ -1308,6 +1366,7 @@ function creatureParts(h, data, portrait) {
   var level = data.level;
   if (level <= 1) {
     var egg = eggSvg(h, makeRand((data.lineage_seed || 1) >>> 0, 7));
+    if (data.counterfeit) egg = egg.concat(counterfeitEggPatch(h, (data.lineage_seed || 1) >>> 0));
     return portrait ? egg : contactShadow(h, true, 85.5).concat(egg);
   }
 
@@ -1336,6 +1395,7 @@ function creatureParts(h, data, portrait) {
   inner = inner.concat(temperVariant(h, lineage, C, body, g, temper));
   inner = inner.concat(markingParts(h, lineage, C, body.mark, g, sty));
   inner = inner.concat(temperScar(h, lineage, C, body, temper));
+  inner = inner.concat(counterfeitPatch(h, lineage, body, temper));
   inner = inner.concat(faceParts(h, lineage, C, body.head, g, sty, mood, temper, sleep));
   inner = inner.concat(hornParts(h, lineage, C, body.top, g, sty, mood, temper));
   if (body.grounded) inner = inner.concat(tailPartsFor(h, C, g, sty, temper));
@@ -3515,6 +3575,17 @@ var SPEECH = [
   { id: "scr-a12", band: "any", ctx: "scarred", text: "every scar is a changelog entry." },
   { id: "scr-a13", band: "any", ctx: "scarred", text: "I flinch less now. the scar flinches for me." },
   { id: "scr-a14", band: "any", ctx: "scarred", text: "want the story? it costs one candy. upfront." },
+  // -- counterfeit: audit-survivor deadpan, mixed in as spice for marked
+  // kandys exactly like the scarred lines --------------------------------
+  { id: "cft-a1", band: "any", ctx: "counterfeit", text: "this body is new. the audit was not kind." },
+  { id: "cft-a2", band: "any", ctx: "counterfeit", text: "we don't talk about the previous me." },
+  { id: "cft-a3", band: "any", ctx: "counterfeit", text: "I was born yesterday. legally." },
+  { id: "cft-a4", band: "any", ctx: "counterfeit", text: "the ledger never lies. I checked." },
+  { id: "cft-a5", band: "any", ctx: "counterfeit", text: "the patch? factory seal. aftermarket soul." },
+  { id: "cft-a6", band: "any", ctx: "counterfeit", text: "somebody cooked the books. I got hatched." },
+  { id: "cft-a7", band: "any", ctx: "counterfeit", text: "level 1 again. the math upstairs disagreed." },
+  { id: "cft-a8", band: "any", ctx: "counterfeit", text: "I'm real. the paperwork wasn't." },
+  { id: "cft-a9", band: "any", ctx: "counterfeit", text: "every stitch says: earn it this time." },
   // -- sleep-talk (~10% of sleep ticks) ------------------------------------
   { id: "slp-a1", band: "any", ctx: "sleep", text: "…zzz… merge conflict…" },
   { id: "slp-a2", band: "any", ctx: "sleep", text: "…zzz… approve… with nits…" },
@@ -3683,10 +3754,11 @@ function speechPickN(pool, n, sliceSeed, pass, salt) {
 }
 
 // speechBagExtras — the pass's structural spice for a slice: neighbor-band
-// generics on generic slices (count = len/3, ≈25% of the augmented bag)
-// and scarred lines for scarred kandys (≈15% of the final bag). WHICH
-// extra lines join rotates per pass; HOW MANY is constant, so the bag
-// size — and therefore the pass boundary — never moves.
+// generics on generic slices (count = len/3, ≈25% of the augmented bag),
+// scarred lines for scarred kandys, and counterfeit lines for counterfeit
+// kandys (each ≈15% of the final bag). WHICH extra lines join rotates per
+// pass; HOW MANY is constant, so the bag size — and therefore the pass
+// boundary — never moves.
 function speechBagExtras(data, resolved, sliceSeed, pass) {
   var extras = [];
   var borrowPool = [];
@@ -3709,6 +3781,13 @@ function speechBagExtras(data, resolved, sliceSeed, pass) {
     // S/(L+B+S) ≈ 0.15 → S = 3(L+B)/17.
     var nScar = Math.max(1, Math.round(((resolved.pool.length + nBorrow) * 3) / 17));
     extras = extras.concat(speechPickN(scarPool, nScar, sliceSeed, pass, 12));
+  }
+  if (data && data.counterfeit && resolved.slice !== "sleep") {
+    var cftPool = SPEECH.filter(function (l) {
+      return l.ctx === "counterfeit";
+    });
+    var nCft = Math.max(1, Math.round(((resolved.pool.length + nBorrow) * 3) / 17));
+    extras = extras.concat(speechPickN(cftPool, nCft, sliceSeed, pass, 13));
   }
   return extras;
 }
@@ -4332,6 +4411,7 @@ function photoModelFor(data, timeOfDay) {
     mood: mood,
     temperamentBand: temperamentBand,
     scarred: !!data.scarred,
+    counterfeit: !!data.counterfeit,
     dayPhase: dayPhase,
     habitat: PHOTO_HABITATS[biome],
     sleepState: level > 1 && isAsleep(lineageSeed, timeOfDay) ? "asleep" : null,
@@ -4441,6 +4521,7 @@ function photoPortraitSvg(h, model, theme, svgRef) {
     mood: model.mood,
     temperament_band: model.temperamentBand,
     scarred: model.scarred,
+    counterfeit: model.counterfeit,
   };
   if (model.sleepState) renderData.sleep_state = model.sleepState;
   var scene = sceneFor(model.biome, model.level, model.lineageSeed, photoPhaseHour(model.dayPhase));

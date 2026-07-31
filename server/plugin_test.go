@@ -13,16 +13,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeHost serves state and config from memory — the only Host surfaces
-// this plugin uses.
+// fakeHost serves state, config, and vault secrets from memory — the only
+// Host surfaces this plugin uses. getSecretErr/setSecretErr simulate a
+// vault outage for the seal decision-table tests.
 type fakeHost struct {
 	pluginsdk.UnimplementedHostData
-	config map[string]any
-	state  map[string]map[string]any
+	config       map[string]any
+	state        map[string]map[string]any
+	secrets      map[string]string
+	getSecretErr error
+	setSecretErr error
 }
 
 func newFakeHost(config map[string]any) *fakeHost {
-	return &fakeHost{config: config, state: map[string]map[string]any{}}
+	return &fakeHost{
+		config:  config,
+		state:   map[string]map[string]any{},
+		secrets: map[string]string{},
+	}
 }
 
 func stateMapKey(scope, scopeID, key string) string { return scope + "|" + scopeID + "|" + key }
@@ -49,11 +57,24 @@ func (h *fakeHost) GetConfig(context.Context) (map[string]any, error) {
 	return h.config, nil
 }
 func (h *fakeHost) RevealSecret(context.Context, string) (string, error) { return "", nil }
-func (h *fakeHost) GetSecret(context.Context, string) (string, bool, error) {
-	return "", false, nil
+func (h *fakeHost) GetSecret(_ context.Context, key string) (string, bool, error) {
+	if h.getSecretErr != nil {
+		return "", false, h.getSecretErr
+	}
+	value, ok := h.secrets[key]
+	return value, ok, nil
 }
-func (h *fakeHost) SetSecret(context.Context, string, string) error         { return nil }
-func (h *fakeHost) DeleteSecret(context.Context, string) error              { return nil }
+func (h *fakeHost) SetSecret(_ context.Context, key, value string) error {
+	if h.setSecretErr != nil {
+		return h.setSecretErr
+	}
+	h.secrets[key] = value
+	return nil
+}
+func (h *fakeHost) DeleteSecret(_ context.Context, key string) error {
+	delete(h.secrets, key)
+	return nil
+}
 func (h *fakeHost) EmitEvent(context.Context, string, map[string]any) error { return nil }
 
 func newTestPlugin(t *testing.T, host *fakeHost) *plugin {
@@ -189,16 +210,19 @@ func TestWebhook_ShapeAndHiddenFactors(t *testing.T) {
 	require.NotEmpty(t, state.Flavor)
 	require.NotEmpty(t, state.AliveSince)
 
-	// The hidden-factors requirement: raw counters and the XP ledger never
-	// appear in the webhook body.
+	// The hidden-factors requirement: raw counters, the XP ledger, and the
+	// anti-tamper seal never appear in the webhook body.
 	resp, err := p.HandleWebhook(context.Background(),
 		&pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET"})
 	require.NoError(t, err)
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal(resp.Body, &raw))
-	for _, banned := range []string{"xp", "messages", "turns", "agent_runs", "tasks_done", "salt"} {
+	for _, banned := range []string{"xp", "messages", "turns", "agent_runs", "tasks_done", "salt", "sig", "sealv"} {
 		require.NotContains(t, raw, banned)
 	}
+	// Counterfeit (the boolean verdict, never the signature) IS exposed.
+	require.Contains(t, raw, "counterfeit")
+	require.Equal(t, false, raw["counterfeit"])
 }
 
 func TestWebhook_UnknownKey(t *testing.T) {

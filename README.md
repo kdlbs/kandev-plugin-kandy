@@ -80,7 +80,8 @@ session.
 The plugin stores one small instance-scoped ledger in Kandev Host state:
 aggregate XP and activity counts, timestamps, a random appearance seed, and
 the pet/bonk temperament state. It stores no conversation content or token
-data. Its browser UI uses the local clock only for the day/night scene and
+data. It also stores one integrity key in kandev's encrypted secrets vault,
+used only to detect out-of-band edits to that ledger. Its browser UI uses the local clock only for the day/night scene and
 sleep schedule, and calls only Kandy's own Kandev-hosted webhooks; it has no
 external service or analytics integration.
 
