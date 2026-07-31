@@ -2853,7 +2853,7 @@ var SPEECH = [
   { id: "bel-g1", band: "beloved", ctx: "generic", text: "you came back! I mean— hey." },
   { id: "bel-g2", band: "beloved", ctx: "generic", text: "I saved you a spot. it's all of me." },
   { id: "bel-g3", band: "beloved", ctx: "generic", text: "best human. don't tell the others." },
-  { id: "bel-g4", band: "beloved", ctx: "generic", text: "I'd share my berries with you. one of them." },
+  { id: "bel-g4", band: "beloved", ctx: "generic", text: "I'd share my candy with you. one piece." },
   { id: "bel-g5", band: "beloved", ctx: "generic", text: "you're my favorite recurring event." },
   { id: "bel-g6", band: "beloved", ctx: "generic", text: "today's forecast: you. good." },
   { id: "bel-g7", band: "beloved", ctx: "generic", text: "I did a little hop earlier. you missed it." },
@@ -2896,7 +2896,7 @@ var SPEECH = [
   { id: "con-g16", band: "content", ctx: "generic", text: "someone has to hold this meadow down." },
   { id: "con-g17", band: "content", ctx: "generic", text: "the view's fine. I'm most of it." },
   { id: "con-g18", band: "content", ctx: "generic", text: "small pond, big fish. I'm the fish." },
-  { id: "con-g19", band: "content", ctx: "generic", text: "berry inventory: adequate. mood: same." },
+  { id: "con-g19", band: "content", ctx: "generic", text: "candy inventory: adequate. mood: same." },
   { id: "con-g20", band: "content", ctx: "generic", text: "I've peaked, and it's comfortable up here." },
   { id: "con-g21", band: "content", ctx: "generic", text: "another day of light duties and heavy naps." },
   { id: "con-g22", band: "content", ctx: "generic", text: "status report: cozy. end of report." },
@@ -2943,7 +2943,7 @@ var SPEECH = [
   { id: "war-g7", band: "wary", ctx: "generic", text: "I counted your steps on the way in." },
   { id: "war-g8", band: "wary", ctx: "generic", text: "friendly today, huh. I'll wait for the twist." },
   { id: "war-g9", band: "wary", ctx: "generic", text: "the rock and I have an escape plan." },
-  { id: "war-g10", band: "wary", ctx: "generic", text: "trust is earned in berries. keep going." },
+  { id: "war-g10", band: "wary", ctx: "generic", text: "trust is earned in candy. keep going." },
   { id: "war-g11", band: "wary", ctx: "generic", text: "I see the cursor. I see everything." },
   { id: "war-g12", band: "wary", ctx: "generic", text: "nice weather. what do you want." },
   { id: "war-g13", band: "wary", ctx: "generic", text: "I'm not paranoid. I'm well-documented." },
@@ -2962,7 +2962,7 @@ var SPEECH = [
   { id: "war-h4", band: "wary", ctx: "greeting", text: "announce yourself next time. …hi." },
   { id: "war-h5", band: "wary", ctx: "greeting", text: "I heard you coming three clicks ago." },
   // -- fearful: quiet, flinchy, a little heartbreaking ---------------------
-  { id: "fea-g1", band: "fearful", ctx: "generic", text: "…just the berries today, please." },
+  { id: "fea-g1", band: "fearful", ctx: "generic", text: "…just the candy today, please." },
   { id: "fea-g2", band: "fearful", ctx: "generic", text: "I'll be over here. behind the rock." },
   { id: "fea-g3", band: "fearful", ctx: "generic", text: "small today. maybe smaller tomorrow." },
   { id: "fea-g4", band: "fearful", ctx: "generic", text: "it's fine. everything's fine. probably." },
@@ -2994,7 +2994,7 @@ var SPEECH = [
   { id: "mor-a2", band: "any", ctx: "morning", text: "coffee for you. dew for me." },
   { id: "mor-a3", band: "any", ctx: "morning", text: "new day. same meadow. love that for us." },
   { id: "mor-a4", band: "any", ctx: "morning", text: "the dew did its thing. very sparkly. very wet." },
-  { id: "mor-a5", band: "any", ctx: "morning", text: "early bird gets the berry. I slept in." },
+  { id: "mor-a5", band: "any", ctx: "morning", text: "early bird gets the candy. I slept in." },
   { id: "mor-a6", band: "any", ctx: "morning", text: "standup: yesterday I existed. no blockers." },
   { id: "mor-b1", band: "beloved", ctx: "morning", text: "morning! I kept the sunrise warm for you." },
   { id: "mor-c1", band: "content", ctx: "morning", text: "morning. my spot is pre-warmed. genius." },
@@ -3049,8 +3049,8 @@ var SPEECH = [
   // -- refusing pets (post-bonk distrust) ----------------------------------
   { id: "ref-a1", band: "any", ctx: "refusing", text: "no treats. I know what you did." },
   { id: "ref-a2", band: "any", ctx: "refusing", text: "we're in a fight. you know why." },
-  { id: "ref-a3", band: "any", ctx: "refusing", text: "the berry lobby can't buy me back yet." },
-  { id: "ref-a4", band: "any", ctx: "refusing", text: "apology berries will be inspected first." },
+  { id: "ref-a3", band: "any", ctx: "refusing", text: "the candy lobby can't buy me back yet." },
+  { id: "ref-a4", band: "any", ctx: "refusing", text: "apology candy will be inspected first." },
   { id: "ref-a5", band: "any", ctx: "refusing", text: "my lawyer the butterfly says no comment." },
   { id: "ref-a6", band: "any", ctx: "refusing", text: "trust takes sixty seconds. yours took less." },
   { id: "ref-n1", band: "neutral", ctx: "refusing", text: "I'm not sulking. I'm on strike." },
@@ -3104,11 +3104,11 @@ var SPEECH = [
   { id: "scr-a11", band: "any", ctx: "scarred", text: "the mark stays. so do I. stubborn ties." },
   { id: "scr-a12", band: "any", ctx: "scarred", text: "every scar is a changelog entry." },
   { id: "scr-a13", band: "any", ctx: "scarred", text: "I flinch less now. the scar flinches for me." },
-  { id: "scr-a14", band: "any", ctx: "scarred", text: "want the story? it costs one berry. upfront." },
+  { id: "scr-a14", band: "any", ctx: "scarred", text: "want the story? it costs one candy. upfront." },
   // -- sleep-talk (~10% of sleep ticks) ------------------------------------
   { id: "slp-a1", band: "any", ctx: "sleep", text: "…zzz… merge conflict…" },
   { id: "slp-a2", band: "any", ctx: "sleep", text: "…zzz… approve… with nits…" },
-  { id: "slp-a3", band: "any", ctx: "sleep", text: "…zzz… the berries… are compiling…" },
+  { id: "slp-a3", band: "any", ctx: "sleep", text: "…zzz… the candy… is compiling…" },
   { id: "slp-a4", band: "any", ctx: "sleep", text: "…zzz… rebase… gently…" },
   { id: "slp-a5", band: "any", ctx: "sleep", text: "…zzz… lgtm…" },
   { id: "slp-a6", band: "any", ctx: "sleep", text: "…zzz… ship it… no… wait…" },
@@ -3553,7 +3553,8 @@ function fleckSpan(h, key, cls, c, d, baseDelay) {
   );
 }
 
-// treatSvg — a cute ~10px berry: warm red-pink body, highlight, green leaf.
+// treatSvg — a wrapped candy for the kandy (of course): pink striped body
+// with twisted wrapper ends, readable at ~12px.
 // Drawn centered on the contact point; the fall/bounce animation classes go
 // on the svg itself (position via left/top only — no base transform).
 function treatSvg(h, c, cls) {
@@ -3568,9 +3569,15 @@ function treatSvg(h, c, cls) {
       style: { left: c.x - 6 + "px", top: c.y - 6.5 + "px", overflow: "visible" },
       "aria-hidden": "true",
     },
-    h("circle", { key: "tbody", cx: 6, cy: 7, r: 4.4, fill: "#e05c6e", stroke: "#a63446", strokeWidth: 1.1 }),
-    h("circle", { key: "thi", cx: 4.5, cy: 5.7, r: 1.2, fill: "#ff9aa8", opacity: 0.95 }),
-    h("path", { key: "tleaf", d: "M6 2.8 Q7.6 0.9 9.4 1.8 Q8 3.6 6 2.8 Z", fill: "#5fae53", stroke: "#4c8a3f", strokeWidth: 0.6 }),
+    // wrapper twist ends
+    h("path", { key: "twl", d: "M2.4 6 L0.4 3.9 L0.9 6 L0.4 8.1 Z", fill: "#ff8fb0", stroke: "#c2597e", strokeWidth: 0.7, strokeLinejoin: "round" }),
+    h("path", { key: "twr", d: "M9.6 6 L11.6 3.9 L11.1 6 L11.6 8.1 Z", fill: "#ff8fb0", stroke: "#c2597e", strokeWidth: 0.7, strokeLinejoin: "round" }),
+    // candy body with stripes + a glossy highlight
+    h("ellipse", { key: "tbody", cx: 6, cy: 6, rx: 3.9, ry: 3.3, fill: "#ff6d9d", stroke: "#c2436f", strokeWidth: 1 }),
+    h("path", { key: "ts1", d: "M4.1 3.2 Q3.4 6 4.4 8.9", stroke: "#ffd1e0", strokeWidth: 1, fill: "none", strokeLinecap: "round" }),
+    h("path", { key: "ts2", d: "M6.3 2.8 Q5.7 6 6.6 9.2", stroke: "#ffd1e0", strokeWidth: 1, fill: "none", strokeLinecap: "round" }),
+    h("path", { key: "ts3", d: "M8.3 3.4 Q7.9 6 8.7 8.6", stroke: "#ffd1e0", strokeWidth: 1, fill: "none", strokeLinecap: "round" }),
+    h("circle", { key: "thi", cx: 4.6, cy: 4.4, r: 0.9, fill: "#ffffff", opacity: 0.9 }),
   );
 }
 
@@ -3591,7 +3598,7 @@ var PET_HEART_SPOTS = [
   [-2, -34, 300],
 ];
 
-// petOverlay — the treat-drop reaction: a berry falls onto the mouth
+// petOverlay — the treat-drop reaction: a candy falls onto the mouth
 // (bonkContactFor), the being munch-hops (CSS delay on the wrapper),
 // crumbs pop at the catch, then a few hearts rise. seq keys the overlay so
 // an in-window repeat click remounts it and the animations replay.
