@@ -17,19 +17,19 @@ jobs:
       # The SDK is a local go.mod replacement, so Actions needs this exact
       # sibling layout: plugin/../kandev/apps/backend.
       - name: Checkout plugin
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           path: plugin
 
       - name: Checkout Kandev SDK
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           repository: kdlbs/kandev
           path: kandev
           sparse-checkout: apps/backend
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: plugin/go.mod
           cache-dependency-path: plugin/go.sum
@@ -50,7 +50,7 @@ jobs:
         run: tar -xzf kandev-plugin-kandy-*.tar.gz checksums.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
             plugin/kandev-plugin-kandy-*.tar.gz
