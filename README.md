@@ -29,6 +29,14 @@ an egg. It never stops.
 - **Day and night**: scenes follow your local clock, and every kandy has its
   own bedtime — at night it sleeps in the top bar, and waking it is on your
   conscience.
+- **Seasons**: the scene follows the calendar too — snow drifts in winter,
+  petals in spring, fireflies on summer nights, falling leaves in autumn.
+- **It talks**: a speech bubble occasionally appears while the card is open —
+  dry, deadpan, and shaped by how it's been treated. A beloved kandy is warm;
+  a wary one is passive-aggressive; a fearful one is quiet and a little
+  heartbreaking. It greets you when you open its card, notices when you've
+  been gone a while, has opinions about 2am deploys, and occasionally talks
+  in its sleep.
 - **How XP works**: it's a secret. The recipe lives server-side and the UI is
   never told the breakdown — your kandy simply reacts to how much real work
   flows through the instance.

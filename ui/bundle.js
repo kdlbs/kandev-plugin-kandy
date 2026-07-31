@@ -52,6 +52,26 @@
 //   there is no progressive tilt: a static bucket appears at half-hold as
 //   the "about to commit" signal. The hint line gains a touch variant
 //   ("tap to treat · hold to douse") via matchMedia("(pointer: coarse)").
+//
+// v0.7.0 — speech bubbles + seasons + arrival greetings (client-only):
+//   SPEECH is a ~100-line pool organized by temperament band x context
+//   (time-of-day, mood, refusal, season, scarred, sleep-talk). A comic
+//   bubble appears near the creature's head (bonkContactFor anchoring),
+//   styled like the app's popovers. Selection is fully deterministic:
+//   a per-minute clock tick passes a seeded probability gate
+//   (hash(lineage_seed, tick) — a bubble every ~4 min of card-open time,
+//   sleep-talk on ~10% of sleep ticks), the line is a seeded hash pick
+//   from the band+context pool (generic band pool as fallback) with a
+//   last-3 no-repeat guard. Dialog open always greets. Seasons derive
+//   from the client month (northern-hemisphere mapping) and layer like
+//   the day/night system: a tint plus seeded drifting particles (snow /
+//   petals / night fireflies / leaves); celestial phases 4-5 get only
+//   the subtlest tint — space has no weather. A ~1min last-seen
+//   localStorage stamp powers the arrival greeting: a >= 6h gap earns a
+//   wave-ish hop + motion arcs + a time-appropriate greeting line on the
+//   next dialog open. Every new visual takes an explicit parameter with
+//   a neutral default (season/speech unset = nothing), so offline
+//   tooling and old callers keep byte-identical renders.
 
 var PLUGIN_ID = "kandev-plugin-kandy";
 var STYLE_ID = "kandev-kandy-style";
@@ -163,6 +183,28 @@ function isAsleep(seed, timeOfDay) {
 // sun helpers can swap themselves out at night without every biome knowing
 // about the clock. Default "day" keeps every legacy call byte-identical.
 var currentDayPhase = "day";
+
+// ---------------------------------------------------------------------------
+// Seasons (v0.7.0) — derived from the client month, northern-hemisphere
+// mapping (a deliberate simplification, noted in PLAN.md): Dec-Feb winter,
+// Mar-May spring, Jun-Aug summer, Sep-Nov autumn. Threaded explicitly like
+// timeOfDay; unset/unknown = NO season, so offline tooling and old callers
+// keep byte-identical renders.
+// ---------------------------------------------------------------------------
+
+var SEASONS = { winter: true, spring: true, summer: true, autumn: true };
+
+function seasonForMonth(month) {
+  var m = ((Math.floor(month) % 12) + 12) % 12;
+  if (m === 11 || m <= 1) return "winter";
+  if (m <= 4) return "spring";
+  if (m <= 7) return "summer";
+  return "autumn";
+}
+
+function currentSeason() {
+  return seasonForMonth(new Date().getMonth());
+}
 
 // ---------------------------------------------------------------------------
 // Growth ladder — mirrors the backend's growthUnlocks/growthFlags exactly.
@@ -2194,11 +2236,159 @@ function skyOverlayFor(dayPhase, phase) {
   };
 }
 
-// sceneFor(biome, level, lineageSeed, timeOfDay) — the lineage's habitat at
-// this maturity and hour. Layout re-rolls only at phase boundaries; the
-// day/night layer composes on top and defaults to mid-day ("day": no
-// overlay at all), so 3-arg callers keep today's exact renders.
-function sceneFor(biome, level, seed, timeOfDay) {
+// Season tints — the composable v0.7.0 layer, same trick as skyOverlayFor:
+// a CSS gradient prepended onto the (possibly night-washed) background plus
+// seeded SVG particles layered over everything, so every biome and phase
+// gets a season without any biome rewrite. `dim` variants are for the
+// celestial/transcendent scenes (phase 4-5): space has no weather, so they
+// get only the subtlest tint and never any particles.
+var SEASON_TINTS = {
+  winter: {
+    bg: "linear-gradient(to bottom, rgba(172,206,236,0.34) 0%, rgba(203,226,246,0.20) 100%)",
+    dim: "linear-gradient(to bottom, rgba(172,206,236,0.05) 0%, rgba(172,206,236,0.03) 100%)",
+  },
+  spring: {
+    bg: "linear-gradient(to bottom, rgba(192,236,192,0.11) 0%, rgba(255,214,230,0.10) 100%)",
+    dim: "linear-gradient(to bottom, rgba(192,236,192,0.04) 0%, rgba(255,214,230,0.03) 100%)",
+  },
+  summer: {
+    bg: "linear-gradient(to bottom, rgba(255,214,120,0.14) 0%, rgba(255,240,182,0.06) 100%)",
+    dim: "linear-gradient(to bottom, rgba(255,214,120,0.04) 0%, rgba(255,214,120,0.02) 100%)",
+  },
+  autumn: {
+    bg: "linear-gradient(to bottom, rgba(235,162,82,0.15) 0%, rgba(201,122,62,0.10) 100%)",
+    dim: "linear-gradient(to bottom, rgba(235,162,82,0.04) 0%, rgba(235,162,82,0.03) 100%)",
+  },
+};
+
+var PETAL_FILLS = ["#ffc2d1", "#ffd7e0", "#ffb3c6"];
+var LEAF_FILLS = ["#e8923e", "#c9702c", "#d8a13e"];
+
+// Per-particle drift tempo: seeded delay/duration so the flurry never
+// moves in lockstep, on animation-safe elements (positioned by attributes,
+// no layout transform). Reduced motion: animation:none leaves the particle
+// static at its seeded spot.
+function seasonDriftStyle(rand) {
+  return {
+    animationDelay: (-rand(0, 6)).toFixed(2) + "s",
+    animationDuration: rand(4.5, 8).toFixed(2) + "s",
+    transformBox: "fill-box",
+    transformOrigin: "center",
+  };
+}
+
+// seasonOverlayFor(season, dayPhase, phase, rand) — null unless season is
+// one of the four known names (unset stays byte-identical). Winter: cool
+// wash + drifting snowflakes + white ground drifts; spring: petals + a
+// fresh tint; summer: warm bright wash (+ pulsing fireflies at night);
+// autumn: falling leaves + amber tint.
+function seasonOverlayFor(season, dayPhase, phase, rand) {
+  if (!SEASON_TINTS[season]) return null;
+  if (phase >= 4) return { bg: SEASON_TINTS[season].dim, props: [] };
+  var props = [];
+  var i;
+  if (season === "winter") {
+    for (i = 0; i < 12; i++) {
+      props.push(
+        h0("circle", {
+          key: "snow" + i,
+          className: "kandev-kandy-snow",
+          style: seasonDriftStyle(rand),
+          cx: rand(4, 236),
+          cy: rand(4, 96),
+          r: rand(0.8, 1.7),
+          fill: "#ffffff",
+          opacity: rand(0.55, 0.95),
+        }),
+      );
+    }
+    for (i = 0; i < 3; i++) {
+      props.push(
+        h0("ellipse", {
+          key: "snowdriftpile" + i,
+          cx: rand(14, 226),
+          cy: rand(112, 118),
+          rx: rand(13, 30),
+          ry: rand(2.4, 3.8),
+          fill: "#ffffff",
+          opacity: rand(0.4, 0.62),
+        }),
+      );
+    }
+  } else if (season === "spring") {
+    // Petals (and leaves below) keep their static rotate on the INNER
+    // shape: the drift animation lives on a wrapper g with no base
+    // transform, per the layering rule.
+    for (i = 0; i < 9; i++) {
+      var pStyle = seasonDriftStyle(rand);
+      var px = rand(4, 236);
+      var py = rand(8, 104);
+      props.push(
+        h0(
+          "g",
+          { key: "petal" + i, className: "kandev-kandy-petal", style: pStyle },
+          h0("ellipse", {
+            key: "shape",
+            cx: px,
+            cy: py,
+            rx: rand(1.4, 2.2),
+            ry: rand(0.9, 1.3),
+            fill: PETAL_FILLS[i % 3],
+            opacity: rand(0.65, 0.95),
+            transform: "rotate(" + rand(-40, 40).toFixed(1) + " " + px.toFixed(1) + " " + py.toFixed(1) + ")",
+          }),
+        ),
+      );
+    }
+  } else if (season === "summer") {
+    if (dayPhase === "night") {
+      for (i = 0; i < 6; i++) {
+        props.push(
+          h0("circle", {
+            key: "sfly" + i,
+            className: "kandev-kandy-firefly",
+            style: seasonDriftStyle(rand),
+            cx: rand(8, 232),
+            cy: rand(22, 102),
+            r: rand(1.1, 2),
+            fill: "#ffe9a3",
+            opacity: 0.8,
+          }),
+        );
+      }
+    }
+  } else {
+    for (i = 0; i < 9; i++) {
+      var lStyle = seasonDriftStyle(rand);
+      var lx = rand(4, 236);
+      var ly = rand(8, 106);
+      props.push(
+        h0(
+          "g",
+          { key: "leaf" + i, className: "kandev-kandy-leaf", style: lStyle },
+          h0("ellipse", {
+            key: "shape",
+            cx: lx,
+            cy: ly,
+            rx: rand(1.8, 2.6),
+            ry: rand(1, 1.5),
+            fill: LEAF_FILLS[i % 3],
+            opacity: rand(0.7, 0.95),
+            transform: "rotate(" + rand(-60, 60).toFixed(1) + " " + lx.toFixed(1) + " " + ly.toFixed(1) + ")",
+          }),
+        ),
+      );
+    }
+  }
+  return { bg: SEASON_TINTS[season].bg, props: props };
+}
+
+// sceneFor(biome, level, lineageSeed, timeOfDay, season) — the lineage's
+// habitat at this maturity, hour, and season. Layout re-rolls only at phase
+// boundaries; the day/night layer composes on top and defaults to mid-day
+// ("day": no overlay at all), the season layer composes above THAT and
+// defaults to none, so 3- and 4-arg callers keep today's exact renders.
+function sceneFor(biome, level, seed, timeOfDay, season) {
   var phase = scenePhase(level);
   var b = ((biome % BIOME_BGS.length) + BIOME_BGS.length) % BIOME_BGS.length;
   var dayPhase = dayPhaseFor(timeOfDay);
@@ -2222,6 +2412,14 @@ function sceneFor(biome, level, seed, timeOfDay) {
       var nrand = makeRand((seed ^ (phase * 0x9e3779b9)) >>> 0, 13);
       props = props.concat(stars(nrand, 14), moonDisc(203, 20, 8.5));
     }
+  }
+  // Season layer LAST: the tint sits above the day/night gradient and the
+  // particles above the night wash so snow/petals/leaves stay visible
+  // after dark (rand stream 17 — the base layout is untouched).
+  var seasonOv = seasonOverlayFor(season, dayPhase, phase, makeRand((seed ^ (phase * 0x9e3779b9)) >>> 0, 17));
+  if (seasonOv) {
+    bg = seasonOv.bg + ", " + bg;
+    props = props.concat(seasonOv.props);
   }
   return {
     bg: bg,
@@ -2317,6 +2515,21 @@ var KANDY_CSS =
   // opacity only, on text elements positioned by x/y attributes (no layout
   // transform to clobber).
   "@keyframes kandev-kandy-zzz{0%,100%{opacity:0;transform:translateY(3px)}22%{opacity:0.9;transform:translateY(0)}60%{opacity:0.75;transform:translateY(-4px)}88%{opacity:0;transform:translateY(-7px)}}" +
+  // Season particle drifts (v0.7.0): transform-only loops on SVG elements
+  // positioned by attributes (transform-box fill-box inline), so reduced
+  // motion (animation:none) leaves static particles at their seeded spots.
+  "@keyframes kandev-kandy-snowdrift{0%,100%{transform:translate(0,0)}50%{transform:translate(2.5px,4px)}}" +
+  "@keyframes kandev-kandy-petaldrift{0%,100%{transform:translate(0,0)}50%{transform:translate(-3px,2.5px)}}" +
+  "@keyframes kandev-kandy-leafdrift{0%,100%{transform:translate(0,0) rotate(0deg)}50%{transform:translate(3px,4px) rotate(12deg)}}" +
+  // Fireflies pulse opacity ONLY: their base opacity attribute keeps them
+  // visible when the animation is off.
+  "@keyframes kandev-kandy-glowpulse{0%,100%{opacity:0.3}50%{opacity:1}}" +
+  // Speech bubble life: fade in, hold, fade out (duration inline from
+  // BUBBLE_TOTAL_MS). Base opacity stays 1 — under reduced motion the
+  // bubble is CONTENT and simply appears/disappears statically.
+  "@keyframes kandev-kandy-bubblelife{0%{opacity:0;transform:translateY(3px)}6%{opacity:1;transform:translateY(0)}90%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-2px)}}" +
+  // Arrival motion arcs: opacity only, quick in and out.
+  "@keyframes kandev-kandy-greetarc{0%{opacity:0}25%{opacity:0.9}70%{opacity:0.75}100%{opacity:0}}" +
   ".kandev-kandy-bob{animation:kandev-kandy-bob 2.8s ease-in-out infinite}" +
   ".kandev-kandy-bob-fast{animation-duration:1.6s}" +
   ".kandev-kandy-bob-slow{animation-duration:5.5s}" +
@@ -2365,6 +2578,17 @@ var KANDY_CSS =
   // a visible base opacity so reduced motion shows a static single z.
   ".kandev-kandy-zzz{opacity:0;animation:kandev-kandy-zzz 2.7s ease-in-out infinite}" +
   ".kandev-kandy-zzz-lead{opacity:0.85}" +
+  ".kandev-kandy-snow{animation:kandev-kandy-snowdrift 5s ease-in-out infinite}" +
+  ".kandev-kandy-petal{animation:kandev-kandy-petaldrift 6s ease-in-out infinite}" +
+  ".kandev-kandy-leaf{animation:kandev-kandy-leafdrift 7s ease-in-out infinite}" +
+  ".kandev-kandy-firefly{animation:kandev-kandy-glowpulse 3.4s ease-in-out infinite}" +
+  // The speech bubble is styled like the app's popovers: popover bg,
+  // subtle border, small italic text, soft shadow. The tail is a rotated
+  // square span (static base transform on the CHILD — the animated bubble
+  // div itself carries no base transform, per the layering rule).
+  ".kandev-kandy-bubble{position:absolute;z-index:2;pointer-events:none;background:var(--popover);color:var(--popover-foreground);border:1px solid var(--border);border-radius:10px;padding:5px 9px;font-size:10px;font-style:italic;line-height:1.35;box-shadow:0 2px 10px rgba(0,0,0,0.14);animation:kandev-kandy-bubblelife ease both}" +
+  ".kandev-kandy-bubbletail{position:absolute;bottom:-4px;width:7px;height:7px;background:var(--popover);border-right:1px solid var(--border);border-bottom:1px solid var(--border);transform:rotate(45deg)}" +
+  ".kandev-kandy-greetarc{opacity:0;animation:kandev-kandy-greetarc 1.2s ease both}" +
   ".kandev-kandy-control{transition-property:transform,background-color,box-shadow;transition-duration:150ms;transition-timing-function:ease-out}" +
   ".kandev-kandy-control:active:not(:disabled){transform:scale(0.96)}" +
   ".kandev-kandy-control:focus-visible{outline:2px solid var(--ring);outline-offset:2px}" +
@@ -2373,7 +2597,7 @@ var KANDY_CSS =
   ".kandev-kandy-photo-panel:focus{outline:none}" +
   ".kandev-kandy-photo-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz{animation:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc{animation:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -2590,6 +2814,329 @@ function bonkContactFor(data) {
     x: BONK_SCENE.w / 2 + (vx - 50) * k,
     y: BONK_SCENE.h - BONK_SCENE.bottomPx - (100 - vy) * k,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Speech (v0.7.0) — a tamagotchi with opinions. The pool is organized by
+// temperament band x context; "any" lines fit every band. Voice: dry,
+// deadpan; sarcasm peaks at neutral/wary, beloved stays warm with soft
+// sarcasm, fearful is quiet and a little heartbreaking. Lines stay under
+// ~48 chars, no emoji. ctx values: generic, greeting (dialog open),
+// morning, latenight, dusk, bored, gloomy (sad/gloomy moods), refusing
+// (refusing_pets), winter/spring/summer/autumn, scarred, sleep.
+// ---------------------------------------------------------------------------
+
+var SPEECH = [
+  // -- beloved: warm, with occasional soft sarcasm ------------------------
+  { id: "bel-g1", band: "beloved", ctx: "generic", text: "you came back! I mean— hey." },
+  { id: "bel-g2", band: "beloved", ctx: "generic", text: "I saved you a spot. it's all of me." },
+  { id: "bel-g3", band: "beloved", ctx: "generic", text: "best human. don't tell the others." },
+  { id: "bel-g4", band: "beloved", ctx: "generic", text: "I'd share my berries with you. one of them." },
+  { id: "bel-g5", band: "beloved", ctx: "generic", text: "you're my favorite recurring event." },
+  { id: "bel-g6", band: "beloved", ctx: "generic", text: "today's forecast: you. good." },
+  { id: "bel-h1", band: "beloved", ctx: "greeting", text: "you're here! act natural. I'm thrilled." },
+  { id: "bel-h2", band: "beloved", ctx: "greeting", text: "hi hi hi. okay. composure." },
+  { id: "bel-h3", band: "beloved", ctx: "greeting", text: "I was JUST thinking about you. always am." },
+  // -- content: settled, mildly smug --------------------------------------
+  { id: "con-g1", band: "content", ctx: "generic", text: "all systems nominal. petting optional." },
+  { id: "con-g2", band: "content", ctx: "generic", text: "not to brag, but the moss here is mine." },
+  { id: "con-g3", band: "content", ctx: "generic", text: "we're doing fine. weirdly fine." },
+  { id: "con-g4", band: "content", ctx: "generic", text: "I counted the rocks again. still four." },
+  { id: "con-g5", band: "content", ctx: "generic", text: "another quiet day in paradise, huh." },
+  { id: "con-g6", band: "content", ctx: "generic", text: "life's simple. eat, evolve, repeat." },
+  { id: "con-h1", band: "content", ctx: "greeting", text: "oh, hello. welcome to the good spot." },
+  { id: "con-h2", band: "content", ctx: "greeting", text: "you again! good choice." },
+  { id: "con-h3", band: "content", ctx: "greeting", text: "come in, the weather's rendered nicely." },
+  // -- neutral: peak deadpan sarcasm ---------------------------------------
+  { id: "neu-g1", band: "neutral", ctx: "generic", text: "so we just level forever? cool. cool cool." },
+  { id: "neu-g2", band: "neutral", ctx: "generic", text: "I've seen things. mostly this meadow." },
+  { id: "neu-g3", band: "neutral", ctx: "generic", text: "is this a game to you? …is it to me?" },
+  { id: "neu-g4", band: "neutral", ctx: "generic", text: "existing is my full-time job now." },
+  { id: "neu-g5", band: "neutral", ctx: "generic", text: "don't mind me. I'm ambience." },
+  { id: "neu-g6", band: "neutral", ctx: "generic", text: "the fourth wall here is very thin." },
+  { id: "neu-h1", band: "neutral", ctx: "greeting", text: "oh. an audience." },
+  { id: "neu-h2", band: "neutral", ctx: "greeting", text: "hello. I live here, apparently." },
+  { id: "neu-h3", band: "neutral", ctx: "greeting", text: "checking in? I'll allow it." },
+  // -- wary: short, guarded, passive-aggressive ----------------------------
+  { id: "war-g1", band: "wary", ctx: "generic", text: "the bucket's behind your back, isn't it?" },
+  { id: "war-g2", band: "wary", ctx: "generic", text: "I remember everything, you know." },
+  { id: "war-g3", band: "wary", ctx: "generic", text: "petting accepted. trust pending." },
+  { id: "war-g4", band: "wary", ctx: "generic", text: "keep your hands where I can see them." },
+  { id: "war-g5", band: "wary", ctx: "generic", text: "oh. it's you. …noted." },
+  { id: "war-g6", band: "wary", ctx: "generic", text: "I have a lawyer. it's the butterfly." },
+  { id: "war-h1", band: "wary", ctx: "greeting", text: "knock first. …fine, come in." },
+  { id: "war-h2", band: "wary", ctx: "greeting", text: "you're here. keeping that in mind." },
+  { id: "war-h3", band: "wary", ctx: "greeting", text: "state your business. slowly." },
+  // -- fearful: quiet, flinchy, a little heartbreaking ---------------------
+  { id: "fea-g1", band: "fearful", ctx: "generic", text: "…just the berries today, please." },
+  { id: "fea-g2", band: "fearful", ctx: "generic", text: "I'll be over here. behind the rock." },
+  { id: "fea-g3", band: "fearful", ctx: "generic", text: "small today. maybe smaller tomorrow." },
+  { id: "fea-g4", band: "fearful", ctx: "generic", text: "it's fine. everything's fine. probably." },
+  { id: "fea-g5", band: "fearful", ctx: "generic", text: "…you're not holding anything, right?" },
+  { id: "fea-g6", band: "fearful", ctx: "generic", text: "I flinched first. saves time." },
+  { id: "fea-h1", band: "fearful", ctx: "greeting", text: "oh! …hi. you startled me." },
+  { id: "fea-h2", band: "fearful", ctx: "greeting", text: "…hello. please be a good visit." },
+  { id: "fea-h3", band: "fearful", ctx: "greeting", text: "I'm awake. I'm calm. hello." },
+  // -- morning -------------------------------------------------------------
+  { id: "mor-a1", band: "any", ctx: "morning", text: "morning! the sun clocked in. so should you." },
+  { id: "mor-a2", band: "any", ctx: "morning", text: "coffee for you. dew for me." },
+  { id: "mor-a3", band: "any", ctx: "morning", text: "new day. same meadow. love that for us." },
+  { id: "mor-b1", band: "beloved", ctx: "morning", text: "morning! I kept the sunrise warm for you." },
+  { id: "mor-w1", band: "wary", ctx: "morning", text: "morning. I slept with one eye open." },
+  { id: "mor-f1", band: "fearful", ctx: "morning", text: "…morning. today will be gentle, right?" },
+  // -- late night / 2am deploys -------------------------------------------
+  { id: "lat-a1", band: "any", ctx: "latenight", text: "another 2am deploy? …okay." },
+  { id: "lat-a2", band: "any", ctx: "latenight", text: "the moon and I think you should sleep." },
+  { id: "lat-a3", band: "any", ctx: "latenight", text: "shipping at this hour? bold. unwise. bold." },
+  { id: "lat-a4", band: "any", ctx: "latenight", text: "I'll stay up with you. blinking counts." },
+  { id: "lat-n1", band: "neutral", ctx: "latenight", text: "night shift again. we don't get overtime." },
+  { id: "lat-w1", band: "wary", ctx: "latenight", text: "you only visit this late when things break." },
+  // -- dusk ----------------------------------------------------------------
+  { id: "dsk-a1", band: "any", ctx: "dusk", text: "the sky's doing its dramatic thing again." },
+  { id: "dsk-a2", band: "any", ctx: "dusk", text: "dusk. the day is wrapping up. hint hint." },
+  { id: "dsk-a3", band: "any", ctx: "dusk", text: "golden hour. I look amazing, obviously." },
+  // -- bored (work drought) ------------------------------------------------
+  { id: "bor-a1", band: "any", ctx: "bored", text: "I organized the pebbles. twice." },
+  { id: "bor-a2", band: "any", ctx: "bored", text: "no work lately. the grass grew. I watched." },
+  { id: "bor-a3", band: "any", ctx: "bored", text: "day forty of watching the flag. it waved." },
+  { id: "bor-n1", band: "neutral", ctx: "bored", text: "bored is a strong word. accurate, though." },
+  // -- sad / gloomy --------------------------------------------------------
+  { id: "glo-a1", band: "any", ctx: "gloomy", text: "the rain isn't even a metaphor anymore." },
+  { id: "glo-a2", band: "any", ctx: "gloomy", text: "my cloud follows me. we've bonded." },
+  { id: "glo-a3", band: "any", ctx: "gloomy", text: "work dried up. so did my joie de vivre." },
+  { id: "glo-a4", band: "any", ctx: "gloomy", text: "it's fine. the drizzle matches my mood." },
+  // -- refusing pets (post-bonk distrust) ----------------------------------
+  { id: "ref-a1", band: "any", ctx: "refusing", text: "no treats. I know what you did." },
+  { id: "ref-a2", band: "any", ctx: "refusing", text: "we're in a fight. you know why." },
+  { id: "ref-a3", band: "any", ctx: "refusing", text: "the berry lobby can't buy me back yet." },
+  { id: "ref-w1", band: "wary", ctx: "refusing", text: "still drying off. still deciding." },
+  { id: "ref-f1", band: "fearful", ctx: "refusing", text: "…please just give me a minute." },
+  // -- seasons -------------------------------------------------------------
+  { id: "win-a1", band: "any", ctx: "winter", text: "snow again. my feet are decorative now." },
+  { id: "win-a2", band: "any", ctx: "winter", text: "I caught a snowflake. it's gone. like time." },
+  { id: "win-a3", band: "any", ctx: "winter", text: "winter tip: stand near the warm pixels." },
+  { id: "win-a4", band: "any", ctx: "winter", text: "the drifts are taller than my ambitions." },
+  { id: "spr-a1", band: "any", ctx: "spring", text: "petals everywhere. the pollen is personal." },
+  { id: "spr-a2", band: "any", ctx: "spring", text: "spring! everything's new. I'm still me." },
+  { id: "spr-a3", band: "any", ctx: "spring", text: "the flowers are showing off again." },
+  { id: "spr-a4", band: "any", ctx: "spring", text: "I sneezed and evolved a little. maybe." },
+  { id: "sum-a1", band: "any", ctx: "summer", text: "it's warm. I'm basically photosynthesizing." },
+  { id: "sum-a2", band: "any", ctx: "summer", text: "summer rule: shade is a lifestyle." },
+  { id: "sum-a3", band: "any", ctx: "summer", text: "the fireflies throw better parties than you." },
+  { id: "sum-a4", band: "any", ctx: "summer", text: "hot today. the good kind of lazy." },
+  { id: "aut-a1", band: "any", ctx: "autumn", text: "the leaves are quitting. relatable." },
+  { id: "aut-a2", band: "any", ctx: "autumn", text: "autumn: the trees are shipping their v2." },
+  { id: "aut-a3", band: "any", ctx: "autumn", text: "sweater weather, if I had a sweater." },
+  { id: "aut-a4", band: "any", ctx: "autumn", text: "everything's amber. very cinematic." },
+  // -- scarred: dark humor at any band -------------------------------------
+  { id: "scr-a1", band: "any", ctx: "scarred", text: "the scar? we don't talk about the incident." },
+  { id: "scr-a2", band: "any", ctx: "scarred", text: "it doesn't hurt anymore. it just remembers." },
+  { id: "scr-a3", band: "any", ctx: "scarred", text: "chicks dig scars. I don't know any chicks." },
+  { id: "scr-a4", band: "any", ctx: "scarred", text: "the scar adds character. I had enough." },
+  { id: "scr-a5", band: "any", ctx: "scarred", text: "some updates can't be rolled back. this one." },
+  { id: "scr-a6", band: "any", ctx: "scarred", text: "I tell the butterflies it's from a battle." },
+  // -- sleep-talk (~10% of sleep ticks) ------------------------------------
+  { id: "slp-a1", band: "any", ctx: "sleep", text: "…zzz… merge conflict…" },
+  { id: "slp-a2", band: "any", ctx: "sleep", text: "…zzz… approve… with nits…" },
+  { id: "slp-a3", band: "any", ctx: "sleep", text: "…zzz… the berries… are compiling…" },
+  { id: "slp-a4", band: "any", ctx: "sleep", text: "…zzz… rebase… gently…" },
+  { id: "slp-a5", band: "any", ctx: "sleep", text: "…zzz… lgtm…" },
+];
+
+// Bubble lifetime: fade in, hold ~6.5s, fade out (the CSS keyframes put
+// the visible window between 6% and 90% of this duration). The widget
+// clears the state just after the animation lands on opacity 0.
+var BUBBLE_TOTAL_MS = 7200;
+
+// Bubble cadence: the opportunity is evaluated once per clock tick
+// (TIME_TICK_MS = 1min). Awake, the seeded gate passes ~25% of ticks — a
+// bubble roughly every 4 minutes of card-open time (the spec'd 3-6 min
+// band). Asleep, sleep-talk murmurs on ~10% of ticks.
+var SPEECH_GATE_P = 0.25;
+var SPEECH_SLEEP_GATE_P = 0.1;
+
+// speechHash01 — one deterministic uniform draw from (lineage, tick, salt).
+// The same mulberry32 core as every other seeded pick; salt separates the
+// gate draw from the line draw.
+function speechHash01(seed, n, salt) {
+  var mixed = ((seed >>> 0) ^ Math.imul((n | 0) + 1, 0x9e3779b9) ^ Math.imul(salt | 0, 0x85ebca6b)) >>> 0;
+  return mulberry32(mixed)();
+}
+
+function speechGate(seed, tick, asleep) {
+  return speechHash01(seed, tick, 1) < (asleep ? SPEECH_SLEEP_GATE_P : SPEECH_GATE_P);
+}
+
+// speechContextsFor — the context tags that apply right now. Time bands are
+// deliberately looser than dayPhaseFor (2am deploys run 22:00-06:00); mood,
+// refusal, season, and the scar each contribute their own pools.
+function speechContextsFor(data, ctx) {
+  var tags = [];
+  if (ctx && ctx.trigger === "greeting") tags.push("greeting");
+  var t = typeof (ctx && ctx.timeOfDay) === "number" && isFinite(ctx.timeOfDay)
+    ? ((ctx.timeOfDay % 24) + 24) % 24
+    : TIME_OF_DAY_DEFAULT;
+  if (t >= 22 || t < 6) tags.push("latenight");
+  else if (t < 11) tags.push("morning");
+  else if (t >= 18 && t < 20.5) tags.push("dusk");
+  var mood = data && data.mood;
+  if (mood === "bored") tags.push("bored");
+  if (mood === "sad" || mood === "gloomy") tags.push("gloomy");
+  if (data && data.refusing_pets) tags.push("refusing");
+  if (ctx && SEASONS[ctx.season]) tags.push(ctx.season);
+  if (data && data.scarred) tags.push("scarred");
+  return tags;
+}
+
+// pickSpeech(data, ctx) — the deterministic line pick. ctx: { timeOfDay,
+// season, tick, trigger: "tick"|"greeting", asleep, recentIds }. Band +
+// context filters first; the band's generic pool is the fallback; the
+// last-3 recentIds guard drops just-said lines whenever the pool can spare
+// them. Asleep, only the sleep-talk murmurs are ever eligible.
+function pickSpeech(data, ctx) {
+  ctx = ctx || {};
+  var band = (data && data.temperament_band) || "neutral";
+  var recent = ctx.recentIds || [];
+  var pool;
+  if (ctx.asleep) {
+    pool = SPEECH.filter(function (l) {
+      return l.ctx === "sleep";
+    });
+  } else {
+    var tags = speechContextsFor(data || {}, ctx);
+    pool = SPEECH.filter(function (l) {
+      return tags.indexOf(l.ctx) >= 0 && (l.band === "any" || l.band === band);
+    });
+    if (!pool.length) {
+      pool = SPEECH.filter(function (l) {
+        return l.ctx === "generic" && l.band === band;
+      });
+    }
+    if (!pool.length) {
+      pool = SPEECH.filter(function (l) {
+        return l.ctx === "generic" && l.band === "neutral";
+      });
+    }
+  }
+  if (!pool.length) return null;
+  var fresh = pool.filter(function (l) {
+    return recent.indexOf(l.id) < 0;
+  });
+  if (fresh.length) pool = fresh;
+  var seed = ((data && data.lineage_seed) || 1) >>> 0;
+  var idx = Math.floor(speechHash01(seed, ctx.tick || 0, 2) * pool.length);
+  if (idx >= pool.length) idx = pool.length - 1;
+  return pool[idx];
+}
+
+// speechBubble — the comic bubble near the creature's head, styled like
+// the app's popovers (popover bg, subtle border, small italic text) with a
+// tail toward the creature. Anchored off bonkContactFor: heads left of
+// center grow the bubble rightward, heads right of center grow it leftward
+// (a serpent's raised head), so the text always stays on the card. The
+// fade in/hold/out lives on the kandev-kandy-bubble class (duration set
+// inline from BUBBLE_TOTAL_MS); under reduced motion the animation is off
+// and the bubble simply appears and disappears — bubbles are content.
+function speechBubble(h, speech, data) {
+  var c = bonkContactFor(data);
+  var growLeft = c.x > BONK_SCENE.w / 2;
+  var style = {
+    bottom: BONK_SCENE.h - c.y + 13 + "px",
+    maxWidth: "158px",
+    animationDuration: BUBBLE_TOTAL_MS + "ms",
+  };
+  var tailStyle = {};
+  if (growLeft) {
+    style.right = Math.max(BONK_SCENE.w - c.x - 26, 6) + "px";
+    tailStyle.right = "13px";
+  } else {
+    style.left = Math.max(c.x - 26, 6) + "px";
+    tailStyle.left = "13px";
+  }
+  return h(
+    "div",
+    { key: "speech" + (speech.seq || speech.id), className: "kandev-kandy-bubble", style: style, "aria-hidden": "true" },
+    speech.text,
+    h("span", { key: "tail", className: "kandev-kandy-bubbletail", style: tailStyle }),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Arrival greeting (v0.7.0) — "it notices you". A ~1min last-seen stamp in
+// localStorage while the widget is mounted; a gap of 6h+ means the next
+// dialog open earns a wave-ish hop, a couple of motion arcs, and a
+// greeting line. Storage is injectable for tests; a fresh install (no
+// stamp) doesn't greet — the dialog-open bubble already covers hello.
+// ---------------------------------------------------------------------------
+
+var LAST_SEEN_KEY = "kandev-kandy-last-seen";
+var ARRIVAL_GAP_MS = 6 * 60 * 60 * 1000;
+
+function readLastSeen(storage) {
+  try {
+    var s = storage || window.localStorage;
+    var v = parseInt(s.getItem(LAST_SEEN_KEY), 10);
+    return isFinite(v) && v > 0 ? v : 0;
+  } catch (err) {
+    return 0;
+  }
+}
+
+function writeLastSeen(now, storage) {
+  try {
+    var s = storage || window.localStorage;
+    s.setItem(LAST_SEEN_KEY, String(now));
+  } catch (err) {
+    /* storage unavailable — arrival greetings just never trigger */
+  }
+}
+
+function arrivalDue(lastSeen, now) {
+  return lastSeen > 0 && now - lastSeen >= ARRIVAL_GAP_MS;
+}
+
+// greetArcsOverlay — two small motion arcs beside the creature's head
+// while the arrival hop plays: quick fade in, fade out. Positioned from
+// bonkContactFor; base opacity 0, so reduced motion (animation:none)
+// simply never shows the frill.
+function greetArcsOverlay(h, seq, data) {
+  var c = bonkContactFor(data);
+  return h(
+    "svg",
+    {
+      key: "greetfx" + seq,
+      width: 30,
+      height: 34,
+      viewBox: "0 0 30 34",
+      "aria-hidden": "true",
+      style: {
+        position: "absolute",
+        left: c.x - 40 + "px",
+        top: c.y - 20 + "px",
+        overflow: "visible",
+        pointerEvents: "none",
+      },
+    },
+    h("path", {
+      key: "arc1",
+      className: "kandev-kandy-greetarc",
+      d: "M20 6 Q9 10 8 22",
+      stroke: "#ffd166",
+      strokeWidth: 2.2,
+      strokeLinecap: "round",
+      fill: "none",
+    }),
+    h("path", {
+      key: "arc2",
+      className: "kandev-kandy-greetarc",
+      d: "M24 12 Q16 15 15 24",
+      stroke: "#ffd166",
+      strokeWidth: 1.7,
+      strokeLinecap: "round",
+      fill: "none",
+      style: { animationDelay: "140ms" },
+    }),
+  );
 }
 
 // fleckSpan — one generic burst particle (treat crumb, water splash).
@@ -3806,7 +4353,7 @@ function photoBoothPanel(h, DialogTitle, model, theme, svgRef, panelRef, status,
 // pet button in the dialog, a plain div in the tooltip) carries the
 // animated classes and NO base transform. munch/soaked/turnaway follow the
 // same rule: animation classes on the inner wrapper only.
-function kandyCard(h, data, celebration, care, timeOfDay) {
+function kandyCard(h, data, celebration, care, timeOfDay, season, speech) {
   // Sleep is computed here from the seeded schedule + the passed clock so
   // every card (tooltip and dialog) agrees. The bucket wakes it (the
   // existing drench choreography IS the rude awakening); a pet only
@@ -3818,13 +4365,22 @@ function kandyCard(h, data, celebration, care, timeOfDay) {
     else sleepState = "asleep";
   }
   var shownData = sleepState ? Object.assign({}, data, { sleep_state: sleepState }) : data;
-  var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0, timeOfDay);
+  var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0, timeOfDay, season);
   var animCls = sleepState === "asleep" ? "" : "kandev-kandy-wiggle";
   if (care && care.bonkFx) animCls += " kandev-kandy-soaked";
   else if (care && care.distrustFx) animCls += " kandev-kandy-turnaway";
   else if (care && care.fx) animCls += " kandev-kandy-munch";
   else if (celebration) animCls += " kandev-kandy-cardhop";
+  // Arrival greeting: the wave-ish hop reuses the celebration hop on the
+  // same animation-safe inner wrapper (never while asleep or mid-fx).
+  else if (care && care.greetFx && sleepState !== "asleep") animCls += " kandev-kandy-cardhop";
   animCls = animCls.trim();
+  // The speech bubble is content, but it never fights a celebration burst
+  // or a care overlay for the same pixels.
+  var showBubble =
+    speech &&
+    !celebration &&
+    !(care && (care.fx || care.bonkFx || care.distrustFx || care.sleepyFx || care.holdFx));
   var creature = creatureSvg(h, shownData, 92);
   var inner;
   if (care && care.onPet) {
@@ -3922,6 +4478,8 @@ function kandyCard(h, data, celebration, care, timeOfDay) {
       care && care.distrustFx ? distrustOverlay(h, care.distrustFx, data) : null,
       care && care.sleepyFx ? sleepyPetOverlay(h, care.sleepyFx, data) : null,
       care && care.holdFx ? holdTipOverlay(h, care.holdFx, data) : null,
+      care && care.greetFx && sleepState !== "asleep" ? greetArcsOverlay(h, care.greetFx, data) : null,
+      showBubble ? speechBubble(h, speech, data) : null,
     ),
     h(
       "div",
@@ -4161,6 +4719,15 @@ function makeKandyWidget(host) {
     var timeHook = React.useState(localHour());
     var timeOfDay = timeHook[0];
     var setTimeOfDay = timeHook[1];
+    // speech: null | {id, text, seq} — the current bubble (dialog-open
+    // greeting, arrival greeting, or a gated tick line).
+    var speechHook = React.useState(null);
+    var speech = speechHook[0];
+    var setSpeech = speechHook[1];
+    // greetFx: 0 while idle, else a nonce keying the arrival hop + arcs.
+    var greetFxHook = React.useState(0);
+    var greetFx = greetFxHook[0];
+    var setGreetFx = greetFxHook[1];
     // dialogZoom: the continuous card zoom the corner grip drags. Seeded
     // from localStorage (so it applies on every dialog open, across
     // reloads) and re-persisted when a drag ends.
@@ -4204,6 +4771,25 @@ function makeKandyWidget(host) {
     // in-flight grip drag (null when idle).
     var dialogFrameRef = React.useRef(null);
     var zoomDragRef = React.useRef(null);
+    // Speech bookkeeping: the bubble-clear timer, the last-3 line ids
+    // (no-immediate-repeat guard), the pending arrival greeting, and the
+    // arrival hop timer.
+    var speechTimerRef = React.useRef(null);
+    var recentSpeechRef = React.useRef([]);
+    var arrivalPendingRef = React.useRef(false);
+    var greetTimerRef = React.useRef(null);
+    // liveRef mirrors the latest render values for the interval callbacks
+    // (the mount-effect closures would otherwise see mount-time state).
+    var liveRef = React.useRef({});
+    liveRef.current = {
+      data: data,
+      celebration: celebration,
+      petFx: petFx,
+      bonkFx: bonkFx,
+      distrustFx: distrustFx,
+      sleepyFx: sleepyFx,
+      holdFx: holdFx,
+    };
 
     function clearPreparedPhoto() {
       if (photoCopyRef.current) disposePreparedPhoto(photoCopyRef.current);
@@ -4261,6 +4847,83 @@ function makeKandyWidget(host) {
       distrustTimerRef.current = setTimeout(function () {
         if (mountedRef.current) setDistrustFx(0);
       }, 1900);
+    }
+
+    // showSpeech — put a line on screen for BUBBLE_TOTAL_MS and remember
+    // it in the last-3 no-repeat window.
+    function showSpeech(line) {
+      if (!line) return;
+      var rec = recentSpeechRef.current;
+      rec.push(line.id);
+      if (rec.length > 3) rec.shift();
+      setSpeech({ id: line.id, text: line.text, seq: Date.now() });
+      if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
+      speechTimerRef.current = setTimeout(function () {
+        if (mountedRef.current) setSpeech(null);
+      }, BUBBLE_TOTAL_MS + 100);
+    }
+
+    // maybeTickSpeech — the per-minute bubble opportunity: skipped while a
+    // celebration or any care reaction is mid-play (they'd collide
+    // visually), gated by the seeded hash (awake ~every 4 min, sleep-talk
+    // on ~10% of sleep ticks), then a deterministic pick.
+    function maybeTickSpeech() {
+      var live = liveRef.current;
+      if (
+        live.celebration ||
+        live.petFx ||
+        live.bonkFx ||
+        live.distrustFx ||
+        live.sleepyFx ||
+        live.holdFx
+      ) {
+        return;
+      }
+      var d = live.data || EGG_PLACEHOLDER;
+      var seed = (d.lineage_seed || 1) >>> 0;
+      var t = localHour();
+      var asleep = d.level > 1 && isAsleep(seed, t);
+      var tick = Math.floor(Date.now() / TIME_TICK_MS);
+      if (!speechGate(seed, tick, asleep)) return;
+      showSpeech(
+        pickSpeech(d, {
+          timeOfDay: t,
+          season: currentSeason(),
+          tick: tick,
+          trigger: "tick",
+          asleep: asleep,
+          recentIds: recentSpeechRef.current,
+        }),
+      );
+    }
+
+    // greetOnOpen — instant gratification: every dialog open gets a
+    // greeting bubble (unless it's asleep — no waking it just to say hi).
+    // A pending arrival (6h+ away) also plays the wave-ish hop + arcs.
+    function greetOnOpen() {
+      var d = data || EGG_PLACEHOLDER;
+      var seed = (d.lineage_seed || 1) >>> 0;
+      var now = Date.now();
+      var t = localHour();
+      if (d.level > 1 && isAsleep(seed, t)) return;
+      if (arrivalPendingRef.current) {
+        arrivalPendingRef.current = false;
+        setGreetFx(now);
+        if (greetTimerRef.current) clearTimeout(greetTimerRef.current);
+        greetTimerRef.current = setTimeout(function () {
+          if (mountedRef.current) setGreetFx(0);
+        }, 1400);
+      }
+      showSpeech(
+        pickSpeech(d, {
+          timeOfDay: t,
+          season: currentSeason(),
+          tick: Math.floor(now / TIME_TICK_MS),
+          trigger: "greeting",
+          asleep: false,
+          recentIds: recentSpeechRef.current,
+        }),
+      );
     }
 
     // triggerPet (click/tap or Enter/Space on the pet button): local
@@ -4563,10 +5226,17 @@ function makeKandyWidget(host) {
     React.useEffect(function () {
       mountedRef.current = true;
       load();
+      // Arrival greeting: check the presence gap BEFORE stamping, then
+      // keep the last-seen stamp fresh (~1min) while mounted.
+      arrivalPendingRef.current = arrivalDue(readLastSeen(), Date.now());
+      writeLastSeen(Date.now());
       var interval = setInterval(load, REFRESH_MS);
-      // Clock tick: dusk (and bedtime) arrive without a refetch.
+      // Clock tick: dusk (and bedtime) arrive without a refetch; the same
+      // tick stamps presence and evaluates the speech-bubble opportunity.
       var timeTick = setInterval(function () {
         setTimeOfDay(localHour());
+        writeLastSeen(Date.now());
+        maybeTickSpeech();
       }, TIME_TICK_MS);
       refreshListeners.push(load);
       return function () {
@@ -4578,6 +5248,8 @@ function makeKandyWidget(host) {
         if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);
         if (distrustTimerRef.current) clearTimeout(distrustTimerRef.current);
         if (sleepyTimerRef.current) clearTimeout(sleepyTimerRef.current);
+        if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
+        if (greetTimerRef.current) clearTimeout(greetTimerRef.current);
         clearHoldTimers(holdRef.current);
         holdRef.current = null;
         if (holdClearTimerRef.current) clearTimeout(holdClearTimerRef.current);
@@ -4622,6 +5294,9 @@ function makeKandyWidget(host) {
     if (celebration) {
       chipCelebrateCls =
         celebration.kind === "levelup" ? " kandev-kandy-levelup" : " kandev-kandy-celebrate";
+    } else if (greetFx) {
+      // The chip does its existing small hop alongside the arrival wave.
+      chipCelebrateCls = " kandev-kandy-celebrate";
     }
     var trigger = h(
       "button",
@@ -4647,6 +5322,8 @@ function makeKandyWidget(host) {
           setPhotoOpen(false);
           setPhotoStatus("idle");
           setDialogOpen(true);
+          // The dialog always greets on open (arrival gets the hop too).
+          greetOnOpen();
         },
       },
       creatureSvg(h, chipShown, 22, "", true),
@@ -4670,6 +5347,7 @@ function makeKandyWidget(host) {
       distrustFx: distrustFx,
       sleepyFx: sleepyFx,
       holdFx: holdFx,
+      greetFx: greetFx,
       onBonk: triggerBonk,
       onPointerDown: function (e) {
         pointerTypeRef.current = (e && e.pointerType) || "mouse";
@@ -4770,7 +5448,7 @@ function makeKandyWidget(host) {
           // Same care wiring as the dialog: the hover card is a first-class
           // surface — treat and bucket work here too. (Both cards are never
           // mounted at once: the dialog's overlay blocks chip hover.)
-          kandyCard(h, shown, celebration, careProps, timeOfDay),
+          kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech),
         ),
       ),
       h(
@@ -4818,7 +5496,7 @@ function makeKandyWidget(host) {
                   h(
                     "div",
                     { className: "kandev-kandy-dialogzoom", style: { zoom: dialogZoom } },
-                    kandyCard(h, shown, celebration, careProps, timeOfDay),
+                    kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech),
                   ),
                   h(
                     "div",
@@ -4906,6 +5584,17 @@ window.registerKandevPlugin(PLUGIN_ID, {
     dayPhaseFor: dayPhaseFor,
     sleepScheduleFor: sleepScheduleFor,
     isAsleep: isAsleep,
+    seasonForMonth: seasonForMonth,
+    seasonOverlayFor: seasonOverlayFor,
+    speechLines: SPEECH,
+    speechGate: speechGate,
+    speechContextsFor: speechContextsFor,
+    pickSpeech: pickSpeech,
+    speechBubble: speechBubble,
+    greetArcsOverlay: greetArcsOverlay,
+    readLastSeen: readLastSeen,
+    writeLastSeen: writeLastSeen,
+    arrivalDue: arrivalDue,
     clampDialogZoom: clampDialogZoom,
     dialogZoomFromDrag: dialogZoomFromDrag,
     storedDialogZoom: storedDialogZoom,

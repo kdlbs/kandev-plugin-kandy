@@ -297,3 +297,51 @@ treat still falls, one subdued heart, flavor "Your kandy blinks at you
 sleepily." — the pet POST fires exactly as awake. The water bucket wakes
 it fully: the existing drench choreography plays unchanged (the rude
 awakening). Celebrations are not special-cased and still play over sleep.
+
+## 12. Speech, seasons, arrival greetings (v0.7.0 — pure presentation)
+
+All client-side; the Go server is untouched. Every new visual takes an
+explicit parameter with a neutral default (season/speech unset = nothing),
+so `__render` tooling and old callers keep byte-identical output — verified
+by DOM-diffing the v0.6.5 bundle against v0.7.0 with the new params unset.
+
+**Speech bubbles.** A ~100-line `SPEECH` pool organized by temperament band
+x context: per-band `generic` + `greeting` voices (beloved warm with soft
+sarcasm, neutral peak deadpan, wary passive-aggressive, fearful quiet and a
+little heartbreaking), plus shared pools for `morning`, `latenight` (2am
+deploys), `dusk`, `bored`, `gloomy`, `refusing` (post-bonk distrust),
+the four seasons, a `scarred` dark-humor sub-pool, and `sleep` murmurs.
+Lines are <= 48 chars, no emoji. Selection is deterministic end to end:
+
+- opportunity: each 1-min clock tick, `hash(lineage_seed, tick)` gates at
+  25% awake (a bubble every ~4 min of card-open time) and 10% asleep
+  (sleep-talk); dialog open ALWAYS greets (never while asleep — no waking
+  it just to say hi);
+- pick: seeded hash into the band+context pool, generic band pool as
+  fallback, with a last-3 no-repeat guard in component state;
+- suppression: never over a celebration or a care reaction.
+
+The bubble anchors off `bonkContactFor` (tail toward the head, flipping
+side for right-of-center heads), styled like the app's popovers. Under
+reduced motion the fade animation is off but the bubble still shows —
+bubbles are content, not decoration.
+
+**Seasons.** Month-derived from the client clock with a deliberate
+northern-hemisphere simplification (Dec-Feb winter, Mar-May spring, Jun-Aug
+summer, Sep-Nov autumn — southern-hemisphere kandys experience an inverted
+calendar; acceptable for a toy, revisit if anyone writes in). Implemented
+exactly like the day/night layer: a tint gradient prepended over the
+existing background plus seeded particles (rand stream 17) over the props —
+winter snowflakes + white ground drifts, spring petals, summer warm wash
+(+ pulsing fireflies at night), autumn falling leaves. Particle drift loops
+are transform-only on wrappers with no base transform (the layering rule);
+reduced motion leaves static particles. Celestial/transcendent phases (4-5)
+get only the subtlest tint and never particles — space has no weather.
+
+**Arrival greeting.** A `kandev-kandy-last-seen` localStorage stamp updates
+on a ~1min tick while the widget is mounted; a mount after a 6h+ gap arms a
+pending greeting consumed by the next dialog open: the wave-ish hop (the
+celebration hop on the animation-safe wrapper), two golden motion arcs by
+its head, the chip's small hop, and a time-appropriate greeting line.
+A fresh install (no stamp) doesn't greet; broken storage degrades to
+"never greet", not a crash.

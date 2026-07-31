@@ -920,3 +920,329 @@ test("pet zone wires the coarse-pointer hold and blocks gesture stealing", () =>
   cleanups.forEach((cleanup) => cleanup && cleanup());
   runtime.plugin.destroy();
 });
+
+// ---------------------------------------------------------------------------
+// v0.7.0 — seasons, speech bubbles, arrival greetings.
+// ---------------------------------------------------------------------------
+
+test("season mapping covers all twelve months (northern-hemisphere)", () => {
+  const render = loadBundle().plugin.__render;
+  const expected = [
+    "winter", "winter", "spring", "spring", "spring", "summer",
+    "summer", "summer", "autumn", "autumn", "autumn", "winter",
+  ];
+  for (let m = 0; m < 12; m++) {
+    assert.equal(render.seasonForMonth(m), expected[m], `month ${m}`);
+  }
+  // Out-of-range months wrap instead of crashing.
+  assert.equal(render.seasonForMonth(-1), "winter");
+  assert.equal(render.seasonForMonth(12), "winter");
+});
+
+test("sceneFor without a season stays byte-identical; seasons compose on top", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const plain = render.sceneFor(0, 24, 5150, 13);
+  // Unset, undefined, and unknown season names all render the old scene.
+  assert.equal(JSON.stringify(render.sceneFor(0, 24, 5150, 13, undefined)), JSON.stringify(plain));
+  assert.equal(JSON.stringify(render.sceneFor(0, 24, 5150, 13, "monsoon")), JSON.stringify(plain));
+  // Deterministic: the same seasonal call twice is identical.
+  assert.equal(
+    JSON.stringify(render.sceneFor(0, 24, 5150, 13, "winter")),
+    JSON.stringify(render.sceneFor(0, 24, 5150, 13, "winter")),
+  );
+
+  // Winter: cool tint prepended + 12 drifting snowflakes + 3 ground drifts.
+  const winter = render.sceneFor(0, 24, 5150, 13, "winter");
+  assert.ok(winter.bg.startsWith("linear-gradient"), "season tint leads the background");
+  assert.notEqual(winter.bg, plain.bg);
+  assert.ok(winter.bg.endsWith(plain.bg), "the base scene background is preserved under the tint");
+  const snow = winter.props.filter((n) => n && n.props && n.props.className === "kandev-kandy-snow");
+  assert.equal(snow.length, 12);
+  assert.equal(winter.props.length, plain.props.length + 15);
+  snow.forEach((n) => {
+    assert.match(n.props.style.animationDuration, /s$/);
+    assert.equal(n.props.fill, "#ffffff");
+  });
+
+  // Spring petals and autumn leaves drift on their own classes.
+  const spring = render.sceneFor(0, 24, 5150, 13, "spring");
+  assert.equal(
+    spring.props.filter((n) => n && n.props && n.props.className === "kandev-kandy-petal").length,
+    9,
+  );
+  const autumn = render.sceneFor(0, 24, 5150, 13, "autumn");
+  assert.equal(
+    autumn.props.filter((n) => n && n.props && n.props.className === "kandev-kandy-leaf").length,
+    9,
+  );
+
+  // Summer: tint only by day; fireflies appear at night.
+  const summerDay = render.sceneFor(0, 24, 5150, 13, "summer");
+  assert.equal(summerDay.props.length, plain.props.length);
+  assert.notEqual(summerDay.bg, plain.bg);
+  const summerNight = render.sceneFor(0, 24, 5150, 23, "summer");
+  assert.equal(
+    summerNight.props.filter((n) => n && n.props && n.props.className === "kandev-kandy-firefly").length,
+    6,
+  );
+
+  // Celestial phases (4-5): space has no weather — the subtlest tint, no
+  // particles at all.
+  const celestialPlain = render.sceneFor(0, 60, 5150, 13);
+  const celestialWinter = render.sceneFor(0, 60, 5150, 13, "winter");
+  assert.equal(celestialWinter.props.length, celestialPlain.props.length);
+  assert.notEqual(celestialWinter.bg, celestialPlain.bg);
+  assert.ok(celestialWinter.bg.includes("0.05"), "celestial tint is dimmer than the regular wash");
+});
+
+test("speech pool is 90-120 disciplined lines across bands and contexts", () => {
+  const render = loadBundle().plugin.__render;
+  const lines = render.speechLines;
+  assert.ok(lines.length >= 90 && lines.length <= 120, `pool size ${lines.length}`);
+
+  const bands = ["beloved", "content", "neutral", "wary", "fearful", "any"];
+  const ctxs = [
+    "generic", "greeting", "morning", "latenight", "dusk", "bored", "gloomy",
+    "refusing", "winter", "spring", "summer", "autumn", "scarred", "sleep",
+  ];
+  const ids = new Set();
+  for (const line of lines) {
+    assert.ok(!ids.has(line.id), `duplicate id ${line.id}`);
+    ids.add(line.id);
+    assert.ok(bands.includes(line.band), `${line.id}: band ${line.band}`);
+    assert.ok(ctxs.includes(line.ctx), `${line.id}: ctx ${line.ctx}`);
+    assert.ok(line.text.length > 0 && line.text.length <= 48, `${line.id}: ${line.text.length} chars`);
+    assert.doesNotMatch(line.text, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, `${line.id}: no emoji`);
+  }
+  // Every band has its own generic voice and its own greeting.
+  for (const band of ["beloved", "content", "neutral", "wary", "fearful"]) {
+    assert.ok(lines.some((l) => l.band === band && l.ctx === "generic"), `${band} generic`);
+    assert.ok(lines.some((l) => l.band === band && l.ctx === "greeting"), `${band} greeting`);
+  }
+  // Each season and the scar have their own sub-pools; sleep-talk murmurs.
+  for (const ctx of ["winter", "spring", "summer", "autumn"]) {
+    assert.ok(lines.filter((l) => l.ctx === ctx).length >= 3, `${ctx} pool`);
+  }
+  assert.ok(lines.filter((l) => l.ctx === "scarred").length >= 4);
+  const sleep = lines.filter((l) => l.ctx === "sleep");
+  assert.ok(sleep.length >= 3);
+  sleep.forEach((l) => assert.match(l.text, /zzz/));
+});
+
+test("speech gate is deterministic and fires at the designed cadence", () => {
+  const render = loadBundle().plugin.__render;
+  let awake = 0;
+  let asleep = 0;
+  for (let tick = 0; tick < 3000; tick++) {
+    if (render.speechGate(5150, tick, false)) awake++;
+    if (render.speechGate(5150, tick, true)) asleep++;
+    assert.equal(render.speechGate(5150, tick, false), render.speechGate(5150, tick, false));
+  }
+  // Awake ~25% of minute ticks (a bubble every ~4 min); sleep-talk ~10%.
+  assert.ok(awake / 3000 > 0.2 && awake / 3000 < 0.3, `awake rate ${awake / 3000}`);
+  assert.ok(asleep / 3000 > 0.06 && asleep / 3000 < 0.15, `sleep rate ${asleep / 3000}`);
+});
+
+test("speech picker is deterministic and filters band + context first", () => {
+  const render = loadBundle().plugin.__render;
+  const at = (data, ctx) => render.pickSpeech(data, ctx);
+
+  // Deterministic: identical inputs, identical line.
+  const d1 = { temperament_band: "neutral", mood: "content", lineage_seed: 42, level: 12 };
+  const ctx1 = { timeOfDay: 2, tick: 5, trigger: "tick", recentIds: [] };
+  assert.deepEqual(at(d1, ctx1), at(d1, ctx1));
+
+  // 2am: the late-night pool wins.
+  assert.equal(at(d1, ctx1).ctx, "latenight");
+
+  // Refusal midday: the distrust lines speak.
+  const refusing = { temperament_band: "wary", mood: "content", refusing_pets: true, lineage_seed: 7 };
+  for (let t = 0; t < 30; t++) {
+    assert.equal(at(refusing, { timeOfDay: 13, tick: t }).ctx, "refusing");
+  }
+
+  // Nothing contextual midday: the band's generic pool is the fallback.
+  const fearful = { temperament_band: "fearful", mood: "content", lineage_seed: 9 };
+  for (let t = 0; t < 30; t++) {
+    const line = at(fearful, { timeOfDay: 13, tick: t });
+    assert.equal(line.ctx, "generic");
+    assert.equal(line.band, "fearful");
+  }
+
+  // A beloved kandy never borrows another band's voice.
+  const beloved = { temperament_band: "beloved", mood: "content", lineage_seed: 5150 };
+  for (let t = 0; t < 200; t++) {
+    const line = at(beloved, { timeOfDay: 2, tick: t });
+    assert.ok(line.band === "beloved" || line.band === "any", `${line.id} at tick ${t}`);
+  }
+
+  // The scar carries its own dark humor at any band.
+  const scarred = { temperament_band: "content", mood: "content", scarred: true, lineage_seed: 3 };
+  assert.equal(at(scarred, { timeOfDay: 13, tick: 1 }).ctx, "scarred");
+
+  // Seasons contribute a pool when passed explicitly.
+  const seasonal = at(d1, { timeOfDay: 13, tick: 2, season: "winter" });
+  assert.equal(seasonal.ctx, "winter");
+
+  // Greetings are time-appropriate ("morning!" family in the morning).
+  for (let t = 0; t < 40; t++) {
+    const hello = at(d1, { timeOfDay: 9, tick: t, trigger: "greeting" });
+    assert.ok(hello.ctx === "greeting" || hello.ctx === "morning", `${hello.id}`);
+  }
+
+  // Asleep: sleep-talk only.
+  const murmur = at(d1, { timeOfDay: 23.9, tick: 3, asleep: true });
+  assert.equal(murmur.ctx, "sleep");
+  assert.match(murmur.text, /zzz/);
+
+  // The no-immediate-repeat guard skips just-said lines.
+  const first = at(d1, { timeOfDay: 2, tick: 8 });
+  const second = at(d1, { timeOfDay: 2, tick: 8, recentIds: [first.id] });
+  assert.notEqual(second.id, first.id);
+});
+
+test("arrival gap logic and last-seen storage round-trip", () => {
+  const render = loadBundle().plugin.__render;
+  const H = 60 * 60 * 1000;
+  const now = 1_700_000_000_000;
+  // A fresh install (no stamp) never greets; 6h is the threshold.
+  assert.equal(render.arrivalDue(0, now), false);
+  assert.equal(render.arrivalDue(now - 6 * H + 1, now), false);
+  assert.equal(render.arrivalDue(now - 6 * H, now), true);
+  assert.equal(render.arrivalDue(now - 48 * H, now), true);
+
+  const store = new Map();
+  const storage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, value),
+  };
+  assert.equal(render.readLastSeen(storage), 0);
+  storage.setItem("kandev-kandy-last-seen", "garbage");
+  assert.equal(render.readLastSeen(storage), 0);
+  render.writeLastSeen(now, storage);
+  assert.equal(store.get("kandev-kandy-last-seen"), String(now));
+  assert.equal(render.readLastSeen(storage), now);
+  // Broken storage degrades to "never greet", not a crash.
+  assert.equal(render.readLastSeen({ getItem() { throw new Error("nope"); } }), 0);
+  render.writeLastSeen(now, { setItem() { throw new Error("nope"); } });
+});
+
+test("speech bubble is an app-styled comic bubble anchored to the head", () => {
+  const render = loadBundle().plugin.__render;
+  const blob = sampleKandy({ archetype: 0, mood: "content", scarred: false });
+  const serpent = sampleKandy({ archetype: 3, mood: "content", scarred: false });
+  const line = { id: "neu-g5", text: "don't mind me. I'm ambience.", seq: 4 };
+
+  const bubble = render.speechBubble(jsx, line, blob);
+  assert.equal(bubble.props.className, "kandev-kandy-bubble");
+  assert.equal(bubble.props["aria-hidden"], "true");
+  assert.match(textContent(bubble), /ambience/);
+  assert.equal(bubble.props.style.animationDuration, "7200ms");
+  const tail = findNode(bubble, (n) => n.props && n.props.className === "kandev-kandy-bubbletail");
+  assert.ok(tail, "bubble has a tail toward the creature");
+
+  // A centered blob grows the bubble rightward; a serpent's raised head
+  // (right of center) grows it leftward so the text stays on the card.
+  assert.ok(bubble.props.style.left, "blob bubble anchors from the left");
+  const serpentBubble = render.speechBubble(jsx, line, serpent);
+  assert.ok(serpentBubble.props.style.right, "serpent bubble anchors from the right");
+  assert.equal(serpentBubble.props.style.left, undefined);
+});
+
+test("kandyCard renders the bubble as content but never over reactions", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const data = sampleKandy({ mood: "content", scarred: false });
+  const line = { id: "neu-g1", text: "so we just level forever? cool. cool cool.", seq: 1 };
+  const hasBubble = (card) =>
+    !!findNode(card, (n) => n.props && n.props.className === "kandev-kandy-bubble");
+
+  assert.equal(hasBubble(render.kandyCard(jsx, data, null, null, 13, undefined, line)), true);
+  assert.equal(hasBubble(render.kandyCard(jsx, data, null, null, 13)), false);
+  // Celebrations and care reactions own the pixels while they play.
+  assert.equal(hasBubble(render.kandyCard(jsx, data, { kind: "gain" }, null, 13, undefined, line)), false);
+  assert.equal(
+    hasBubble(render.kandyCard(jsx, data, null, { onPet() {}, fx: 1 }, 13, undefined, line)),
+    false,
+  );
+  assert.equal(
+    hasBubble(render.kandyCard(jsx, data, null, { onPet() {}, bonkFx: 1 }, 13, undefined, line)),
+    false,
+  );
+  // Sleep-talk murmurs still render while asleep (selection guards the
+  // pool; 23.8 is past every seeded bedtime).
+  assert.equal(
+    hasBubble(render.kandyCard(jsx, data, null, null, 23.8, undefined, { id: "slp-a1", text: "…zzz… merge conflict…", seq: 2 })),
+    true,
+  );
+});
+
+test("legacy kandyCard and creature calls stay byte-identical without new params", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  for (const data of [
+    sampleKandy(),
+    sampleKandy({ level: 1, archetype: 0, stage_name: "Egg" }),
+    sampleKandy({ level: 60, archetype: 8, biome: 1, mood: "elated", temperament_band: "beloved" }),
+  ]) {
+    assert.equal(
+      JSON.stringify(render.kandyCard(jsx, data, null, null, 13)),
+      JSON.stringify(render.kandyCard(jsx, data, null, null, 13, undefined, null)),
+    );
+    assert.equal(
+      JSON.stringify(render.kandyCard(jsx, data, null, { onPet() {}, fx: 1, hint: true }, 13)),
+      JSON.stringify(render.kandyCard(jsx, data, null, { onPet() {}, fx: 1, hint: true }, 13, undefined, null)),
+    );
+  }
+});
+
+test("arrival greeting hops on the safe wrapper with motion arcs beside it", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const data = sampleKandy({ mood: "content", scarred: false });
+
+  const card = render.kandyCard(jsx, data, null, { onPet() {}, greetFx: 7 }, 13);
+  const zone = findNode(card, (n) => n.type === "button" && n.props.id === "kandev-kandy-pet-zone");
+  assert.match(zone.props.className, /kandev-kandy-cardhop/);
+  assert.match(zone.props.className, /kandev-kandy-wiggle/);
+  const arcs = findNode(card, (n) => n.props && n.props.className === "kandev-kandy-greetarc");
+  assert.ok(arcs, "motion arcs render beside the creature");
+
+  // Never while asleep: no hop, no arcs (23.8 is past every bedtime).
+  const asleepCard = render.kandyCard(jsx, data, null, { onPet() {}, greetFx: 7 }, 23.8);
+  const asleepZone = findNode(
+    asleepCard,
+    (n) => n.type === "button" && n.props.id === "kandev-kandy-pet-zone",
+  );
+  assert.doesNotMatch(asleepZone.props.className || "", /cardhop/);
+  assert.equal(
+    findNode(asleepCard, (n) => n.props && n.props.className === "kandev-kandy-greetarc"),
+    null,
+  );
+
+  // greetArcsOverlay itself hugs the contact point.
+  const overlay = render.greetArcsOverlay(jsx, 7, data);
+  const c = render.bonkContactFor(data);
+  assert.equal(overlay.props.style.left, c.x - 40 + "px");
+});
+
+test("v0.7.0 visuals respect reduced motion (bubble stays, frills freeze)", () => {
+  const runtime = loadBundle();
+  runtime.plugin.initialize(
+    { registerComponent() {}, registerWsHandler() {} },
+    { React: {}, jsx, ui: {} },
+  );
+  const css = runtime.document.head.children[0].textContent;
+  // Season particles drift via transform-only loops; the bubble's life is
+  // opacity with base 1 (content shows statically when animations are off).
+  assert.match(css, /@keyframes kandev-kandy-snowdrift/);
+  assert.match(css, /@keyframes kandev-kandy-bubblelife/);
+  assert.match(css, /kandev-kandy-bubble\{position:absolute[^}]*background:var\(--popover\)[^}]*font-style:italic/);
+  assert.match(css, /kandev-kandy-bubbletail\{[^}]*transform:rotate\(45deg\)/);
+  const reduced = css.slice(css.indexOf("(prefers-reduced-motion: reduce)"));
+  for (const cls of ["snow", "petal", "leaf", "firefly", "bubble", "greetarc"]) {
+    assert.ok(reduced.includes(`.kandev-kandy-${cls}`), `${cls} silenced under reduced motion`);
+  }
+  runtime.plugin.destroy();
+});
