@@ -1728,6 +1728,208 @@ function cactusPebble(key, x, y) {
   ];
 }
 
+// --- Mid-scene furniture (phases 2-3) --------------------------------------
+// Phases 2-3 used to drop back to flat single-gradient scenes with plain
+// props — crossing 17->18 read as a visual DOWNGRADE. These helpers carry
+// the phase 0-1 craft forward (haloed sun, layered skies, highlighted
+// props) while stepping density and saturation UP: the same place, thriving.
+
+function waterGlints(rand, count) {
+  var out = [];
+  for (var i = 0; i < count; i++) {
+    var x = rand(14, 226);
+    var y = rand(80, 112);
+    out.push(
+      h0("path", {
+        key: "glint" + i,
+        d: "M" + x + " " + y + " q" + rand(3, 6) + " " + rand(-1.6, -0.6) + " " + rand(7, 11) + " 0",
+        stroke: "#ffffff",
+        strokeWidth: 1.1,
+        strokeLinecap: "round",
+        fill: "none",
+        opacity: rand(0.45, 0.8),
+      }),
+    );
+  }
+  return out;
+}
+
+function fishHop(key, x, y) {
+  return [
+    h0("path", {
+      key: key,
+      d: "M" + x + " " + y + " q4 -6 8 0 l3.4 -2.6 l-0.6 3.4 q-5 4.4 -10 0.6 Z",
+      fill: "#ff9a66",
+      stroke: "#e07a48",
+      strokeWidth: 0.7,
+    }),
+    h0("circle", { key: key + "e", cx: x + 2.6, cy: y - 2.2, r: 0.55, fill: "#3a2418" }),
+    h0("circle", { key: key + "d1", cx: x - 2.4, cy: y - 3.6, r: 0.8, fill: "#dff2fb", opacity: 0.9 }),
+    h0("circle", { key: key + "d2", cx: x + 10.6, cy: y - 4.2, r: 0.6, fill: "#dff2fb", opacity: 0.8 }),
+  ];
+}
+
+function bushProp(key, x, y, fill, hi) {
+  return [
+    h0("ellipse", { key: key + "sh", cx: x, cy: y + 3.4, rx: 9, ry: 1.6, fill: "#2c3a24", opacity: 0.16 }),
+    h0("circle", { key: key + "a", cx: x - 4.4, cy: y, r: 4.6, fill: fill }),
+    h0("circle", { key: key + "b", cx: x + 4.2, cy: y + 0.4, r: 4.2, fill: fill }),
+    h0("circle", { key: key + "c", cx: x, cy: y - 3, r: 4.8, fill: fill }),
+    h0("circle", { key: key + "hi", cx: x - 2, cy: y - 4.4, r: 2.4, fill: hi, opacity: 0.9 }),
+    h0("circle", { key: key + "f1", cx: x + 3.4, cy: y - 2.4, r: 1, fill: "#ff8fa3" }),
+    h0("circle", { key: key + "f2", cx: x - 5.4, cy: y - 1.2, r: 0.9, fill: "#ffd166" }),
+  ];
+}
+
+function treesRich(rand, count, fill, hi) {
+  var out = [];
+  for (var i = 0; i < count; i++) {
+    var x = rand(10, 222);
+    var w = rand(11, 19);
+    var ht = rand(24, 44);
+    var top = 120 - ht;
+    out.push(h0("ellipse", { key: "tsh" + i, cx: x + w / 2, cy: 119.4, rx: w * 0.62, ry: 1.7, fill: "#20301c", opacity: 0.16 }));
+    out.push(h0("rect", { key: "ttr" + i, x: x + w / 2 - 1.1, y: 113, width: 2.2, height: 6.4, rx: 0.8, fill: "#6b4a30" }));
+    out.push(h0("path", { key: "tree" + i, d: "M" + x + " 116 L" + (x + w / 2) + " " + top + " L" + (x + w) + " 116 Z", fill: fill, opacity: rand(0.85, 1) }));
+    out.push(
+      h0("path", {
+        key: "thi" + i,
+        d: "M" + (x + w / 2) + " " + top + " L" + (x + w * 0.24) + " " + (116 - ht * 0.22) + " L" + (x + w / 2) + " " + (116 - ht * 0.3) + " Z",
+        fill: hi,
+        opacity: 0.75,
+      }),
+    );
+  }
+  return out;
+}
+
+function butterfly(key, x, y, color) {
+  return [
+    h0("ellipse", { key: key + "l", cx: x - 1.7, cy: y, rx: 1.9, ry: 1.2, fill: color, opacity: 0.95, transform: "rotate(-24 " + (x - 1.7) + " " + y + ")" }),
+    h0("ellipse", { key: key + "r", cx: x + 1.7, cy: y, rx: 1.9, ry: 1.2, fill: color, opacity: 0.95, transform: "rotate(24 " + (x + 1.7) + " " + y + ")" }),
+    h0("circle", { key: key + "b", cx: x, cy: y + 0.4, r: 0.55, fill: "#4a3a2c" }),
+  ];
+}
+
+function snowSparkles(rand, count) {
+  var out = [];
+  for (var i = 0; i < count; i++) {
+    var x = rand(12, 228);
+    var y = rand(30, 108);
+    var s = rand(1.2, 2.2);
+    out.push(
+      h0("path", {
+        key: "spk" + i,
+        d: "M" + x + " " + (y - s) + " L" + x + " " + (y + s) + " M" + (x - s) + " " + y + " L" + (x + s) + " " + y,
+        stroke: "#ffffff",
+        strokeWidth: 0.9,
+        strokeLinecap: "round",
+        opacity: rand(0.5, 0.95),
+      }),
+    );
+  }
+  return out;
+}
+
+function iceCrystal(key, x, y, s) {
+  return [
+    h0("ellipse", { key: key + "sh", cx: x, cy: y + 1.6, rx: s * 2.6, ry: 1.2, fill: "#3c4c6e", opacity: 0.18 }),
+    h0("path", {
+      key: key + "a",
+      d: "M" + (x - s * 1.6) + " " + y + " L" + (x - s * 0.9) + " " + (y - s * 3.2) + " L" + (x - s * 0.1) + " " + y + " Z",
+      fill: "#9fd8e8",
+      opacity: 0.95,
+    }),
+    h0("path", {
+      key: key + "b",
+      d: "M" + (x - s * 0.4) + " " + y + " L" + (x + s * 0.5) + " " + (y - s * 4.4) + " L" + (x + s * 1.4) + " " + y + " Z",
+      fill: "#c5ecf6",
+      opacity: 0.95,
+    }),
+    h0("path", {
+      key: key + "hi",
+      d: "M" + (x + s * 0.3) + " " + (y - s * 1) + " L" + (x + s * 0.5) + " " + (y - s * 3.6) + "",
+      stroke: "#ffffff",
+      strokeWidth: 0.9,
+      strokeLinecap: "round",
+      opacity: 0.9,
+    }),
+  ];
+}
+
+function craggyPeaks(rand, count, fill, faceHi) {
+  var out = [];
+  var x = -10;
+  var i = 0;
+  while (x < 230 && i < count) {
+    var w = rand(60, 110);
+    var peak = rand(18, 42);
+    var apex = x + w / 2;
+    out.push(h0("path", { key: "mtn" + i, d: "M" + x + " 120 L" + apex + " " + peak + " L" + (x + w) + " 120 Z", fill: fill, opacity: 0.9 }));
+    out.push(
+      h0("path", {
+        key: "mface" + i,
+        d: "M" + apex + " " + peak + " L" + (x + w * 0.68) + " 120 L" + (x + w) + " 120 Z",
+        fill: faceHi,
+        opacity: 0.4,
+      }),
+    );
+    out.push(
+      h0("path", {
+        key: "mcap" + i,
+        d:
+          "M" + (apex - 10) + " " + (peak + 13) + " L" + apex + " " + peak + " L" + (apex + 10) + " " + (peak + 13) +
+          " L" + (apex + 5) + " " + (peak + 10) + " L" + apex + " " + (peak + 14) + " L" + (apex - 5) + " " + (peak + 10) + " Z",
+        fill: "#f2f6fd",
+        opacity: 0.97,
+      }),
+    );
+    x += w * 0.7;
+    i++;
+  }
+  return out;
+}
+
+function richMesas(rand, count) {
+  var out = [];
+  for (var i = 0; i < count; i++) {
+    var x = rand(0, 200);
+    var w = rand(26, 52);
+    var ht = rand(30, 60);
+    var top = 120 - ht;
+    out.push(h0("rect", { key: "mesa" + i, x: x, y: top, width: w, height: ht, rx: 4, fill: "#a35a34", opacity: 0.9 }));
+    out.push(h0("rect", { key: "mrim" + i, x: x, y: top, width: w, height: 3.4, rx: 1.7, fill: "#d98a54", opacity: 0.85 }));
+    out.push(
+      h0("path", {
+        key: "mstr" + i,
+        d:
+          "M" + (x + 2) + " " + (top + ht * 0.42) + " H" + (x + w - 2) +
+          " M" + (x + 2) + " " + (top + ht * 0.68) + " H" + (x + w - 2),
+        stroke: "#7c3f22",
+        strokeWidth: 1.4,
+        opacity: 0.55,
+      }),
+    );
+  }
+  return out;
+}
+
+function lavaStrata(rand) {
+  return [
+    h0("path", { key: "lstr1", d: "M-10 120 Q60 " + rand(94, 102) + " 130 112 T 250 106 L250 130 L-10 130 Z", fill: "#7c3a22", opacity: 0.92 }),
+    h0("path", { key: "lstr2", d: "M-10 122 Q90 " + rand(106, 112) + " 250 118 L250 130 L-10 130 Z", fill: "#54241a", opacity: 0.92 }),
+    h0("path", {
+      key: "lvein",
+      d: "M" + rand(26, 60) + " 120 Q" + rand(90, 120) + " " + rand(110, 115) + " " + rand(150, 200) + " 119",
+      stroke: "#ff9a4d",
+      strokeWidth: 1.5,
+      strokeLinecap: "round",
+      fill: "none",
+      opacity: 0.8,
+    }),
+  ];
+}
+
 function dunes(rand) {
   return [
     h0("path", { key: "dune1", d: "M-10 120 Q60 " + rand(78, 92) + " 130 112 T 250 104 L250 130 L-10 130 Z", fill: "#e0b96a", opacity: 0.9 }),
@@ -1758,39 +1960,41 @@ function volcanoProps(rand, embersCount) {
   return out;
 }
 
-// Per-biome gradients, phase 0 (barren/dull) -> 4 (celestial/epic).
-// Phases 0-1 are layered: a soft edge vignette, a pale sun glow, then the
-// pastel dawn sky — modest, but no longer mud.
+// Per-biome gradients, phase 0 (barren/dull) -> 5 (transcendent).
+// Every daytime phase (0-3) is layered: a soft edge vignette, a sun glow,
+// then the sky gradient — richness and saturation step UP at each phase
+// boundary so leveling never makes the scene duller. Phases 4-5 are
+// intentionally night-sky (celestial) and stay single-gradient.
 var BIOME_BGS = [
   [
     "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 55%, rgba(122,92,60,0.18) 100%), radial-gradient(circle at 82% 17%, rgba(255,214,150,0.55) 0%, rgba(255,214,150,0) 40%), linear-gradient(to bottom, #fdeed8 0%, #f1ecc8 45%, #e2e5b4 100%)",
     "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 58%, rgba(60,100,60,0.14) 100%), radial-gradient(circle at 85% 18%, rgba(255,230,150,0.5) 0%, rgba(255,230,150,0) 38%), linear-gradient(to bottom, #cdeaf6 0%, #def1c2 62%, #b7dc9a 100%)",
-    "linear-gradient(to bottom, #a5ddf2 0%, #b7e39a 62%, #7fbf6a 100%)",
-    "linear-gradient(to bottom, #7cc9a0 0%, #2f8f5e 60%, #14532d 100%)",
+    "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 58%, rgba(30,90,50,0.16) 100%), radial-gradient(circle at 84% 16%, rgba(255,240,165,0.5) 0%, rgba(255,240,165,0.16) 20%, rgba(255,240,165,0) 46%), linear-gradient(to bottom, #9edcf5 0%, #abdf8c 60%, #6db85c 100%)",
+    "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 58%, rgba(12,70,40,0.2) 100%), radial-gradient(circle at 82% 15%, rgba(255,235,160,0.55) 0%, rgba(255,235,160,0.18) 20%, rgba(255,235,160,0) 48%), linear-gradient(to bottom, #8fd9ae 0%, #37995f 60%, #1a6b3c 100%)",
     "linear-gradient(to bottom, #0e2b38 0%, #14532d 60%, #052e16 100%)",
     "linear-gradient(to bottom, #1a0f3d 0%, #0f4f3a 55%, #020d08 100%)",
   ],
   [
     "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 55%, rgba(60,90,110,0.16) 100%), radial-gradient(circle at 82% 18%, rgba(255,238,190,0.5) 0%, rgba(255,238,190,0) 40%), linear-gradient(to bottom, #d9eef7 0%, #e9ecd8 48%, #ecd9ae 100%)",
     "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 58%, rgba(25,80,110,0.14) 100%), radial-gradient(circle at 85% 18%, rgba(255,240,190,0.5) 0%, rgba(255,240,190,0) 38%), linear-gradient(to bottom, #d8edf4 0%, #b6dcec 55%, #8fc6da 100%)",
-    "linear-gradient(to bottom, #a8d8ea 0%, #5ca8d8 55%, #2f6f9f 100%)",
-    "linear-gradient(to bottom, #4fa3c7 0%, #23648f 60%, #123c5c 100%)",
+    "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 58%, rgba(18,70,105,0.18) 100%), radial-gradient(circle at 84% 15%, rgba(255,240,185,0.5) 0%, rgba(255,240,185,0.16) 20%, rgba(255,240,185,0) 46%), linear-gradient(to bottom, #a6dcf2 0%, #58aadc 55%, #2b6fa3 100%)",
+    "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 58%, rgba(10,55,90,0.22) 100%), radial-gradient(circle at 82% 16%, rgba(255,235,175,0.5) 0%, rgba(255,235,175,0.16) 20%, rgba(255,235,175,0) 48%), linear-gradient(to bottom, #5cb2d6 0%, #2570a0 60%, #144265 100%)",
     "linear-gradient(to bottom, #0b2c4a 0%, #0e4a6e 60%, #04121f 100%)",
     "linear-gradient(to bottom, #150a3d 0%, #0e4a6e 55%, #02060f 100%)",
   ],
   [
     "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 55%, rgba(60,70,100,0.17) 100%), radial-gradient(circle at 80% 16%, rgba(255,248,225,0.55) 0%, rgba(255,248,225,0) 40%), linear-gradient(to bottom, #ecebf7 0%, #e3e8f2 55%, #d9dfe8 100%)",
     "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 58%, rgba(50,70,110,0.15) 100%), radial-gradient(circle at 83% 15%, rgba(255,248,224,0.5) 0%, rgba(255,248,224,0) 38%), linear-gradient(to bottom, #e1e9f6 0%, #c8d5e9 60%, #a9bcd7 100%)",
-    "linear-gradient(to bottom, #cdd7e8 0%, #8fa3c4 60%, #5c6f96 100%)",
-    "linear-gradient(to bottom, #b8c8ea 0%, #6d83b8 60%, #3a4c7c 100%)",
+    "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 58%, rgba(45,60,100,0.18) 100%), radial-gradient(circle at 82% 14%, rgba(255,248,220,0.55) 0%, rgba(255,248,220,0.18) 20%, rgba(255,248,220,0) 46%), linear-gradient(to bottom, #d3ddf0 0%, #94a9cc 60%, #5b7099 100%)",
+    "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 58%, rgba(35,50,95,0.2) 100%), radial-gradient(circle at 81% 14%, rgba(255,246,210,0.55) 0%, rgba(255,246,210,0.18) 20%, rgba(255,246,210,0) 48%), linear-gradient(to bottom, #bccbee 0%, #7288bd 60%, #3d5185 100%)",
     "linear-gradient(to bottom, #0a1a33 0%, #16305e 60%, #050d1f 100%)",
     "linear-gradient(to bottom, #1b0a3d 0%, #1c3a72 55%, #03040c 100%)",
   ],
   [
     "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 55%, rgba(120,60,30,0.18) 100%), radial-gradient(circle at 82% 18%, rgba(255,180,110,0.55) 0%, rgba(255,180,110,0) 40%), linear-gradient(to bottom, #fce3c0 0%, #f8d5a5 55%, #efc691 100%)",
     "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 58%, rgba(140,80,30,0.16) 100%), radial-gradient(circle at 82% 17%, rgba(255,200,120,0.55) 0%, rgba(255,200,120,0) 38%), linear-gradient(to bottom, #ffe7ba 0%, #f9cf8b 60%, #e9b269 100%)",
-    "linear-gradient(to bottom, #f0b878 0%, #cc7a4a 60%, #8a4a2e 100%)",
-    "linear-gradient(to bottom, #3a1414 0%, #6e2b1c 60%, #251010 100%)",
+    "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 58%, rgba(110,45,20,0.2) 100%), radial-gradient(circle at 83% 15%, rgba(255,205,130,0.55) 0%, rgba(255,205,130,0.18) 20%, rgba(255,205,130,0) 46%), linear-gradient(to bottom, #f4bc7c 0%, #cf7c4a 60%, #8f4c2c 100%)",
+    "radial-gradient(130% 100% at 50% 40%, rgba(0,0,0,0) 55%, rgba(50,12,8,0.3) 100%), radial-gradient(circle at 80% 18%, rgba(255,170,90,0.6) 0%, rgba(255,160,85,0.2) 22%, rgba(255,150,80,0) 52%), linear-gradient(to bottom, #f09c52 0%, #b0492a 58%, #571c14 100%)",
     "linear-gradient(to bottom, #1c0f2e 0%, #4a1c3f 60%, #12060f 100%)",
     "linear-gradient(to bottom, #0f0a3d 0%, #571f4a 55%, #070310 100%)",
   ],
@@ -1813,8 +2017,28 @@ function biomeProps(biome, phase, rand, level) {
           pondReeds(rand, "reed", 26 + rand(0, 8)),
           lilypad("lp", 188 + rand(-8, 8), 108),
         );
-      if (phase === 2) return waves(rand, 4 + Math.floor(density / 10));
-      if (phase === 3) return waves(rand, 3).concat(coral(rand, 4 + Math.floor(density / 8)), bubbles(rand, 5));
+      if (phase === 2)
+        return sunDisc(205, 22, 12, "#fff1b8", "#ffe9c9").concat(
+          waves(rand, 4 + Math.floor(density / 10)),
+          waterGlints(rand, 5 + Math.floor(density / 8)),
+          pondReeds(rand, "reedA", 22 + rand(0, 8)),
+          pondReeds(rand, "reedB", 216 + rand(-6, 4)),
+          lilypad("lp0", 178 + rand(-8, 8), 108),
+          lilypad("lp1", 62 + rand(-8, 8), 114),
+          fishHop("fish0", 118 + rand(-18, 18), 90),
+        );
+      if (phase === 3)
+        return sunDisc(204, 21, 13, "#fff1b8", "#ffe9c9").concat(
+          waves(rand, 4),
+          waterGlints(rand, 8),
+          coral(rand, 5 + Math.floor(density / 8)),
+          bubbles(rand, 7),
+          pondReeds(rand, "reedA", 20 + rand(0, 8)),
+          lilypad("lp0", 190 + rand(-8, 8), 106),
+          lilypad("lp1", 44 + rand(-8, 8), 112),
+          fishHop("fish0", 100 + rand(-16, 16), 86),
+          fishHop("fish1", 168 + rand(-12, 12), 96),
+        );
       return bubbles(rand, 8 + Math.floor(density / 4)).concat(coral(rand, 5), stars(rand, Math.min(6 + Math.max(level - 40, 0), 40), "#9be7ff"));
     case 2: // alpine: dawn tundra -> foothills -> peaks -> crystal -> celestial
       if (phase === 0)
@@ -1830,8 +2054,25 @@ function biomeProps(biome, phase, rand, level) {
           sunDisc(200, 20, 9, "#fff4d6", "#fffdf4"),
           snowTuft("snw", 56 + rand(-12, 12), 112),
         );
-      if (phase === 2) return mountains(rand, 4, "#41527a", true);
-      if (phase === 3) return mountains(rand, 4, "#3a4c7c", true).concat(flowerDots(rand, 4));
+      if (phase === 2)
+        return distantPeaks(rand, "#9fafcf", "#eef3fc").concat(
+          sunDisc(200, 19, 10, "#fff4d6", "#fffdf4"),
+          craggyPeaks(rand, 4, "#41527a", "#93a5cc"),
+          snowSparkles(rand, 5 + Math.floor(density / 10)),
+          snowTuft("snwA", 52 + rand(-12, 12), 113),
+          snowTuft("snwB", 186 + rand(-10, 10), 115),
+        );
+      if (phase === 3)
+        return distantPeaks(rand, "#93a5cc", "#eef3fc").concat(
+          sunDisc(199, 18, 11, "#fff4d6", "#fffdf4"),
+          craggyPeaks(rand, 4, "#37497c", "#8fa3d1"),
+          snowSparkles(rand, 9),
+          flowerDots(rand, 6),
+          iceCrystal("iceA", 54 + rand(-12, 12), 116, 3),
+          iceCrystal("iceB", 190 + rand(-10, 10), 118, 2.4),
+          snowTuft("snwA", 118 + rand(-14, 14), 114),
+          softStone("st3", 158 + rand(-10, 10), 112, 1.6, "#8fa0ba", "#c6d2e6"),
+        );
       return mountains(rand, 3, "#101d3d", true).concat(auroraRibbons(rand, 3), stars(rand, Math.min(14 + Math.max(level - 40, 0), 50)));
     case 3: // ember: warm dawn dunes -> dunes -> canyon -> volcano -> starfire
       if (phase === 0)
@@ -1848,12 +2089,23 @@ function biomeProps(biome, phase, rand, level) {
           emberSpark("emb", 188 + rand(-8, 8), 96),
         );
       if (phase === 2)
-        return mesas(rand, 4).concat(
-          currentDayPhase === "night"
-            ? []
-            : [h0("circle", { key: "csun", cx: 205, cy: 20, r: 11, fill: "#ffddaa", opacity: 0.9 })],
+        return sunDisc(205, 20, 12, "#ffddaa", "#ffcb84").concat(
+          richMesas(rand, 4),
+          dunes(rand),
+          sandRipples(rand, "#b0793e"),
+          cactusPebble("cacA", 40 + rand(-10, 10), 106),
+          cactusPebble("cacB", 200 + rand(-10, 10), 110),
+          emberSpark("embA", 148 + rand(-10, 10), 98),
+          emberSpark("embB", 84 + rand(-8, 8), 92),
         );
-      if (phase === 3) return volcanoProps(rand, 4 + Math.floor(density / 10));
+      if (phase === 3)
+        return sunDisc(202, 24, 13, "#ffd98e", "#ff9a4d").concat(
+          volcanoProps(rand, 5 + Math.floor(density / 10)),
+          lavaStrata(rand),
+          emberSpark("embA", 186 + rand(-10, 10), 92),
+          emberSpark("embB", 30 + rand(-8, 8), 86),
+          cactusPebble("cacA", 208 + rand(-8, 6), 112),
+        );
       return volcanoProps(rand, 6).concat(stars(rand, Math.min(12 + Math.max(level - 40, 0), 50)));
     default: // 0 verdant: dawn field -> meadow -> woods -> lush -> enchanted
       if (phase === 0)
@@ -1870,8 +2122,26 @@ function biomeProps(biome, phase, rand, level) {
           flowerDots(rand, 2),
           softStone("st0", 38 + rand(-8, 8), 112, 1.4, "#a8bd8a", "#ccdcb0"),
         );
-      if (phase === 2) return grassBlades(rand, 10, "#4c8a3f").concat(treeProps(rand, 3 + Math.floor(density / 8), "#2c6e46"), flowerDots(rand, 3));
-      if (phase === 3) return treeProps(rand, 6 + Math.floor(density / 6), "#1d4d31").concat(flowerDots(rand, 6), grassBlades(rand, 8, "#2f6e3f"));
+      if (phase === 2)
+        return hills(rand, 2, "#8fc477").concat(
+          sunDisc(204, 21, 12, "#ffdf6b", "#ffe9a3"),
+          grassBlades(rand, 10 + Math.floor(density / 3), "#4c8a3f"),
+          treesRich(rand, 3 + Math.floor(density / 8), "#2c6e46", "#5ea878"),
+          bushProp("bshA", 176 + rand(-10, 10), 112, "#4f9457", "#7cb884"),
+          flowerDots(rand, 5),
+          butterfly("bfA", 62 + rand(-14, 14), 78 + rand(-8, 8), "#ffb3c6"),
+        );
+      if (phase === 3)
+        return hills(rand, 2, "#6cae5c").concat(
+          sunDisc(203, 20, 13, "#ffdf6b", "#ffe9a3"),
+          treesRich(rand, 6 + Math.floor(density / 6), "#1d4d31", "#4c8a5f"),
+          grassBlades(rand, 10, "#2f6e3f"),
+          bushProp("bshA", 34 + rand(-8, 8), 113, "#3f8449", "#6cab74"),
+          bushProp("bshB", 196 + rand(-8, 8), 115, "#478c50", "#74b17c"),
+          flowerDots(rand, 8),
+          butterfly("bfA", 96 + rand(-16, 16), 72 + rand(-8, 8), "#ffd166"),
+          butterfly("bfB", 152 + rand(-12, 12), 84 + rand(-6, 6), "#c792ea"),
+        );
       return treeProps(rand, 6, "#0c3a24").concat(fireflies(rand, 8 + Math.floor(density / 5)), stars(rand, Math.min(8 + Math.max(level - 40, 0), 40)));
   }
 }
