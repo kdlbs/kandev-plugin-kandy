@@ -93,6 +93,37 @@
 //   always white with dark text (it lives inside the illustrated scene,
 //   not the UI chrome) and clamps on both axes so tall creatures and
 //   long lines never poke past the card.
+//
+// v0.8.0 — they walk now, and they cry when sad (pure client):
+//   WANDER: a new state-driven layer between the layout transform and the
+//   gait wrappers lets the creature stroll along the scene floor. Strolls
+//   are deterministic (hash of lineage_seed + a 10s time bucket, mood-
+//   modulated: elated/happy often, content normal, bored rare, sad/gloomy
+//   almost never, asleep/egg/reduced-motion never), targets clamp to
+//   ±35px AND the body's own half-width so it never crosses the scene
+//   edge (which CLIPS: the scene's overflow hidden swallows anything that
+//   pokes past, wide Lv60+ auras included). Movement is smoothstepped at
+//   ~22px/s — except the cogling, which steps in discrete 3px increments
+//   on linear time, like the robot it is. Each archetype walks in
+//   character (waddle / stride / slither / shuffle / drift / hop-skip /
+//   glide) via transform-only keyframes on a dedicated gait wrapper;
+//   facing flips on a separate scaleX wrapper. Every bonkContactFor
+//   consumer (treat, bucket, bubble, hold-to-tip, greeting arcs, tears)
+//   takes the live wander offset, and the pet-zone BUTTON rides inside
+//   the wander layer so clicking the creature where it visually stands
+//   always works. Interactions freeze the current leg in place (no
+//   resume — see freezeMotionForInteraction for the chosen semantics).
+//   CRY: sad kandys hold occasional ~12s crying bouts (deterministic
+//   15s-bucket gate, ~every 3-5min of open-card time; gloomy doubles the
+//   odds; never while walking, sleeping, or mid-interaction — a bout due
+//   mid-stroll waits for the stroll to finish). Tears spawn at the EXACT
+//   eye positions from the renderer's own face geometry (per archetype,
+//   per stage — every one of a gazer's 3-5 eyes weeps) and gravity-fall
+//   on ~1.1s cycles with phase offsets; a sob-shudder rocks the
+//   animation-safe wrapper every ~2.5s; a small capped puddle grows under
+//   it and fades as the bout ends. Composes over the existing sad face.
+//   Reduced motion: no walking at all, no animated tears (the static
+//   teardrop stays). Server untouched.
 
 var PLUGIN_ID = "kandev-plugin-kandy";
 var STYLE_ID = "kandev-kandy-style";
@@ -1401,6 +1432,11 @@ function creatureSvg(h, data, size, extraClass, isStatic) {
   else if (mood === "sad" || mood === "gloomy") bobCls = "kandev-kandy-bobsad";
   // Asleep (or grumpily half-woken): the idle bob stops — it's lying still.
   if (data.sleep_state) bobCls = "";
+  // Walking with a grounded gait (v0.8.0): the gait keyframes own vertical
+  // motion; the idle bob yields for the stroll. Floaty archetypes keep the
+  // bob — their hover-glide IS the bob (walk_suppress_bob is a render-only
+  // field kandyCard sets from gaitFor().keepBob).
+  if (data.walk_suppress_bob) bobCls = "";
   return h(
     "svg",
     {
@@ -2551,6 +2587,25 @@ var KANDY_CSS =
   "@keyframes kandev-kandy-bubblelife{0%{opacity:0;transform:translateY(3px)}6%{opacity:1;transform:translateY(0)}90%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-2px)}}" +
   // Arrival motion arcs: opacity only, quick in and out.
   "@keyframes kandev-kandy-greetarc{0%{opacity:0}25%{opacity:0.9}70%{opacity:0.75}100%{opacity:0}}" +
+  // Gait keyframes (v0.8.0): transform-only loops that live on the
+  // dedicated gait wrapper (no base transform there — the layering rule).
+  // Periods echo the approved prototype (waddle ~0.45s ≈ ±4° at 14rad/s).
+  "@keyframes kandev-kandy-gaitwaddle{0%,100%{transform:rotate(-3.5deg) translateY(0)}25%{transform:rotate(0deg) translateY(-2.2px)}50%{transform:rotate(3.5deg) translateY(0)}75%{transform:rotate(0deg) translateY(-2.2px)}}" +
+  "@keyframes kandev-kandy-gaitstride{0%,100%{transform:rotate(-2.4deg)}50%{transform:rotate(2.4deg)}}" +
+  "@keyframes kandev-kandy-gaitslither{0%,100%{transform:translateX(-2.5px) rotate(-1.6deg)}50%{transform:translateX(2.5px) rotate(1.6deg)}}" +
+  "@keyframes kandev-kandy-gaitshuffle{0%,100%{transform:rotate(-1.8deg) translateY(0)}50%{transform:rotate(1.8deg) translateY(-1.2px)}}" +
+  "@keyframes kandev-kandy-gaithopskip{0%,55%,100%{transform:translateY(0) rotate(0deg)}20%{transform:translateY(-5px) rotate(-2deg)}38%{transform:translateY(0) rotate(0deg)}70%{transform:translateY(-2.5px) rotate(2deg)}82%{transform:translateY(0)}}" +
+  "@keyframes kandev-kandy-gaitglide{0%,100%{transform:rotate(-1.5deg) translateY(0)}50%{transform:rotate(1.5deg) translateY(-1.5px)}}" +
+  // Sob-shudder (v0.8.0): a small decaying rock every ~2.5s while a bout
+  // plays. Transform only — it shares the animation-safe inner wrapper
+  // with wiggle and must be DECLARED after it (see the class rules).
+  "@keyframes kandev-kandy-sob{0%,84%,100%{transform:rotate(0deg)}88%{transform:rotate(-2.2deg)}92%{transform:rotate(1.8deg)}96%{transform:rotate(-1deg)}}" +
+  // Tears: ~1.1s gravity fall (ease-in on the class) over each eye's own
+  // --tearfall distance, fading just before the ground.
+  "@keyframes kandev-kandy-tearfall{0%{opacity:0;transform:translateY(0)}12%{opacity:0.95}75%{opacity:0.95}100%{opacity:0;transform:translateY(var(--tearfall,40px))}}" +
+  // Puddle: grows through the bout (animationDuration = CRY_BOUT_MS
+  // inline), caps small, fades out as the bout ends.
+  "@keyframes kandev-kandy-puddlegrow{0%{opacity:0;transform:scaleX(0.25)}18%{opacity:0.42}80%{opacity:0.5;transform:scaleX(1)}100%{opacity:0;transform:scaleX(1)}}" +
   ".kandev-kandy-bob{animation:kandev-kandy-bob 2.8s ease-in-out infinite}" +
   ".kandev-kandy-bob-fast{animation-duration:1.6s}" +
   ".kandev-kandy-bob-slow{animation-duration:5.5s}" +
@@ -2577,6 +2632,19 @@ var KANDY_CSS =
   ".kandev-kandy-munch{animation:kandev-kandy-munchhop 0.7s ease 0.45s both;transform-origin:50% 100%}" +
   ".kandev-kandy-soaked{animation:kandev-kandy-wettint 1.9s ease 0.5s both,kandev-kandy-shiver 1.1s ease-in-out 0.9s both}" +
   ".kandev-kandy-turnaway{animation:kandev-kandy-turnaway 1.1s ease;transform-origin:50% 85%}" +
+  // sob is declared after wiggle for the same reason as munch/soaked: the
+  // later single-class animation shorthand wins while a bout plays.
+  ".kandev-kandy-sob{animation:kandev-kandy-sob 2.5s ease-in-out infinite;transform-origin:50% 85%}" +
+  // Gait classes (v0.8.0) live on the dedicated gait wrapper. The wisp's
+  // drift is a STATIC trailing lean, not an animation — smooth floating,
+  // no steps (the facing flip outside mirrors the lean automatically).
+  ".kandev-kandy-gait-waddle{animation:kandev-kandy-gaitwaddle 0.45s linear infinite;transform-origin:50% 100%}" +
+  ".kandev-kandy-gait-stride{animation:kandev-kandy-gaitstride 0.9s ease-in-out infinite;transform-origin:50% 100%}" +
+  ".kandev-kandy-gait-slither{animation:kandev-kandy-gaitslither 0.6s ease-in-out infinite;transform-origin:50% 100%}" +
+  ".kandev-kandy-gait-shuffle{animation:kandev-kandy-gaitshuffle 0.3s linear infinite;transform-origin:50% 100%}" +
+  ".kandev-kandy-gait-hopskip{animation:kandev-kandy-gaithopskip 0.55s ease-in-out infinite;transform-origin:50% 100%}" +
+  ".kandev-kandy-gait-glide{animation:kandev-kandy-gaitglide 1.2s ease-in-out infinite;transform-origin:50% 50%}" +
+  ".kandev-kandy-gait-drift{transform:rotate(-5deg);transform-origin:50% 80%}" +
   // Overlay elements: base opacity 0 so nothing shows during their sync
   // delays — or at all under prefers-reduced-motion (animation:none
   // leaves the base state).
@@ -2595,6 +2663,11 @@ var KANDY_CSS =
   ".kandev-kandy-splashdrop{position:absolute;opacity:0;animation:kandev-kandy-fleck 0.6s ease-out both;pointer-events:none}" +
   ".kandev-kandy-drip{position:absolute;opacity:0;animation:kandev-kandy-drip 0.8s ease-in both;pointer-events:none}" +
   ".kandev-kandy-dots{position:absolute;font-size:15px;font-weight:700;opacity:0;letter-spacing:2px;animation:kandev-kandy-dotsfade 1.4s ease 0.35s both;pointer-events:none}" +
+  // Cry overlay elements: base opacity 0 so reduced motion (animation:
+  // none) shows nothing — the sad face's static teardrop stays the only
+  // tear there.
+  ".kandev-kandy-tear{position:absolute;opacity:0;animation:kandev-kandy-tearfall 1.1s ease-in infinite;pointer-events:none}" +
+  ".kandev-kandy-puddle{position:absolute;opacity:0;animation:kandev-kandy-puddlegrow ease-out both;transform-origin:50% 50%;pointer-events:none}" +
   // zzz base opacity 0 (they fade in through the loop); the lead z carries
   // a visible base opacity so reduced motion shows a static single z.
   ".kandev-kandy-zzz{opacity:0;animation:kandev-kandy-zzz 2.7s ease-in-out infinite}" +
@@ -2618,7 +2691,7 @@ var KANDY_CSS =
   ".kandev-kandy-photo-panel:focus{outline:none}" +
   ".kandev-kandy-photo-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc{animation:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc,.kandev-kandy-sob,.kandev-kandy-tear,.kandev-kandy-puddle,.kandev-kandy-gait-waddle,.kandev-kandy-gait-stride,.kandev-kandy-gait-slither,.kandev-kandy-gait-shuffle,.kandev-kandy-gait-hopskip,.kandev-kandy-gait-glide{animation:none}.kandev-kandy-gait-drift{transform:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -2807,7 +2880,15 @@ function careHintText(coarse) {
 // centered ~2px above the scene floor (plus the inline-svg baseline gap).
 var BONK_SCENE = { w: 248, h: 124, svgPx: 92, bottomPx: 5 };
 
-function bonkContactFor(data) {
+// wanderX (v0.8.0, optional): the live wander-layer offset in scene px.
+// EVERY consumer of the contact point passes it through so treats fall,
+// buckets pour, bubbles point, and tears well wherever the creature has
+// actually strolled to. mirrored (also v0.8.0): true while the facing
+// wrapper holds scaleX(-1) — asymmetric bodies (the serpent's raised
+// head) have their contact point reflected about the body center, so the
+// bucket pours on the head it actually shows. Omitted args keep the
+// legacy centered math exact.
+function bonkContactFor(data, wanderX, mirrored) {
   var vx = 50;
   var vy = 44; // egg: just under the shell's crown (cy 62 - ry 22 = 40)
   if (data && data.level > 1) {
@@ -2830,11 +2911,321 @@ function bonkContactFor(data) {
     vx = 50 + (body.top.x - 50) * s;
     vy = 88 - (88 - (body.top.y + 3)) * s;
   }
+  // The facing flip mirrors the drawn body about viewBox x=50 (the svg is
+  // centered in its wrapper), so the contact point mirrors with it.
+  if (mirrored) vx = 100 - vx;
   var k = BONK_SCENE.svgPx / 100;
   return {
-    x: BONK_SCENE.w / 2 + (vx - 50) * k,
+    x: BONK_SCENE.w / 2 + (vx - 50) * k + (wanderX || 0),
     y: BONK_SCENE.h - BONK_SCENE.bottomPx - (100 - vy) * k,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Wander (v0.8.0) — they walk now. Pure helpers here; the widget owns the
+// clock. Layer order (kandyCard): the outer positioning div keeps the
+// layout transform (left:50% + translateX(-50%)), the WANDER div carries a
+// state-driven inline translateX (never a CSS animation — the layering
+// rule), the FACING div carries a state-driven scaleX flip, and the GAIT
+// div carries only transform keyframe animations with no base transform.
+// ---------------------------------------------------------------------------
+
+var WANDER_MAX_PX = 35; // hard cap on how far a stroll may take it
+var WANDER_EDGE_MARGIN_PX = 2; // spare px between body edge and scene edge
+var WANDER_MIN_DIST_PX = 14; // strolls shorter than this aren't worth it
+var WANDER_SPEED_PX_S = 22; // the unhurried cruising speed
+var WANDER_MIN_LEG_MS = 600;
+var WANDER_BUCKET_MS = 10000; // gate granularity: one stroll vote per 10s
+var WANDER_FRAME_MS = 40; // ~25fps position updates while a leg plays
+var COG_STEP_PX = 3; // the cogling's discrete step size
+
+// Mood-modulated stroll odds per 10s bucket. Expected stroll cadence:
+// elated/happy ~25s, content ~40s, bored ~2min, sad/gloomy ~8min+ (they
+// mostly just stand there). Asleep and eggs never vote at all (widget).
+var WANDER_GATE_P = {
+  elated: 0.4,
+  happy: 0.4,
+  content: 0.25,
+  bored: 0.08,
+  sad: 0.02,
+  gloomy: 0.02,
+};
+
+// Crying bouts (v0.8.0): sad ~every 4min of open-card time, gloomy ~2x.
+var CRY_BUCKET_MS = 15000;
+var CRY_BOUT_MS = 12000;
+var CRY_GATE_P = { sad: 0.0625, gloomy: 0.125 };
+
+// The widget's motion clock: gates are re-evaluated every 5s (buckets are
+// deduped, so each 10s/15s bucket still votes at most once).
+var MOTION_TICK_MS = 5000;
+
+// Per-archetype widest half-extent in viewBox units (body only — wide
+// ambient effects deliberately excluded: the scene edge CLIPS them).
+// Indexed like BODY_BUILDERS.
+var BODY_HALF_W = [26, 23, 34, 36, 36, 20, 31, 25, 23, 12];
+
+// Per-archetype gait: the CSS class animated on the dedicated gait wrapper
+// while a leg plays (null = none), whether the wander X interpolation is
+// STEPPED (cogling robotics), and whether the mood-tempo idle bob keeps
+// running during the walk (floaty archetypes hover-glide on their bob;
+// grounded steppers hand vertical motion to the gait keyframes).
+var GAITS = [
+  { cls: "kandev-kandy-gait-waddle", stepped: false, keepBob: false }, // blob
+  { cls: "kandev-kandy-gait-stride", stepped: false, keepBob: false }, // willow
+  { cls: "kandev-kandy-gait-waddle", stepped: false, keepBob: false }, // chonk
+  { cls: "kandev-kandy-gait-slither", stepped: false, keepBob: false }, // noodle
+  { cls: "kandev-kandy-gait-shuffle", stepped: false, keepBob: false }, // sporeling
+  { cls: "kandev-kandy-gait-drift", stepped: false, keepBob: true }, // wisp
+  { cls: "kandev-kandy-gait-hopskip", stepped: false, keepBob: false }, // shardling
+  { cls: null, stepped: true, keepBob: false }, // cogling: stepped X is the gait
+  { cls: "kandev-kandy-gait-glide", stepped: false, keepBob: true }, // gazer
+  { cls: "kandev-kandy-gait-glide", stepped: false, keepBob: true }, // flitter
+];
+
+function gaitFor(archetype) {
+  return GAITS[(((archetype || 0) % GAITS.length) + GAITS.length) % GAITS.length];
+}
+
+// wanderGate / cryGate — the deterministic votes, same seeded-hash core as
+// the speech gate (salts 5/6 keep the streams independent).
+function wanderGate(seed, bucket, mood) {
+  var p = WANDER_GATE_P[mood];
+  if (p === undefined) p = WANDER_GATE_P.content;
+  return speechHash01(seed, bucket, 5) < p;
+}
+
+function cryGate(seed, bucket, mood) {
+  var p = CRY_GATE_P[mood] || 0;
+  return p > 0 && speechHash01(seed, bucket, 6) < p;
+}
+
+// wanderLimitFor — the stroll amplitude: ±35px, additionally clamped so
+// the body's widest extent (at its current stage scale) never crosses the
+// scene edge. Wide high-level effects are NOT part of the clamp — the
+// scene's overflow hidden clips them cleanly at the boundary instead.
+function wanderLimitFor(data) {
+  var half = 15;
+  if (data && data.level > 1) {
+    var arch =
+      (((data.archetype || 0) % BODY_HALF_W.length) + BODY_HALF_W.length) % BODY_HALF_W.length;
+    half = BODY_HALF_W[arch] * STAGE_SCALE[growthForLevel(data.level).stage];
+  }
+  var bodyPx = half * (BONK_SCENE.svgPx / 100);
+  return Math.max(0, Math.min(WANDER_MAX_PX, BONK_SCENE.w / 2 - bodyPx - WANDER_EDGE_MARGIN_PX));
+}
+
+// wanderTargetFor — a deterministic destination inside ±limit, nudged to
+// be at least WANDER_MIN_DIST_PX away from where it stands (a two-pixel
+// shuffle reads as jitter, not a stroll).
+function wanderTargetFor(seed, bucket, fromX, limit) {
+  var u = speechHash01(seed, bucket, 7);
+  var target = -limit + u * 2 * limit;
+  if (Math.abs(target - fromX) < WANDER_MIN_DIST_PX) {
+    // Head toward the side with more room, seeded stride length.
+    target = fromX + (fromX <= 0 ? 1 : -1) * WANDER_MIN_DIST_PX * (1 + u);
+  }
+  return Math.min(Math.max(target, -limit), limit);
+}
+
+function smoothstep(p) {
+  if (p <= 0) return 0;
+  if (p >= 1) return 1;
+  return p * p * (3 - 2 * p);
+}
+
+// wanderLegFor — the full stroll plan for a passed gate: destination and
+// duration at the ~22px/s cruising feel.
+function wanderLegFor(data, bucket, fromX) {
+  var seed = ((data && data.lineage_seed) || 1) >>> 0;
+  var to = wanderTargetFor(seed, bucket, fromX, wanderLimitFor(data));
+  return {
+    from: fromX,
+    to: to,
+    durMs: Math.max(WANDER_MIN_LEG_MS, (Math.abs(to - fromX) / WANDER_SPEED_PX_S) * 1000),
+    stepped: gaitFor(data && data.archetype).stepped,
+  };
+}
+
+// wanderXAt — position along a leg after elapsedMs. Smoothstep easing for
+// everyone except the cogling, which advances on LINEAR time in discrete
+// 3px increments (no easing — robotic).
+function wanderXAt(leg, elapsedMs) {
+  var p = leg.durMs > 0 ? elapsedMs / leg.durMs : 1;
+  if (p >= 1) return leg.to;
+  if (p < 0) p = 0;
+  var dist = leg.to - leg.from;
+  if (leg.stepped) {
+    var steps = Math.floor((Math.abs(dist) * p) / COG_STEP_PX);
+    return leg.from + (dist >= 0 ? 1 : -1) * steps * COG_STEP_PX;
+  }
+  return leg.from + dist * smoothstep(p);
+}
+
+// motionDecide — the pure per-tick decision core for walking AND crying;
+// the widget owns timers/state and just applies the returned action.
+//   state: { x, leg, cryUntil, cryPending, lastWanderBucket, lastCryBucket }
+//   inp:   { now, data, asleep, reducedMotion, fxActive }
+// Actions:
+//   {type:"none"}        — nothing this tick
+//   {type:"halt"}        — asleep/egg/reduced-motion: freeze any leg where
+//                          it stands and cancel any bout (pending included)
+//   {type:"start-cry"}   — begin a ~12s bout now (stationary only)
+//   {type:"cry-pending"} — a bout came due mid-stroll; it waits for the
+//                          stroll to finish (started by the leg's end)
+//   {type:"start-leg", leg, facing} — begin a stroll
+// Yield rules encoded here: interactions (fxActive) block NEW motion — the
+// interaction handlers themselves freeze an in-flight leg the moment they
+// fire (freezeMotionForInteraction), so this tick never sees that race.
+function motionDecide(state, inp) {
+  var d = inp.data;
+  var busy = state.leg || state.cryUntil > inp.now || state.cryPending;
+  if (!d || !(d.level > 1) || inp.reducedMotion || inp.asleep) {
+    return busy ? { type: "halt" } : { type: "none" };
+  }
+  if (inp.fxActive) return { type: "none" };
+  var seed = (d.lineage_seed || 1) >>> 0;
+  var mood = d.mood || "content";
+  var crying = state.cryUntil > inp.now;
+  if (!crying && !state.cryPending) {
+    var cb = Math.floor(inp.now / CRY_BUCKET_MS);
+    if (cb !== state.lastCryBucket && cryGate(seed, cb, mood)) {
+      return state.leg ? { type: "cry-pending" } : { type: "start-cry" };
+    }
+  }
+  if (state.cryPending && !state.leg) return { type: "start-cry" };
+  if (!state.leg && !crying) {
+    var wb = Math.floor(inp.now / WANDER_BUCKET_MS);
+    if (wb !== state.lastWanderBucket && wanderGate(seed, wb, mood)) {
+      var leg = wanderLegFor(d, wb, state.x);
+      if (Math.abs(leg.to - leg.from) >= 1) {
+        return { type: "start-leg", leg: leg, facing: leg.to >= leg.from ? 1 : -1 };
+      }
+    }
+  }
+  return { type: "none" };
+}
+
+// ---------------------------------------------------------------------------
+// Crying (v0.8.0) — tears from the renderer's own face geometry.
+// ---------------------------------------------------------------------------
+
+// eyeAnchorsFor — the EXACT eye positions in scene px, derived from the
+// same head math faceParts uses (builder geometry -> eye spots -> stage
+// scale about (50,88) -> scene mapping), so tears well at the eyes of
+// every archetype and stage — including each of a gazer's 3-5 eyes. The
+// anchor sits just under the lower lid (cy+2) where a droplet forms.
+// mirrored reflects the anchors with the facing flip, like bonkContactFor.
+function eyeAnchorsFor(data, wanderX, mirrored) {
+  if (!data || !(data.level > 1)) return [];
+  var lineage = (data.lineage_seed || 1) >>> 0;
+  var g = growthForLevel(data.level);
+  var sty = lineageStyle(lineage);
+  var temper = temperFor(data);
+  var C = lineageColors(data.family || 0, data.level, sty, temper);
+  var arch =
+    (((data.archetype || 0) % BODY_BUILDERS.length) + BODY_BUILDERS.length) % BODY_BUILDERS.length;
+  var noop = function () {
+    return null;
+  };
+  var body = BODY_BUILDERS[arch](noop, makeRand(lineage, 6), C, g);
+  var head = body.head;
+  var spots = [];
+  var count = head.alien && g.stage >= 2 ? sty.alienEyes : 2;
+  if (count === 2) {
+    spots.push({ cx: head.cx - head.r * 0.5, cy: head.cy });
+    spots.push({ cx: head.cx + head.r * 0.5, cy: head.cy });
+  } else {
+    for (var i = 0; i < count; i++) {
+      var t = i / (count - 1) - 0.5;
+      spots.push({ cx: head.cx + t * head.r * 1.3, cy: head.cy - Math.abs(t) * 3 - (i % 2) * 2 });
+    }
+  }
+  var s = STAGE_SCALE[g.stage];
+  var k = BONK_SCENE.svgPx / 100;
+  return spots.map(function (sp) {
+    var vx = 50 + ((mirrored ? 100 - sp.cx : sp.cx) - 50) * s;
+    var vy = 88 - (88 - (sp.cy + 2)) * s;
+    return {
+      x: BONK_SCENE.w / 2 + (vx - 50) * k + (wanderX || 0),
+      y: BONK_SCENE.h - BONK_SCENE.bottomPx - (100 - vy) * k,
+    };
+  });
+}
+
+// Tear phase offsets (ms): negative animation delays start each droplet
+// mid-cycle so the eyes never weep in lockstep.
+var TEAR_PHASE_MS = [0, 366, 640, 940];
+var CRY_TEARS_PER_EYE = 2;
+var CRY_MAX_TEARS = 8;
+
+// cryOverlay — the bout visual: per-eye gravity-fall droplets (~1.1s
+// cycles, CSS var --tearfall carries each eye's real fall distance) and a
+// small capped puddle that grows through the bout and fades at its end
+// (animationDuration = CRY_BOUT_MS inline). The sob-shudder itself lives
+// on the creature's animation-safe inner wrapper (kandev-kandy-sob via
+// kandyCard). Composes over the existing sad face; reduced motion shows
+// nothing here (base opacity 0 + animation:none) — the static teardrop in
+// faceParts stays the only tear.
+function cryOverlay(h, seq, data, wanderX, mirrored) {
+  var eyes = eyeAnchorsFor(data, wanderX, mirrored);
+  if (!eyes.length) return null;
+  var floorY = BONK_SCENE.h - BONK_SCENE.bottomPx;
+  var kids = [];
+  var total = Math.min(eyes.length * CRY_TEARS_PER_EYE, CRY_MAX_TEARS);
+  for (var i = 0; i < total; i++) {
+    var eye = eyes[i % eyes.length];
+    var fall = Math.max(floorY - eye.y - 2, 8);
+    kids.push(
+      h(
+        "span",
+        {
+          key: "tear" + i,
+          className: "kandev-kandy-tear",
+          style: {
+            left: eye.x - 2 + "px",
+            top: eye.y + "px",
+            width: "4px",
+            height: "5px",
+            animationDelay: -(TEAR_PHASE_MS[i % TEAR_PHASE_MS.length] + ((i * 137) % 300)) + "ms",
+            "--tearfall": fall.toFixed(1) + "px",
+          },
+        },
+        h("span", {
+          style: {
+            display: "block",
+            width: "100%",
+            height: "100%",
+            background: "#7fd7ff",
+            borderRadius: "50% 0 50% 50%",
+            // Tail up: the square corner rotated to 12 o'clock (drip pose).
+            transform: "rotate(-45deg)",
+          },
+        }),
+      ),
+    );
+  }
+  var c = bonkContactFor(data, wanderX, mirrored);
+  kids.push(
+    h("span", {
+      key: "puddle",
+      className: "kandev-kandy-puddle",
+      style: {
+        left: c.x - 22 + "px",
+        top: floorY - 4 + "px",
+        width: "44px",
+        height: "6px",
+        borderRadius: "50%",
+        background: "#8fd0f0",
+        animationDuration: CRY_BOUT_MS + "ms",
+      },
+    }),
+  );
+  return h(
+    "div",
+    { key: "cryfx" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } },
+    kids,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -3363,8 +3754,8 @@ function pickSpeech(data, ctx) {
 // the top; long lines pushed it past the side). The fade in/hold/out
 // lives on the kandev-kandy-bubble class; under reduced motion it simply
 // appears and disappears — bubbles are content.
-function speechBubble(h, speech, data) {
-  var c = bonkContactFor(data);
+function speechBubble(h, speech, data, wanderX, mirrored) {
+  var c = bonkContactFor(data, wanderX, mirrored);
   var growLeft = c.x > BONK_SCENE.w / 2;
   // Keep the whole bubble inside the scene: cap bottom so even a
   // two-line bubble (~40px tall) stays below the top edge, and cap the
@@ -3473,8 +3864,8 @@ function openGreetingAllowed(arriving, lastBubble, now) {
 // while the arrival hop plays: quick fade in, fade out. Positioned from
 // bonkContactFor; base opacity 0, so reduced motion (animation:none)
 // simply never shows the frill.
-function greetArcsOverlay(h, seq, data) {
-  var c = bonkContactFor(data);
+function greetArcsOverlay(h, seq, data, wanderX, mirrored) {
+  var c = bonkContactFor(data, wanderX, mirrored);
   return h(
     "svg",
     {
@@ -3602,8 +3993,8 @@ var PET_HEART_SPOTS = [
 // (bonkContactFor), the being munch-hops (CSS delay on the wrapper),
 // crumbs pop at the catch, then a few hearts rise. seq keys the overlay so
 // an in-window repeat click remounts it and the animations replay.
-function petOverlay(h, seq, data) {
-  var c = bonkContactFor(data);
+function petOverlay(h, seq, data, wanderX, mirrored) {
+  var c = bonkContactFor(data, wanderX, mirrored);
   var kids = [treatSvg(h, c, "kandev-kandy-treat")];
   for (var i = 0; i < CRUMB_FLECKS.length; i++) {
     kids.push(fleckSpan(h, "crumb" + i, "kandev-kandy-crumb", c, CRUMB_FLECKS[i], TREAT_CATCH_MS));
@@ -3665,8 +4056,8 @@ function bucketSvg(h, key, className, px, style) {
 //   "cancel" — released early: rights itself from fx.rot and fades;
 //   "static" — reduced motion: a fixed tilted bucket shown from half-hold
 //              as the "about to commit" signal (no progressive animation).
-function holdTipOverlay(h, fx, data) {
-  var c = bonkContactFor(data);
+function holdTipOverlay(h, fx, data, wanderX, mirrored) {
+  var c = bonkContactFor(data, wanderX, mirrored);
   var size = 30;
   var style = {
     left: c.x - size / 2 + "px",
@@ -3715,8 +4106,8 @@ var DRIP_SPOTS = [
 // a blue stream onto the head (bonkContactFor), the splash bursts at
 // contact, and the being goes briefly soaked (wet tint + shiver via the
 // CSS-delayed wrapper class) with drips falling off it.
-function bonkOverlay(h, seq, data) {
-  var c = bonkContactFor(data);
+function bonkOverlay(h, seq, data, wanderX, mirrored) {
+  var c = bonkContactFor(data, wanderX, mirrored);
   var kids = [];
   kids.push(
     bucketSvg(h, "bucket", "kandev-kandy-bucket", 44, {
@@ -3804,12 +4195,15 @@ function bonkOverlay(h, seq, data) {
 // distrustOverlay — the refused-pet reaction: the treat still falls, but
 // the kandy turns away (wrapper class) and lets it bounce off, landing
 // ignored. No munch, no crumbs, no hearts — just a "..." bubble.
-function distrustOverlay(h, seq, data) {
+function distrustOverlay(h, seq, data, wanderX, mirrored) {
+  // The "..." keeps its legacy 58% spot when centered; a wandered creature
+  // drags it along (the flinch happens where it stands).
+  var dotsLeft = wanderX ? BONK_SCENE.w * 0.58 + wanderX + "px" : "58%";
   return h(
     "div",
     { key: "distrustfx" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } },
-    treatSvg(h, bonkContactFor(data), "kandev-kandy-treat-ignored"),
-    h("span", { key: "dots", className: "kandev-kandy-dots", style: { left: "58%", top: "20%" } }, "…"),
+    treatSvg(h, bonkContactFor(data, wanderX, mirrored), "kandev-kandy-treat-ignored"),
+    h("span", { key: "dots", className: "kandev-kandy-dots", style: { left: dotsLeft, top: "20%" } }, "…"),
   );
 }
 
@@ -3818,8 +4212,8 @@ function distrustOverlay(h, seq, data) {
 // reaction is a half-woken grumpy squint on the creature (sleep_state
 // "grumpy" via kandyCard) with no munch hop, no crumbs, and one subdued
 // heart. It's asleep, not delighted.
-function sleepyPetOverlay(h, seq, data) {
-  var c = bonkContactFor(data);
+function sleepyPetOverlay(h, seq, data, wanderX, mirrored) {
+  var c = bonkContactFor(data, wanderX, mirrored);
   return h(
     "div",
     { key: "sleepyfx" + seq, style: { position: "absolute", inset: 0, pointerEvents: "none" } },
@@ -4734,7 +5128,14 @@ function photoBoothPanel(h, DialogTitle, model, theme, svgRef, panelRef, status,
 // pet button in the dialog, a plain div in the tooltip) carries the
 // animated classes and NO base transform. munch/soaked/turnaway follow the
 // same rule: animation classes on the inner wrapper only.
-function kandyCard(h, data, celebration, care, timeOfDay, season, speech) {
+//
+// motion (v0.8.0, optional): {x, facing, walking, cry} — the widget's live
+// wander/cry state. When provided, three extra wrappers nest inside the
+// positioning div (wander translateX -> facing scaleX -> gait animation),
+// all overlay anchors take motion.x, and motion.cry mounts the tears.
+// Omitted (legacy callers, offline tooling), the card renders EXACTLY the
+// pre-0.8.0 structure.
+function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion) {
   // Sleep is computed here from the seeded schedule + the passed clock so
   // every card (tooltip and dialog) agrees. The bucket wakes it (the
   // existing drench choreography IS the rude awakening); a pet only
@@ -4746,8 +5147,29 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech) {
     else sleepState = "asleep";
   }
   var shownData = sleepState ? Object.assign({}, data, { sleep_state: sleepState }) : data;
+  // Wander/cry state (v0.8.0). walking/crying only ever come from the
+  // widget's motion clock, which already gates out sleep, eggs, reduced
+  // motion, and mid-interaction starts — the checks here are belt.
+  var wanderX = (motion && motion.x) || 0;
+  // Facing persists after a stroll (it keeps looking where it walked), so
+  // anchor mirroring applies while idle too.
+  var mirrored = !!(motion && motion.facing < 0);
+  var gaitInfo = gaitFor(data.archetype || 0);
+  var walking = !!(motion && motion.walking) && sleepState === null;
+  var crying =
+    !!(motion && motion.cry) &&
+    sleepState === null &&
+    !celebration &&
+    !(care && (care.fx || care.bonkFx || care.distrustFx || care.sleepyFx || care.holdFx));
+  if (walking && !gaitInfo.keepBob) {
+    shownData = Object.assign({}, shownData, { walk_suppress_bob: true });
+  }
   var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0, timeOfDay, season);
-  var animCls = sleepState === "asleep" ? "" : "kandev-kandy-wiggle";
+  // While walking the ambient wiggle yields (the gait wrapper is already
+  // rotating); the sob-shudder class is declared after wiggle in the CSS
+  // so it wins the animation shorthand when both are present.
+  var animCls = sleepState === "asleep" || walking ? "" : "kandev-kandy-wiggle";
+  if (crying) animCls += " kandev-kandy-sob";
   if (care && care.bonkFx) animCls += " kandev-kandy-soaked";
   else if (care && care.distrustFx) animCls += " kandev-kandy-turnaway";
   else if (care && care.fx) animCls += " kandev-kandy-munch";
@@ -4810,6 +5232,31 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech) {
   } else {
     inner = h("div", { className: animCls }, creature);
   }
+  // The motion wrapper stack (only when a motion state is supplied, so
+  // legacy callers keep the exact pre-0.8.0 tree). Order matters:
+  //   positioning div  — layout transform (left:50% + translateX(-50%)),
+  //                      never animated (the layering rule);
+  //   wander div       — state-driven inline translateX. The pet-zone
+  //                      button lives INSIDE it, so the hit target tracks
+  //                      the creature: clicking where it visually stands
+  //                      works, clicking where it used to stand doesn't;
+  //   facing div       — state-driven scaleX flip (direction changes);
+  //   gait div         — CSS gait animation only, no base transform.
+  var positioned = inner;
+  if (motion) {
+    positioned = h(
+      "div",
+      {
+        className: "kandev-kandy-wander",
+        style: { transform: "translateX(" + wanderX + "px)" },
+      },
+      h(
+        "div",
+        { style: { transform: motion.facing < 0 ? "scaleX(-1)" : "none" } },
+        h("div", { className: (walking && gaitInfo.cls) || "" }, inner),
+      ),
+    );
+  }
   var flavorLine = data.flavor;
   if (care && care.distrustFx) flavorLine = "It doesn't trust you right now.";
   else if (care && care.bonkFx) flavorLine = "Your kandy got drenched.";
@@ -4851,16 +5298,19 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech) {
             transform: "translateX(-50%)",
           },
         },
-        inner,
+        positioned,
       ),
       celebration ? burstSparkles(h, celebration.kind === "levelup") : null,
-      care && care.fx ? petOverlay(h, care.fx, data) : null,
-      care && care.bonkFx ? bonkOverlay(h, care.bonkFx, data) : null,
-      care && care.distrustFx ? distrustOverlay(h, care.distrustFx, data) : null,
-      care && care.sleepyFx ? sleepyPetOverlay(h, care.sleepyFx, data) : null,
-      care && care.holdFx ? holdTipOverlay(h, care.holdFx, data) : null,
-      care && care.greetFx && sleepState !== "asleep" ? greetArcsOverlay(h, care.greetFx, data) : null,
-      showBubble ? speechBubble(h, speech, data) : null,
+      care && care.fx ? petOverlay(h, care.fx, data, wanderX, mirrored) : null,
+      care && care.bonkFx ? bonkOverlay(h, care.bonkFx, data, wanderX, mirrored) : null,
+      care && care.distrustFx ? distrustOverlay(h, care.distrustFx, data, wanderX, mirrored) : null,
+      care && care.sleepyFx ? sleepyPetOverlay(h, care.sleepyFx, data, wanderX, mirrored) : null,
+      care && care.holdFx ? holdTipOverlay(h, care.holdFx, data, wanderX, mirrored) : null,
+      care && care.greetFx && sleepState !== "asleep"
+        ? greetArcsOverlay(h, care.greetFx, data, wanderX, mirrored)
+        : null,
+      crying ? cryOverlay(h, motion.cry, data, wanderX, mirrored) : null,
+      showBubble ? speechBubble(h, speech, data, wanderX, mirrored) : null,
     ),
     h(
       "div",
@@ -5095,6 +5545,13 @@ function makeKandyWidget(host) {
     var holdFxHook = React.useState(null);
     var holdFx = holdFxHook[0];
     var setHoldFx = holdFxHook[1];
+    // motionState (v0.8.0): the live wander/cry presentation snapshot for
+    // kandyCard — {x, facing, walking, cry}. The source of truth lives in
+    // motionRef (interval callbacks mutate it); this state mirror only
+    // triggers renders.
+    var motionStateHook = React.useState({ x: 0, facing: 1, walking: false, cry: 0 });
+    var motionState = motionStateHook[0];
+    var setMotionState = motionStateHook[1];
     // timeOfDay: local-clock hour float driving the day/night scene and
     // the seeded sleep schedule; re-read every TIME_TICK_MS.
     var timeHook = React.useState(localHour());
@@ -5159,6 +5616,23 @@ function makeKandyWidget(host) {
     var recentSpeechRef = React.useRef([]);
     var arrivalPendingRef = React.useRef(false);
     var greetTimerRef = React.useRef(null);
+    // Motion bookkeeping (v0.8.0): the wander/cry source of truth (leg =
+    // the in-flight stroll incl. startedAt; cryUntil/crySeq = the active
+    // bout; cryPending = a bout waiting for a stroll to finish; last*Bucket
+    // dedupe the deterministic gates), plus the ~25fps leg-position timer
+    // and the bout-end timer.
+    var motionRef = React.useRef({
+      x: 0,
+      facing: 1,
+      leg: null,
+      cryUntil: 0,
+      crySeq: 0,
+      cryPending: false,
+      lastWanderBucket: -1,
+      lastCryBucket: -1,
+    });
+    var wanderFrameTimerRef = React.useRef(null);
+    var cryEndTimerRef = React.useRef(null);
     // liveRef mirrors the latest render values for the interval callbacks
     // (the mount-effect closures would otherwise see mount-time state).
     var liveRef = React.useRef({});
@@ -5170,6 +5644,7 @@ function makeKandyWidget(host) {
       distrustFx: distrustFx,
       sleepyFx: sleepyFx,
       holdFx: holdFx,
+      greetFx: greetFx,
     };
 
     function clearPreparedPhoto() {
@@ -5177,7 +5652,147 @@ function makeKandyWidget(host) {
       photoCopyRef.current = null;
     }
 
+    // --- Wander + cry engine (v0.8.0) --------------------------------
+    // The pure decisions live in motionDecide; everything here is clock
+    // plumbing. publishMotion mirrors the ref into render state.
+
+    function publishMotion() {
+      var m = motionRef.current;
+      if (!mountedRef.current) return;
+      setMotionState({
+        x: m.x,
+        facing: m.facing,
+        walking: !!m.leg,
+        cry: m.cryUntil > Date.now() ? m.crySeq : 0,
+      });
+    }
+
+    function stopWanderFrames() {
+      if (wanderFrameTimerRef.current) {
+        clearInterval(wanderFrameTimerRef.current);
+        wanderFrameTimerRef.current = null;
+      }
+    }
+
+    function startCryBout() {
+      var m = motionRef.current;
+      m.cryPending = false;
+      m.crySeq = Date.now();
+      m.cryUntil = m.crySeq + CRY_BOUT_MS;
+      if (cryEndTimerRef.current) clearTimeout(cryEndTimerRef.current);
+      cryEndTimerRef.current = setTimeout(function () {
+        motionRef.current.cryUntil = 0;
+        publishMotion();
+      }, CRY_BOUT_MS);
+      publishMotion();
+    }
+
+    function beginWanderFrames() {
+      stopWanderFrames();
+      wanderFrameTimerRef.current = setInterval(function () {
+        var m = motionRef.current;
+        if (!m.leg) {
+          stopWanderFrames();
+          return;
+        }
+        var elapsed = Date.now() - m.leg.startedAt;
+        m.x = wanderXAt(m.leg, elapsed);
+        if (elapsed >= m.leg.durMs) {
+          m.x = m.leg.to;
+          m.leg = null;
+          stopWanderFrames();
+          // A bout that came due mid-stroll starts the moment it lands.
+          if (m.cryPending) {
+            startCryBout();
+            return; // startCryBout already published
+          }
+        }
+        publishMotion();
+      }, WANDER_FRAME_MS);
+    }
+
+    // haltMotion — freeze any in-flight leg exactly where it stands and
+    // cancel any bout (active or pending). Used both by the "halt" action
+    // (sleep/reduced-motion arrived) and by interactions.
+    function haltMotion() {
+      var m = motionRef.current;
+      if (m.leg) {
+        m.x = wanderXAt(m.leg, Date.now() - m.leg.startedAt);
+        m.leg = null;
+        stopWanderFrames();
+      }
+      m.cryPending = false;
+      if (m.cryUntil > 0) {
+        m.cryUntil = 0;
+        if (cryEndTimerRef.current) clearTimeout(cryEndTimerRef.current);
+      }
+      publishMotion();
+    }
+
+    // freezeMotionForInteraction — the yield rule, with these semantics:
+    // the moment any care reaction / celebration / arrival hop begins, the
+    // current stroll leg FREEZES in place (the creature stops mid-stride
+    // and stays there — it does NOT resume the leg afterwards; the next
+    // gated stroll simply starts from the frozen spot) and any crying bout
+    // ends immediately (being interacted with beats weeping). While the fx
+    // plays, motionDecide's fxActive input keeps new strolls/bouts gated
+    // off. Freezing BEFORE the fx state is set means every overlay anchors
+    // on the final, frozen wander offset — treat, bucket, and stars land
+    // where the creature actually is.
+    function freezeMotionForInteraction() {
+      haltMotion();
+    }
+
+    function motionTick() {
+      var live = liveRef.current;
+      var m = motionRef.current;
+      var now = Date.now();
+      var d = live.data;
+      var seed = ((d && d.lineage_seed) || 1) >>> 0;
+      var action = motionDecide(
+        {
+          x: m.x,
+          leg: m.leg,
+          cryUntil: m.cryUntil,
+          cryPending: m.cryPending,
+          lastWanderBucket: m.lastWanderBucket,
+          lastCryBucket: m.lastCryBucket,
+        },
+        {
+          now: now,
+          data: d,
+          asleep: !!(d && d.level > 1 && isAsleep(seed, localHour())),
+          reducedMotion: prefersReducedMotion(),
+          fxActive: !!(
+            live.celebration ||
+            live.petFx ||
+            live.bonkFx ||
+            live.distrustFx ||
+            live.sleepyFx ||
+            live.holdFx ||
+            live.greetFx
+          ),
+        },
+      );
+      // Stamp the evaluated buckets (each votes at most once).
+      m.lastCryBucket = Math.floor(now / CRY_BUCKET_MS);
+      m.lastWanderBucket = Math.floor(now / WANDER_BUCKET_MS);
+      if (action.type === "halt") {
+        haltMotion();
+      } else if (action.type === "start-cry") {
+        startCryBout();
+      } else if (action.type === "cry-pending") {
+        m.cryPending = true;
+      } else if (action.type === "start-leg") {
+        m.leg = Object.assign({ startedAt: now }, action.leg);
+        m.facing = action.facing;
+        publishMotion();
+        beginWanderFrames();
+      }
+    }
+
     function celebrate(kind) {
+      freezeMotionForInteraction();
       setCelebration({ kind: kind });
       if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
       celebrationTimerRef.current = setTimeout(
@@ -5218,6 +5833,7 @@ function makeKandyWidget(host) {
     // showDistrust plays the turn-away/"..." reaction: no hearts, no pet
     // POST, and the card says "It doesn't trust you right now."
     function showDistrust() {
+      freezeMotionForInteraction();
       setPetFx(0);
       setBonkFx(0);
       setSleepyFx(0);
@@ -5297,6 +5913,8 @@ function makeKandyWidget(host) {
       var arriving = arrivalPendingRef.current;
       if (arriving) {
         arrivalPendingRef.current = false;
+        // The arrival hop is an fx like any other: walking/crying yield.
+        freezeMotionForInteraction();
         setGreetFx(now);
         if (greetTimerRef.current) clearTimeout(greetTimerRef.current);
         greetTimerRef.current = setTimeout(function () {
@@ -5328,6 +5946,10 @@ function makeKandyWidget(host) {
         showDistrust();
         return;
       }
+      // Walking yields to the treat: freeze the stroll where it stands so
+      // the candy falls onto the wandered position (see the semantics note
+      // on freezeMotionForInteraction).
+      freezeMotionForInteraction();
       setBonkFx(0);
       setDistrustFx(0);
       var shownNow = data || EGG_PLACEHOLDER;
@@ -5388,6 +6010,8 @@ function makeKandyWidget(host) {
     function triggerBonk(fromHold) {
       if (!fromHold && pointerTypeRef.current !== "mouse") return;
       var nowMs = Date.now();
+      // Same yield rule as the pet: the bucket pours where it stands.
+      freezeMotionForInteraction();
       setPetFx(0);
       setDistrustFx(0);
       setSleepyFx(0);
@@ -5628,11 +6252,16 @@ function makeKandyWidget(host) {
         writeLastSeen(Date.now());
         maybeTickSpeech();
       }, TIME_TICK_MS);
+      // Motion clock (v0.8.0): wander + cry gates every 5s.
+      var motionTimer = setInterval(motionTick, MOTION_TICK_MS);
       refreshListeners.push(load);
       return function () {
         mountedRef.current = false;
         clearInterval(interval);
         clearInterval(timeTick);
+        clearInterval(motionTimer);
+        stopWanderFrames();
+        if (cryEndTimerRef.current) clearTimeout(cryEndTimerRef.current);
         if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
         if (petTimerRef.current) clearTimeout(petTimerRef.current);
         if (bonkTimerRef.current) clearTimeout(bonkTimerRef.current);
@@ -5838,7 +6467,7 @@ function makeKandyWidget(host) {
           // Same care wiring as the dialog: the hover card is a first-class
           // surface — treat and bucket work here too. (Both cards are never
           // mounted at once: the dialog's overlay blocks chip hover.)
-          kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech),
+          kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech, motionState),
         ),
       ),
       h(
@@ -5886,7 +6515,7 @@ function makeKandyWidget(host) {
                   h(
                     "div",
                     { className: "kandev-kandy-dialogzoom", style: { zoom: dialogZoom } },
-                    kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech),
+                    kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech, motionState),
                   ),
                   h(
                     "div",
@@ -5971,6 +6600,28 @@ window.registerKandevPlugin(PLUGIN_ID, {
     holdTipOverlay: holdTipOverlay,
     careHintText: careHintText,
     bonkContactFor: bonkContactFor,
+    // Wander + cry (v0.8.0)
+    wanderGate: wanderGate,
+    cryGate: cryGate,
+    wanderLimitFor: wanderLimitFor,
+    wanderTargetFor: wanderTargetFor,
+    wanderLegFor: wanderLegFor,
+    wanderXAt: wanderXAt,
+    gaitFor: gaitFor,
+    motionDecide: motionDecide,
+    eyeAnchorsFor: eyeAnchorsFor,
+    cryOverlay: cryOverlay,
+    motionTuning: {
+      WANDER_MAX_PX: WANDER_MAX_PX,
+      WANDER_MIN_DIST_PX: WANDER_MIN_DIST_PX,
+      WANDER_SPEED_PX_S: WANDER_SPEED_PX_S,
+      WANDER_BUCKET_MS: WANDER_BUCKET_MS,
+      WANDER_FRAME_MS: WANDER_FRAME_MS,
+      CRY_BUCKET_MS: CRY_BUCKET_MS,
+      CRY_BOUT_MS: CRY_BOUT_MS,
+      MOTION_TICK_MS: MOTION_TICK_MS,
+      COG_STEP_PX: COG_STEP_PX,
+    },
     dayPhaseFor: dayPhaseFor,
     sleepScheduleFor: sleepScheduleFor,
     isAsleep: isAsleep,

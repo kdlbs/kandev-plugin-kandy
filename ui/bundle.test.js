@@ -1416,3 +1416,461 @@ test("v0.7.0 visuals respect reduced motion (bubble stays, frills freeze)", () =
   }
   runtime.plugin.destroy();
 });
+
+// ---------------------------------------------------------------------------
+// v0.8.0 — wander (walking) + crying spells
+// ---------------------------------------------------------------------------
+
+test("wander limit clamps to ±35 and keeps the body inside the scene edge", () => {
+  const render = loadBundle().plugin.__render;
+  const T = render.motionTuning;
+  assert.equal(T.WANDER_MAX_PX, 35);
+  // The invariant that matters: limit + widest-body-half + margin never
+  // crosses the scene half-width, for every archetype at every stage.
+  const SCENE_HALF = 248 / 2;
+  for (let arch = 0; arch < 10; arch++) {
+    for (const level of [2, 12, 30, 55, 80, 100]) {
+      const data = sampleKandy({ archetype: arch, level });
+      const limit = render.wanderLimitFor(data);
+      assert.ok(limit > 0 && limit <= 35, `limit ${limit} in (0,35] (arch ${arch} lv ${level})`);
+      // Reconstruct the body clamp: even at the extreme target the widest
+      // body extent (any archetype is < 36 viewBox units ≈ 33 scene px)
+      // stays clear of the edge.
+      assert.ok(limit + 36 * 0.92 + 2 <= SCENE_HALF, `body inside edge (arch ${arch})`);
+    }
+  }
+  // The egg / unknown fallback still yields a sane limit.
+  assert.ok(render.wanderLimitFor(null) > 0);
+});
+
+test("wander targets stay inside the limit and at least a stride away", () => {
+  const render = loadBundle().plugin.__render;
+  const seed = 3061213989 >>> 0;
+  for (const from of [-35, -20, 0, 20, 35]) {
+    for (let bucket = 0; bucket < 300; bucket++) {
+      const t = render.wanderTargetFor(seed, bucket, from, 35);
+      assert.ok(t >= -35 && t <= 35, `target ${t} clamped`);
+      assert.ok(Math.abs(t - from) >= 14 - 1e-9, `stride ${Math.abs(t - from)} >= 14`);
+    }
+  }
+  // Deterministic: the same (seed, bucket) always lands the same target.
+  assert.equal(
+    render.wanderTargetFor(seed, 42, 0, 35),
+    render.wanderTargetFor(seed, 42, 0, 35),
+  );
+});
+
+test("wander and cry gates are deterministic with mood-shaped cadence", () => {
+  const render = loadBundle().plugin.__render;
+  const seed = 424242;
+  const count = (fn) => {
+    let n = 0;
+    for (let b = 0; b < 4000; b++) if (fn(b)) n++;
+    return n / 4000;
+  };
+  // Determinism.
+  for (let b = 0; b < 50; b++) {
+    assert.equal(render.wanderGate(seed, b, "happy"), render.wanderGate(seed, b, "happy"));
+    assert.equal(render.cryGate(seed, b, "sad"), render.cryGate(seed, b, "sad"));
+  }
+  // Mood modulation: elated/happy stroll often, content normal, bored
+  // rare, sad/gloomy almost never (10s buckets).
+  const pHappy = count((b) => render.wanderGate(seed, b, "happy"));
+  const pContent = count((b) => render.wanderGate(seed, b, "content"));
+  const pBored = count((b) => render.wanderGate(seed, b, "bored"));
+  const pSad = count((b) => render.wanderGate(seed, b, "sad"));
+  assert.ok(Math.abs(pHappy - 0.4) < 0.05, `happy ~0.4 (${pHappy})`);
+  assert.ok(Math.abs(pContent - 0.25) < 0.05, `content ~0.25 (${pContent})`);
+  assert.ok(Math.abs(pBored - 0.08) < 0.03, `bored ~0.08 (${pBored})`);
+  assert.ok(pSad < 0.05, `sad almost never (${pSad})`);
+  assert.ok(pHappy > pContent && pContent > pBored && pBored > pSad, "ordering holds");
+  // Cry: sad ~1/16 of 15s buckets (~4min), gloomy roughly double, and a
+  // fed kandy never cries.
+  const cSad = count((b) => render.cryGate(seed, b, "sad"));
+  const cGloomy = count((b) => render.cryGate(seed, b, "gloomy"));
+  assert.ok(Math.abs(cSad - 0.0625) < 0.02, `sad cry ~1/16 (${cSad})`);
+  assert.ok(cGloomy / cSad > 1.5 && cGloomy / cSad < 2.6, `gloomy ~2x (${cGloomy / cSad})`);
+  for (const mood of ["elated", "happy", "content", "bored"]) {
+    assert.equal(count((b) => render.cryGate(seed, b, mood)), 0, `${mood} never cries`);
+  }
+});
+
+test("each archetype walks in character (gait table)", () => {
+  const render = loadBundle().plugin.__render;
+  const gait = (a) => render.gaitFor(a);
+  assert.equal(gait(0).cls, "kandev-kandy-gait-waddle"); // blob
+  assert.equal(gait(2).cls, "kandev-kandy-gait-waddle"); // chonk
+  assert.equal(gait(1).cls, "kandev-kandy-gait-stride"); // willow
+  assert.equal(gait(3).cls, "kandev-kandy-gait-slither"); // noodle
+  assert.equal(gait(4).cls, "kandev-kandy-gait-shuffle"); // sporeling
+  assert.equal(gait(5).cls, "kandev-kandy-gait-drift"); // wisp
+  assert.equal(gait(6).cls, "kandev-kandy-gait-hopskip"); // shardling
+  assert.equal(gait(8).cls, "kandev-kandy-gait-glide"); // gazer
+  assert.equal(gait(9).cls, "kandev-kandy-gait-glide"); // flitter
+  // The cogling is the only stepped mover (its steps ARE the gait).
+  for (let a = 0; a < 10; a++) assert.equal(gait(a).stepped, a === 7, `arch ${a} stepped`);
+  // Floaty archetypes keep the idle bob (their glide rides on it);
+  // grounded steppers hand vertical motion to the gait keyframes.
+  for (let a = 0; a < 10; a++) {
+    assert.equal(gait(a).keepBob, a === 5 || a === 8 || a === 9, `arch ${a} keepBob`);
+  }
+  assert.equal(gait(13).cls, gait(3).cls, "index wraps like BODY_BUILDERS");
+});
+
+test("wander legs ease with smoothstep; the cogling steps 3px on linear time", () => {
+  const render = loadBundle().plugin.__render;
+  const leg = { from: -10, to: 20, durMs: 1500, stepped: false };
+  assert.equal(render.wanderXAt(leg, -50), -10);
+  assert.equal(render.wanderXAt(leg, 0), -10);
+  assert.equal(render.wanderXAt(leg, 1500), 20);
+  assert.equal(render.wanderXAt(leg, 99999), 20);
+  // Smoothstep: exact midpoint at half time, slow start (< linear early).
+  assert.equal(render.wanderXAt(leg, 750), 5);
+  const quarter = render.wanderXAt(leg, 375);
+  assert.ok(quarter - -10 < 30 * 0.25, "eased start is slower than linear");
+  let prev = -10;
+  for (let t = 0; t <= 1500; t += 50) {
+    const x = render.wanderXAt(leg, t);
+    assert.ok(x >= prev - 1e-9, "monotonic");
+    prev = x;
+  }
+  // Cogling: discrete 3px increments, LINEAR time (no easing).
+  const cog = { from: 0, to: 21, durMs: 1400, stepped: true };
+  const seen = new Set();
+  for (let t = 0; t <= 1400; t += 20) {
+    const x = render.wanderXAt(cog, t);
+    assert.ok(x === 21 || x % 3 === 0, `stepped x ${x} is a 3px multiple`);
+    seen.add(x);
+  }
+  assert.ok(seen.size >= 7, "walk passes through the intermediate steps");
+  // Linear: at half time it has covered ~half the distance (floor to 3px),
+  // NOT the smoothstepped value.
+  assert.equal(render.wanderXAt(cog, 700), Math.floor((21 * 0.5) / 3) * 3);
+  // Direction works both ways.
+  const back = { from: 6, to: -12, durMs: 900, stepped: true };
+  assert.equal(render.wanderXAt(back, 900), -12);
+  assert.ok(render.wanderXAt(back, 450) <= 6);
+});
+
+test("motionDecide encodes mood, sleep, egg, reduced-motion, and yield rules", () => {
+  const render = loadBundle().plugin.__render;
+  const T = render.motionTuning;
+  const seed = 777001;
+  const happy = sampleKandy({ mood: "happy", lineage_seed: seed, archetype: 0 });
+  const sad = sampleKandy({ mood: "sad", lineage_seed: seed, archetype: 0 });
+  const idleState = {
+    x: 0, leg: null, cryUntil: 0, cryPending: false, lastWanderBucket: -1, lastCryBucket: -1,
+  };
+  const baseInp = { data: happy, asleep: false, reducedMotion: false, fxActive: false };
+  // Find gate-passing buckets deterministically.
+  let walkBucket = -1;
+  for (let b = 0; b < 500 && walkBucket < 0; b++) if (render.wanderGate(seed, b, "happy")) walkBucket = b;
+  let cryBucket = -1;
+  for (let b = 0; b < 500 && cryBucket < 0; b++) if (render.cryGate(seed, b, "sad")) cryBucket = b;
+  assert.ok(walkBucket >= 0 && cryBucket >= 0, "found gate-passing buckets");
+  const walkNow = walkBucket * T.WANDER_BUCKET_MS + 1;
+  const cryNow = cryBucket * T.CRY_BUCKET_MS + 1;
+
+  // A stroll starts when the gate passes...
+  const start = render.motionDecide(idleState, { ...baseInp, now: walkNow });
+  assert.equal(start.type, "start-leg");
+  assert.ok(Math.abs(start.leg.to - start.leg.from) >= 14 - 1e-9);
+  assert.equal(start.facing, start.leg.to >= start.leg.from ? 1 : -1);
+  // ...but the same bucket never votes twice...
+  assert.equal(
+    render.motionDecide({ ...idleState, lastWanderBucket: walkBucket }, { ...baseInp, now: walkNow }).type,
+    "none",
+  );
+  // ...and never while a leg is already playing, or mid-interaction, or
+  // asleep, or reduced-motion, or for an egg.
+  const leg = { from: 0, to: 20, durMs: 1000, stepped: false, startedAt: walkNow };
+  assert.notEqual(render.motionDecide({ ...idleState, leg }, { ...baseInp, now: walkNow }).type, "start-leg");
+  assert.equal(render.motionDecide(idleState, { ...baseInp, now: walkNow, fxActive: true }).type, "none");
+  assert.equal(render.motionDecide(idleState, { ...baseInp, now: walkNow, asleep: true }).type, "none");
+  assert.equal(render.motionDecide(idleState, { ...baseInp, now: walkNow, reducedMotion: true }).type, "none");
+  assert.equal(
+    render.motionDecide(idleState, { ...baseInp, now: walkNow, data: { ...happy, level: 1 } }).type,
+    "none",
+  );
+  // Sleep/reduced-motion arriving mid-motion halts (freeze + cancel).
+  assert.equal(render.motionDecide({ ...idleState, leg }, { ...baseInp, now: walkNow, asleep: true }).type, "halt");
+  assert.equal(
+    render.motionDecide({ ...idleState, cryUntil: walkNow + 5000 }, { ...baseInp, now: walkNow, reducedMotion: true }).type,
+    "halt",
+  );
+
+  // Crying: a sad kandy starts a bout when stationary...
+  const sadInp = { ...baseInp, data: sad };
+  assert.equal(render.motionDecide(idleState, { ...sadInp, now: cryNow }).type, "start-cry");
+  // ...a bout due mid-stroll WAITS (cry-pending), then starts once the
+  // stroll is done...
+  assert.equal(render.motionDecide({ ...idleState, leg }, { ...sadInp, now: cryNow }).type, "cry-pending");
+  assert.equal(
+    render.motionDecide({ ...idleState, cryPending: true, lastCryBucket: cryBucket }, { ...sadInp, now: cryNow }).type,
+    "start-cry",
+  );
+  // ...and no stroll starts while crying (or while a bout is pending).
+  const cryingState = { ...idleState, cryUntil: walkNow + 9999, lastCryBucket: Math.floor(walkNow / T.CRY_BUCKET_MS) };
+  assert.equal(render.motionDecide(cryingState, { ...sadInp, now: walkNow }).type, "none");
+  // A happy kandy never cries even on the sad kandy's cry bucket.
+  const happyAtCryBucket = render.motionDecide(idleState, { ...baseInp, now: cryNow });
+  assert.notEqual(happyAtCryBucket.type, "start-cry");
+});
+
+test("tear anchors come from the real face geometry across archetypes", () => {
+  const render = loadBundle().plugin.__render;
+  const SCENE_CX = 124;
+  const FLOOR_Y = 119;
+  // Egg: no eyes, no tears.
+  assert.equal(render.eyeAnchorsFor(sampleKandy({ level: 1 })).length, 0);
+  // Blob (head centered): exactly two eyes, symmetric about scene center.
+  const blobEyes = render.eyeAnchorsFor(sampleKandy({ archetype: 0, level: 12 }));
+  assert.equal(blobEyes.length, 2);
+  assert.ok(Math.abs(blobEyes[0].x + blobEyes[1].x - 2 * SCENE_CX) < 0.01, "symmetric pair");
+  assert.equal(blobEyes[0].y, blobEyes[1].y);
+  assert.ok(blobEyes[0].y > 0 && blobEyes[0].y < FLOOR_Y - 8, "eyes float above the ground");
+  // Serpent: the raised head sits right of center — so do its eyes.
+  const serpentEyes = render.eyeAnchorsFor(sampleKandy({ archetype: 3, level: 12 }));
+  assert.equal(serpentEyes.length, 2);
+  assert.ok((serpentEyes[0].x + serpentEyes[1].x) / 2 > SCENE_CX, "serpent eyes right of center");
+  // Gazer: EVERY eye weeps — 3-5 of them, seed-derived.
+  const counts = new Set();
+  for (const seed of [99, 424242, 90210, 777001, 3061213989, 1234567]) {
+    const eyes = render.eyeAnchorsFor(sampleKandy({ archetype: 8, level: 30, lineage_seed: seed }));
+    assert.ok(eyes.length >= 3 && eyes.length <= 5, `gazer has 3-5 eyes (${eyes.length})`);
+    counts.add(eyes.length);
+  }
+  assert.ok(counts.size >= 2, "gazer eye count varies with the lineage seed");
+  // Below stage 2 the gazer still has its plain pair.
+  assert.equal(render.eyeAnchorsFor(sampleKandy({ archetype: 8, level: 5 })).length, 2);
+  // The live wander offset shifts every anchor by exactly that much.
+  const shifted = render.eyeAnchorsFor(sampleKandy({ archetype: 0, level: 12 }), 27);
+  for (let i = 0; i < blobEyes.length; i++) {
+    assert.ok(Math.abs(shifted[i].x - blobEyes[i].x - 27) < 1e-9);
+    assert.equal(shifted[i].y, blobEyes[i].y);
+  }
+  // Stage growth moves the eyes (the geometry is live, not a constant).
+  const young = render.eyeAnchorsFor(sampleKandy({ archetype: 0, level: 2 }));
+  assert.notEqual(young[0].y, blobEyes[0].y);
+});
+
+test("cryOverlay rains phase-offset tears from each eye into a capped puddle", () => {
+  const render = loadBundle().plugin.__render;
+  const data = sampleKandy({ archetype: 0, level: 12, mood: "sad" });
+  const overlay = render.cryOverlay(jsx, 7, data, 10);
+  assert.ok(overlay, "overlay renders");
+  const tears = [];
+  visit(overlay, (n) => {
+    if (n.props && n.props.className === "kandev-kandy-tear") tears.push(n);
+  });
+  const eyes = render.eyeAnchorsFor(data, 10);
+  assert.equal(tears.length, Math.min(eyes.length * 2, 8));
+  const delays = new Set();
+  for (const tear of tears) {
+    const fall = parseFloat(tear.props.style["--tearfall"]);
+    assert.ok(fall > 0, "tears fall a real distance");
+    assert.ok(parseFloat(tear.props.style.animationDelay) <= 0, "phase offsets via negative delay");
+    delays.add(tear.props.style.animationDelay);
+  }
+  assert.ok(delays.size >= 3, "the eyes don't weep in lockstep");
+  // Tears anchor at the (wandered) eye positions.
+  assert.equal(tears[0].props.style.left, eyes[0].x - 2 + "px");
+  // The puddle grows for exactly the bout duration and is capped small.
+  const puddle = findNode(overlay, (n) => n.props && n.props.className === "kandev-kandy-puddle");
+  assert.ok(puddle, "puddle present");
+  assert.equal(puddle.props.style.animationDuration, render.motionTuning.CRY_BOUT_MS + "ms");
+  assert.ok(parseFloat(puddle.props.style.width) <= 60, "puddle stays small");
+  // Gazer bout: more eyes, still capped at 8 droplets.
+  const gazer = sampleKandy({ archetype: 8, level: 30, lineage_seed: 424242 });
+  const gazerTears = [];
+  visit(render.cryOverlay(jsx, 1, gazer, 0), (n) => {
+    if (n.props && n.props.className === "kandev-kandy-tear") gazerTears.push(n);
+  });
+  const gazerEyes = render.eyeAnchorsFor(gazer, 0);
+  assert.equal(gazerTears.length, Math.min(gazerEyes.length * 2, 8));
+  assert.ok(gazerTears.length > 4, "a many-eyed gazer sheds more tears");
+});
+
+test("kandyCard motion wiring: wander layer, facing flip, gait class, tracked hit zone", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const data = sampleKandy({ archetype: 0, mood: "content", scarred: false });
+  const care = { onPet() {}, hint: true };
+  const findWander = (card) =>
+    findNode(card, (n) => n.props && n.props.className === "kandev-kandy-wander");
+
+  // No motion param: no wander layer at all (legacy tree, separately
+  // byte-checked by the legacy test).
+  assert.equal(findWander(render.kandyCard(jsx, data, null, care, 13)), null);
+
+  // Neutral motion: the layer exists at translateX(0), facing untouched.
+  const idle = render.kandyCard(jsx, data, null, care, 13, undefined, null, {
+    x: 0, facing: 1, walking: false, cry: 0,
+  });
+  const idleWander = findWander(idle);
+  assert.equal(idleWander.props.style.transform, "translateX(0px)");
+  // The pet-zone BUTTON rides inside the wander layer: the hit target
+  // tracks the creature wherever it strolls.
+  assert.ok(
+    findNode(idleWander, (n) => n.type === "button" && n.props.id === "kandev-kandy-pet-zone"),
+    "pet zone lives inside the wander layer",
+  );
+  // Idle keeps today's mood-tempo bob and wiggle exactly.
+  const idleZone = findNode(idle, (n) => n.type === "button");
+  assert.match(idleZone.props.className, /kandev-kandy-wiggle/);
+  assert.ok(findNode(idle, (n) => n.props && /kandev-kandy-bob/.test(n.props.className || "")));
+
+  // Mid-stroll heading left: offset applied, facing flipped, gait class on
+  // its own wrapper, wiggle yielded, grounded bob suppressed.
+  const walking = render.kandyCard(jsx, data, null, care, 13, undefined, null, {
+    x: -22, facing: -1, walking: true, cry: 0,
+  });
+  const wander = findWander(walking);
+  assert.equal(wander.props.style.transform, "translateX(-22px)");
+  const facing = findNode(wander, (n) => n.props && n.props.style && n.props.style.transform === "scaleX(-1)");
+  assert.ok(facing, "facing flip on its own wrapper");
+  assert.ok(
+    findNode(wander, (n) => n.props && n.props.className === "kandev-kandy-gait-waddle"),
+    "blob waddles",
+  );
+  const walkZone = findNode(walking, (n) => n.type === "button");
+  assert.doesNotMatch(walkZone.props.className || "", /wiggle/);
+  assert.equal(
+    findNode(walking, (n) => n.props && /kandev-kandy-bob(\s|$|-)/.test(n.props.className || "")),
+    null,
+    "grounded gait suppresses the idle bob",
+  );
+
+  // A floaty gazer keeps its bob while gliding.
+  const gazer = render.kandyCard(
+    jsx,
+    sampleKandy({ archetype: 8, level: 30, mood: "content", scarred: false }),
+    null, care, 13, undefined, null,
+    { x: 10, facing: 1, walking: true, cry: 0 },
+  );
+  assert.ok(
+    findNode(gazer, (n) => n.props && n.props.className === "kandev-kandy-gait-glide"),
+    "gazer glides",
+  );
+  assert.ok(
+    findNode(gazer, (n) => n.props && /kandev-kandy-bob/.test(n.props.className || "")),
+    "floaty glide keeps the bob",
+  );
+
+  // EVERY anchor consumer takes the live offset: treat, bubble, tears.
+  const at = (m, c, s) => render.kandyCard(jsx, data, null, c, 13, undefined, s || null, m);
+  const centered = at({ x: 0, facing: 1, walking: false, cry: 0 }, { onPet() {}, fx: 1 });
+  const wandered = at({ x: 30, facing: 1, walking: false, cry: 0 }, { onPet() {}, fx: 1 });
+  const treatLeft = (card) =>
+    parseFloat(findNode(card, (n) => n.props && /kandev-kandy-treat/.test(n.props.className || "")).props.style.left);
+  assert.equal(treatLeft(wandered) - treatLeft(centered), 30, "treat falls onto the wandered spot");
+  const line = { id: "neu-g1", text: "so we just level forever? cool. cool cool.", seq: 1 };
+  const bubbleAt = (x) =>
+    findNode(at({ x, facing: 1, walking: false, cry: 0 }, null, line), (n) => n.props && n.props.className === "kandev-kandy-bubble");
+  // A wander right of center flips the bubble to right-anchoring; both
+  // sides track the wandered contact point exactly.
+  const cRight = render.bonkContactFor(data, 30);
+  assert.equal(parseFloat(bubbleAt(30).props.style.right), 248 - cRight.x - 26);
+  const cLeft = render.bonkContactFor(data, -30);
+  assert.equal(parseFloat(bubbleAt(-30).props.style.left), cLeft.x - 26);
+});
+
+test("kandyCard cry wiring: sob + tears only when stationary, awake, undisturbed", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const sad = sampleKandy({ archetype: 0, mood: "sad", scarred: false });
+  const care = { onPet() {}, hint: true };
+  const cryMotion = { x: 0, facing: 1, walking: false, cry: 99 };
+  const hasTears = (card) =>
+    !!findNode(card, (n) => n.props && n.props.className === "kandev-kandy-tear");
+
+  const crying = render.kandyCard(jsx, sad, null, care, 13, undefined, null, cryMotion);
+  assert.ok(hasTears(crying), "bout renders tears");
+  const zone = findNode(crying, (n) => n.type === "button");
+  assert.match(zone.props.className, /kandev-kandy-sob/, "sob-shudder on the safe wrapper");
+  // The static sad-face teardrop stays (compose, don't replace).
+  assert.ok(findNode(crying, (n) => n.props && n.props.fill === "#7fd7ff" && n.type === "ellipse"));
+
+  // Never while asleep (23.8 is past every bedtime), during celebrations,
+  // or during care reactions.
+  assert.equal(hasTears(render.kandyCard(jsx, sad, null, care, 23.8, undefined, null, cryMotion)), false);
+  assert.equal(
+    hasTears(render.kandyCard(jsx, sad, { kind: "gain" }, care, 13, undefined, null, cryMotion)),
+    false,
+  );
+  assert.equal(
+    hasTears(render.kandyCard(jsx, sad, null, { onPet() {}, fx: 1 }, 13, undefined, null, cryMotion)),
+    false,
+  );
+  assert.equal(
+    hasTears(render.kandyCard(jsx, sad, null, { onPet() {}, bonkFx: 1 }, 13, undefined, null, cryMotion)),
+    false,
+  );
+  // No bout, no tears.
+  assert.equal(
+    hasTears(render.kandyCard(jsx, sad, null, care, 13, undefined, null, { x: 0, facing: 1, walking: false, cry: 0 })),
+    false,
+  );
+});
+
+test("v0.8.0 motion respects reduced motion in CSS (gaits, sob, tears silenced)", () => {
+  const runtime = loadBundle();
+  runtime.plugin.initialize(
+    { registerComponent() {}, registerWsHandler() {} },
+    { React: {}, jsx, ui: {} },
+  );
+  const css = runtime.document.head.children[0].textContent;
+  assert.match(css, /@keyframes kandev-kandy-gaitwaddle/);
+  assert.match(css, /@keyframes kandev-kandy-tearfall/);
+  assert.match(css, /@keyframes kandev-kandy-sob/);
+  // sob must be declared AFTER wiggle so its shorthand wins when both
+  // classes share the inner wrapper during a bout.
+  assert.ok(
+    css.indexOf(".kandev-kandy-sob{animation") > css.indexOf(".kandev-kandy-wiggle{animation"),
+    "sob declared after wiggle",
+  );
+  // Tears/puddle hide entirely without their animation (base opacity 0).
+  assert.match(css, /kandev-kandy-tear\{position:absolute;opacity:0/);
+  assert.match(css, /kandev-kandy-puddle\{position:absolute;opacity:0/);
+  const reduced = css.slice(css.indexOf("(prefers-reduced-motion: reduce)"));
+  for (const cls of [
+    "sob", "tear", "puddle",
+    "gait-waddle", "gait-stride", "gait-slither", "gait-shuffle", "gait-hopskip", "gait-glide",
+  ]) {
+    assert.ok(reduced.includes(`.kandev-kandy-${cls}`), `${cls} silenced under reduced motion`);
+  }
+  assert.ok(reduced.includes(".kandev-kandy-gait-drift{transform:none}"), "drift lean flattened");
+  runtime.plugin.destroy();
+});
+
+test("facing flips mirror the contact point and eye anchors (asymmetric bodies)", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const serpent = sampleKandy({ archetype: 3, mood: "content", scarred: false });
+  const c = render.bonkContactFor(serpent);
+  const flipped = render.bonkContactFor(serpent, 0, true);
+  // Mirror about the creature center (scene center + wanderX).
+  assert.ok(Math.abs(flipped.x - (2 * 124 - c.x)) < 1e-9);
+  assert.equal(flipped.y, c.y);
+  assert.notEqual(flipped.x, c.x, "the serpent's head is genuinely asymmetric");
+  const cWander = render.bonkContactFor(serpent, -26, true);
+  assert.ok(Math.abs(cWander.x - (2 * (124 - 26) - render.bonkContactFor(serpent, -26).x)) < 1e-9);
+  // Eye anchors mirror the same way.
+  const eyes = render.eyeAnchorsFor(serpent, 0, false);
+  const eyesFlipped = render.eyeAnchorsFor(serpent, 0, true);
+  for (let i = 0; i < eyes.length; i++) {
+    assert.ok(Math.abs(eyesFlipped[i].x - (2 * 124 - eyes[i].x)) < 1e-9);
+    assert.equal(eyesFlipped[i].y, eyes[i].y);
+  }
+  // Symmetric bodies (blob) are unaffected by the flip.
+  const blob = sampleKandy({ archetype: 0, mood: "content", scarred: false });
+  assert.ok(Math.abs(render.bonkContactFor(blob, 0, true).x - render.bonkContactFor(blob).x) < 1e-9);
+  // kandyCard threads the mirror: a left-facing serpent's bonk pour lands
+  // on the mirrored head.
+  const card = render.kandyCard(jsx, serpent, null, { onPet() {}, bonkFx: 1 }, 13, undefined, null, {
+    x: -26, facing: -1, walking: false, cry: 0,
+  });
+  const pour = findNode(card, (n) => n.props && n.props.className === "kandev-kandy-pour");
+  const expected = render.bonkContactFor(serpent, -26, true);
+  assert.equal(parseFloat(pour.props.style.left), expected.x - 2.5);
+});
