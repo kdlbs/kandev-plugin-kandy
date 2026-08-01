@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.3] - 2026-08-01
+
+### Changed
+
+- fix: prevent Kandy info hover clipping (#9) (03bbf4e)
+- Add Kandy repository URL to manifest (#8) (2660b99)
+
+
 ## [0.9.2] - 2026-08-01
 
 ### Changed
