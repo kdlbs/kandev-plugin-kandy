@@ -2559,10 +2559,14 @@ var KANDY_CSS =
   // reads as a stray floating square — hide it. :has() keeps the OTHER
   // direct span (Radix's visually-hidden a11y clone) intact.
   ".kandev-kandy-tooltip > span:has(> svg){display:none!important}" +
-  // Compact help beside the mood badge. Keep the popover inside the
-  // 248px card so it is not clipped by either the hover preview or dialog.
+  // Compact help beside the mood badge. Align the popover to the 248px card;
+  // it can extend below the header without being clipped by either surface.
   // focus-within gives keyboard and touch users the same explanation as
   // mouse hover without adding another stateful overlay to the widget.
+  // The card surfaces intentionally clip their rounded contents. Release
+  // that clipping only while this panel is open so the panel can extend
+  // below the header without changing the card's resting shape.
+  ".kandev-kandy-tooltip:has(.kandev-kandy-help:hover),.kandev-kandy-tooltip:has(.kandev-kandy-help:focus-within),#kandev-kandy-dialog:has(.kandev-kandy-help:hover),#kandev-kandy-dialog:has(.kandev-kandy-help:focus-within){overflow:visible!important}" +
   ".kandev-kandy-help{position:relative;display:inline-flex;flex:0 0 auto}" +
   ".kandev-kandy-helpbutton{width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:999px;background:transparent;color:inherit;opacity:.5;cursor:help}" +
   ".kandev-kandy-helpbutton:hover,.kandev-kandy-helpbutton:focus-visible{opacity:.9;outline:none}" +
