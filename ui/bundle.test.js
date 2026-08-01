@@ -907,6 +907,16 @@ test("Kandy help opens on hover and keyboard focus within the card", () => {
   assert.match(css, /\.kandev-kandy-help:hover \.kandev-kandy-helpcontent/);
   assert.match(css, /\.kandev-kandy-help:focus-within \.kandev-kandy-helpcontent/);
   assert.match(css, /\.kandev-kandy-helpcontent\{[^}]*width:214px/);
+  assert.match(
+    css,
+    /\.kandev-kandy-tooltip:has\(\.kandev-kandy-help:hover\).*overflow:visible!important/,
+    "hover preview releases its clipping while the help panel is open",
+  );
+  assert.match(
+    css,
+    /#kandev-kandy-dialog:has\(\.kandev-kandy-help:focus-within\).*overflow:visible!important/,
+    "dialog releases its clipping for keyboard users",
+  );
 
   plugin.destroy();
 });
