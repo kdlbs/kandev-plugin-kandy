@@ -2549,6 +2549,11 @@ function sceneFor(biome, level, seed, timeOfDay, season) {
 // ---------------------------------------------------------------------------
 
 var KANDY_CSS =
+  // The host's chat topbar uses 28px controls on desktop and 44px touch
+  // targets on phones. The ID selector keeps this plugin-owned geometry
+  // authoritative over the utility classes on the shared host button.
+  "#kandev-kandy-widget{width:28px;height:28px}" +
+  "@media (max-width:639px){#kandev-kandy-widget{width:44px;height:44px}}" +
   // The shared TooltipContent always renders a small rotated-square arrow
   // (a direct span child wrapping an svg). On our full-bleed scene card it
   // reads as a stray floating square — hide it. :has() keeps the OTHER
