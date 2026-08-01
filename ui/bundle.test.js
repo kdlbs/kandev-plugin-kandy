@@ -2078,3 +2078,40 @@ test("counterfeit speech spice mixes in at ~15%, deterministically", () => {
   const murmur = at(marked, { timeOfDay: 23.9, tick: 3, asleep: true });
   assert.equal(murmur.ctx, "sleep");
 });
+
+test("gaze: pupils track the pointer, scaled by how much it trusts you", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  // Amplitude is trust-shaped: a fearful kandy follows your hand hardest,
+  // a beloved one only glances — the flavor text finally made literal.
+  const amp = render.gazeAmpFor;
+  assert.ok(amp("fearful") > amp("wary"), "fearful tracks harder than wary");
+  assert.ok(amp("wary") > amp("neutral"), "wary tracks harder than neutral");
+  assert.ok(amp("neutral") > amp("content"), "neutral tracks harder than content");
+  assert.ok(amp("content") > amp("beloved"), "beloved only glances");
+  assert.equal(amp("nonsense"), amp("neutral"), "unknown bands fall back to neutral");
+  assert.ok(amp("fearful") <= 1 && amp("beloved") > 0, "amplitudes stay within (0,1]");
+
+  // Every pupil opts into tracking and declares its own travel radius, so
+  // each archetype and eye size — including a gazer's 3-5 eyes — moves in
+  // proportion.
+  const collectPupils = (card) => {
+    const found = [];
+    visit(card, (node) => {
+      const cls = node.props && node.props.className;
+      if (typeof cls === "string" && cls.indexOf("kandev-kandy-pupil") >= 0) found.push(node);
+    });
+    return found;
+  };
+  const gazer = render.kandyCard(jsx, sampleKandy({ archetype: 8, level: 40 }), null, null, 13);
+  const pupils = collectPupils(gazer);
+  assert.ok(pupils.length >= 2, `pupils render (${pupils.length})`);
+  for (const p of pupils) {
+    const gr = p.props.style && p.props.style["--kandy-gr"];
+    assert.match(String(gr), /^[\d.]+px$/, "pupil declares its own travel radius");
+  }
+
+  // Closed eyes cannot follow anything: an asleep card renders no pupils.
+  const asleep = render.kandyCard(jsx, sampleKandy({ archetype: 8, level: 40 }), null, null, 23.9);
+  assert.equal(collectPupils(asleep).length, 0, "asleep: nothing to track with");
+});
