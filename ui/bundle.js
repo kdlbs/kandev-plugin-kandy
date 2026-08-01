@@ -2559,6 +2559,19 @@ var KANDY_CSS =
   // reads as a stray floating square — hide it. :has() keeps the OTHER
   // direct span (Radix's visually-hidden a11y clone) intact.
   ".kandev-kandy-tooltip > span:has(> svg){display:none!important}" +
+  // Compact help beside the mood badge. Keep the popover inside the
+  // 248px card so it is not clipped by either the hover preview or dialog.
+  // focus-within gives keyboard and touch users the same explanation as
+  // mouse hover without adding another stateful overlay to the widget.
+  ".kandev-kandy-help{position:relative;display:inline-flex;flex:0 0 auto}" +
+  ".kandev-kandy-helpbutton{width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:999px;background:transparent;color:inherit;opacity:.5;cursor:help}" +
+  ".kandev-kandy-helpbutton:hover,.kandev-kandy-helpbutton:focus-visible{opacity:.9;outline:none}" +
+  ".kandev-kandy-helpbutton:focus-visible{box-shadow:0 0 0 1.5px var(--ring)}" +
+  ".kandev-kandy-helpcontent{position:absolute;z-index:8;top:calc(100% + 6px);right:0;width:214px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--popover);color:var(--popover-foreground);box-shadow:0 8px 24px rgba(0,0,0,.22);font-size:9px;line-height:1.4;font-weight:400;text-transform:none;white-space:normal;opacity:0;visibility:hidden;pointer-events:none;transform:translateY(-2px);transition:opacity .12s ease,transform .12s ease,visibility .12s}" +
+  ".kandev-kandy-help:hover .kandev-kandy-helpcontent,.kandev-kandy-help:focus-within .kandev-kandy-helpcontent{opacity:1;visibility:visible;transform:translateY(0)}" +
+  ".kandev-kandy-helpcontent strong{display:block;margin-bottom:4px;font-size:10px;font-weight:600}" +
+  ".kandev-kandy-helpcontent ul{margin:0;padding-left:13px}" +
+  ".kandev-kandy-helpcontent li+li{margin-top:3px}" +
   // Dialog card: the 248px design scaled by a CONTINUOUS zoom (default
   // 1.45 = ~360px) — zoom keeps every vector crisp and scales hit-targets
   // consistently. Since v0.6.2 the zoom (and the matching frame width) are
@@ -2756,7 +2769,7 @@ var KANDY_CSS =
   ".kandev-kandy-photo-panel:focus{outline:none}" +
   ".kandev-kandy-photo-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc,.kandev-kandy-sob,.kandev-kandy-tear,.kandev-kandy-puddle,.kandev-kandy-gait-waddle,.kandev-kandy-gait-stride,.kandev-kandy-gait-slither,.kandev-kandy-gait-shuffle,.kandev-kandy-gait-hopskip,.kandev-kandy-gait-glide{animation:none}.kandev-kandy-gait-drift{transform:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc,.kandev-kandy-sob,.kandev-kandy-tear,.kandev-kandy-puddle,.kandev-kandy-gait-waddle,.kandev-kandy-gait-stride,.kandev-kandy-gait-slither,.kandev-kandy-gait-shuffle,.kandev-kandy-gait-hopskip,.kandev-kandy-gait-glide{animation:none}.kandev-kandy-gait-drift{transform:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-helpcontent{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -2889,6 +2902,53 @@ function moodBadge(h, mood) {
       },
     }),
     mood,
+  );
+}
+
+// kandyHelp — a deliberately small, local tooltip explaining the mechanics
+// users can actually observe. Growth sources stay categorical: the server's
+// XP weights remain secret, while the important care-vs-growth distinction is
+// explicit so nobody tries to level Kandy by repeatedly clicking it.
+function kandyHelp(h) {
+  return h(
+    "div",
+    { className: "kandev-kandy-help" },
+    h(
+      "button",
+      {
+        type: "button",
+        className: "kandev-kandy-helpbutton",
+        "aria-label": "How Kandy works",
+        "aria-describedby": "kandev-kandy-help-text",
+      },
+      h(
+        "svg",
+        { width: 12, height: 12, viewBox: "0 0 16 16", "aria-hidden": "true" },
+        h("circle", { cx: 8, cy: 8, r: 6.25, fill: "none", stroke: "currentColor", strokeWidth: 1.5 }),
+        h("path", {
+          d: "M8 7.1 V11 M8 4.75 V4.8",
+          fill: "none",
+          stroke: "currentColor",
+          strokeWidth: 1.7,
+          strokeLinecap: "round",
+        }),
+      ),
+    ),
+    h(
+      "div",
+      { id: "kandev-kandy-help-text", role: "tooltip", className: "kandev-kandy-helpcontent" },
+      h("strong", null, "How Kandy works"),
+      h(
+        "ul",
+        null,
+        h("li", null, "Click or tap Kandy to give it candy."),
+        h("li", null, "Right-click to add water; on touch, press and hold."),
+        h("li", null, "Messages and completed agent turns and runs help it grow."),
+        h("li", null, "Candy and water change mood and bond, not growth."),
+        h("li", null, "Mood cools when work goes quiet. Time and season shape its habitat."),
+        h("li", null, "One Kandy is shared across this Kandev instance."),
+      ),
+    ),
   );
 }
 
@@ -5452,6 +5512,7 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
           "Lv " + data.level,
         ),
         moodBadge(h, data.mood || "content"),
+        kandyHelp(h),
       ),
       h(
         "div",
@@ -6767,6 +6828,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     sleepyPetOverlay: sleepyPetOverlay,
     holdTipOverlay: holdTipOverlay,
     careHintText: careHintText,
+    kandyHelp: kandyHelp,
     bonkContactFor: bonkContactFor,
     // Wander + cry (v0.8.0)
     wanderGate: wanderGate,
