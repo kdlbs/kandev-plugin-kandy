@@ -868,6 +868,49 @@ test("care hint text is pointer-aware", () => {
   assert.equal(render.careHintText(true), "tap to treat · hold to douse");
 });
 
+test("Kandy card explains care and growth from the info icon beside mood", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const card = render.kandyCard(jsx, sampleKandy(), null, null, 13);
+  const infoButton = findNode(
+    card,
+    (node) => node.type === "button" && node.props["aria-label"] === "How Kandy works",
+  );
+  const help = findNode(
+    card,
+    (node) => node.props && node.props.className === "kandev-kandy-helpcontent",
+  );
+  const helpText = textContent(help).replace(/\s+/g, " ");
+
+  assert.ok(infoButton, "the card exposes a keyboard-focusable info control");
+  assert.equal(infoButton.props.type, "button");
+  assert.equal(infoButton.props["aria-describedby"], "kandev-kandy-help-text");
+  assert.equal(help.props.role, "tooltip");
+  assert.match(helpText, /Click or tap Kandy to give it candy/);
+  assert.match(helpText, /Right-click to add water; on touch, press and hold/);
+  assert.match(helpText, /Messages and completed agent turns and runs help it grow/);
+  assert.match(helpText, /Candy and water change mood and bond, not growth/);
+  assert.match(helpText, /One Kandy is shared across this Kandev instance/);
+});
+
+test("Kandy help opens on hover and keyboard focus within the card", () => {
+  const { document, plugin } = loadBundle();
+  plugin.initialize(
+    {
+      registerComponent() {},
+      registerWsHandler() {},
+    },
+    { jsx, ui: {} },
+  );
+
+  const css = document.getElementById("kandev-kandy-style").textContent;
+  assert.match(css, /\.kandev-kandy-help:hover \.kandev-kandy-helpcontent/);
+  assert.match(css, /\.kandev-kandy-help:focus-within \.kandev-kandy-helpcontent/);
+  assert.match(css, /\.kandev-kandy-helpcontent\{[^}]*width:214px/);
+
+  plugin.destroy();
+});
+
 test("pet zone wires the coarse-pointer hold and blocks gesture stealing", () => {
   const cleanups = [];
   const React = {
