@@ -690,6 +690,10 @@ function eyeAt(h, rand, cx, cy, r, style, key, temper) {
   if (style !== "dot") {
     out.push(h("circle", { key: key + "w", cx: cx, cy: cy, r: r, fill: "#ffffff" }));
   }
+  // The pupil rides a gaze offset (--kandy-gx/--kandy-gy, set on the card
+  // from the pointer) scaled by this eye's radius, so every archetype and
+  // eye size tracks proportionally. Blink keeps its own transform on the
+  // element; gaze is a translate composed in the same transform list.
   out.push(
     h("circle", {
       key: key + "p",
@@ -697,8 +701,12 @@ function eyeAt(h, rand, cx, cy, r, style, key, temper) {
       cy: cy,
       r: style === "dot" ? r * 0.55 : r * 0.45,
       fill: "#26232e",
-      className: "kandev-kandy-blink",
-      style: { transformBox: "fill-box", transformOrigin: "center" },
+      className: "kandev-kandy-blink kandev-kandy-pupil",
+      style: {
+        transformBox: "fill-box",
+        transformOrigin: "center",
+        "--kandy-gr": (r * 0.34).toFixed(2) + "px",
+      },
     }),
   );
   if (temper && temper.beloved) {
@@ -790,6 +798,21 @@ function sleepFaceParts(h, C, head, g, sty) {
     );
   }
   return out;
+}
+
+// gazeAmpFor — how hard the eyes follow the pointer, by trust band. A
+// beloved kandy glances (soft, unbothered); a fearful one tracks your hand
+// almost fully. Neutral sits in between. Unit scalar in [0,1].
+var GAZE_AMP_BY_BAND = {
+  beloved: 0.55,
+  content: 0.7,
+  neutral: 0.8,
+  wary: 0.95,
+  fearful: 1,
+};
+function gazeAmpFor(band) {
+  var a = GAZE_AMP_BY_BAND[band];
+  return a === undefined ? GAZE_AMP_BY_BAND.neutral : a;
 }
 
 function faceParts(h, lineage, C, head, g, sty, mood, temper, sleep) {
@@ -2559,6 +2582,10 @@ var KANDY_CSS =
   // reads as a stray floating square — hide it. :has() keeps the OTHER
   // direct span (Radix's visually-hidden a11y clone) intact.
   ".kandev-kandy-tooltip > span:has(> svg){display:none!important}" +
+  // Gaze tracking (v0.10.0): pupils slide toward the pointer. --kandy-gx/gy
+  // are unit scalars in [-1,1] set on the card; --kandy-gr is this eye's
+  // travel radius. translate() composes with the blink animation's scaleY.
+  ".kandev-kandy-pupil{translate:calc(var(--kandy-gx,0) * var(--kandy-gr,1px)) calc(var(--kandy-gy,0) * var(--kandy-gr,1px));transition:translate 140ms ease-out}" +
   // Compact help beside the mood badge. Align the popover to the 248px card;
   // it can extend below the header without being clipped by either surface.
   // focus-within gives keyboard and touch users the same explanation as
@@ -5432,12 +5459,42 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
   else if (care && care.sleepyFx) flavorLine = "Your kandy blinks at you sleepily.";
   else if (care && care.fx) flavorLine = "Your kandy munches happily.";
   else if (sleepState === "asleep") flavorLine = "Your kandy is fast asleep.";
+  // Gaze tracking (v0.10.0): the scene reports pointer moves as unit
+  // offsets on --kandy-gx/--kandy-gy; the pupils (kandev-kandy-pupil)
+  // translate by them. Trust shapes it: a beloved kandy glances softly, a
+  // wary/fearful one locks on and follows your hand — exactly what its
+  // flavor text has always claimed. Asleep eyes are closed, so skip.
+  var gazeAmp = sleepState ? 0 : gazeAmpFor(data.temperament_band);
+  function onSceneMove(e) {
+    if (!gazeAmp) return;
+    var el = e.currentTarget;
+    if (!el || !el.getBoundingClientRect) return;
+    var r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    // Aim from the creature's own spot (it walks), not the scene centre.
+    var originX = r.left + r.width / 2 + wanderX * (r.width / BONK_SCENE.w);
+    var originY = r.top + r.height * 0.55;
+    var dx = (e.clientX - originX) / (r.width / 2);
+    var dy = (e.clientY - originY) / (r.height / 2);
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var k = Math.min(len, 1) / len;
+    el.style.setProperty("--kandy-gx", (dx * k * gazeAmp).toFixed(3));
+    el.style.setProperty("--kandy-gy", (dy * k * gazeAmp * 0.7).toFixed(3));
+  }
+  function onSceneLeave(e) {
+    var el = e.currentTarget;
+    if (!el || !el.style) return;
+    el.style.setProperty("--kandy-gx", "0");
+    el.style.setProperty("--kandy-gy", "0");
+  }
   return h(
     "div",
     { style: { width: "248px" } },
     h(
       "div",
       {
+        onPointerMove: onSceneMove,
+        onPointerLeave: onSceneLeave,
         style: {
           position: "relative",
           height: "124px",
@@ -6821,6 +6878,8 @@ window.registerKandevPlugin(PLUGIN_ID, {
   // evolution posters in demo/). Harmless in production: kandev's plugin
   // loader only reads initialize/destroy.
   __render: {
+    injectStyles: injectStyles,
+    gazeAmpFor: gazeAmpFor,
     creatureSvg: creatureSvg,
     creatureParts: creatureParts,
     sceneFor: sceneFor,
