@@ -2628,6 +2628,10 @@ var KANDY_CSS =
   ".kandev-kandy-token-pile-name{max-width:100%;font-size:12px;font-weight:720;line-height:1.25;overflow-wrap:anywhere}.kandev-kandy-token-pile-compact{color:var(--muted-foreground);font-size:10px}.kandev-kandy-vault-exact{position:absolute;left:8px;right:8px;bottom:7px;font-size:10px;font-variant-numeric:tabular-nums;opacity:0;visibility:hidden}.kandev-kandy-token-pile:hover .kandev-kandy-vault-exact,.kandev-kandy-token-pile:focus-visible .kandev-kandy-vault-exact,.kandev-kandy-token-pile.is-revealed .kandev-kandy-vault-exact{opacity:1;visibility:visible}" +
   ".kandev-kandy-vault-boundary{margin:16px 0 0;color:var(--muted-foreground);font-size:10px;text-align:center}.kandev-kandy-vault-empty{min-height:270px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--muted-foreground)}.kandev-kandy-vault-empty-door{font-size:58px;line-height:1;opacity:.45}" +
   "@media (max-width:480px){.kandev-kandy-vault-grid,.kandev-kandy-token-grid{grid-template-columns:1fr}.kandev-kandy-vault-scene{padding:12px}.kandev-kandy-vault-bar{gap:6px;padding:8px}.kandev-kandy-vault-subtitle{font-size:9px}.kandev-kandy-vault-action{padding:0 8px}}" +
+  "@keyframes kandev-kandy-vault-descend{0%{opacity:1;transform:translateY(0) scale(1)}72%{opacity:1;transform:translateY(92px) scale(.92)}100%{opacity:0;transform:translateY(132px) scale(.82)}}" +
+  "@keyframes kandev-kandy-vault-open{0%{transform:scaleX(.15);opacity:.25}100%{transform:scaleX(1);opacity:1}}" +
+  ".kandev-kandy-vault-descent{box-sizing:border-box;width:min(420px,calc(100vw - 32px));min-height:360px;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;overflow:hidden;border:1px solid var(--border);border-radius:16px;background:linear-gradient(180deg,color-mix(in oklch,var(--background) 92%,#31536a),color-mix(in oklch,var(--background) 76%,#1b1510));color:var(--foreground)}" +
+  ".kandev-kandy-vault-descent:focus{outline:none}.kandev-kandy-vault-descent-stage{position:relative;width:220px;height:220px;display:flex;align-items:flex-start;justify-content:center}.kandev-kandy-vault-descending-creature{position:relative;z-index:2;animation:kandev-kandy-vault-descend .72s ease-in forwards}.kandev-kandy-vault-trapdoor{position:absolute;z-index:1;left:38px;right:38px;bottom:28px;height:30px;border-radius:50%;background:#17100c;box-shadow:0 0 0 7px color-mix(in oklch,var(--muted) 70%,#493425),inset 0 8px 12px rgba(0,0,0,.75);animation:kandev-kandy-vault-open .25s ease-out both}.kandev-kandy-vault-descent-label{font-size:13px;font-weight:700}" +
   // Resize grip: a ~16px muted diagonal-lines affordance hugging the
   // dialog's bottom-right corner, OUTSIDE the zoomed wrapper so its hit
   // area never scales. touch-action:none keeps pointer-captured drags from
@@ -2819,7 +2823,7 @@ var KANDY_CSS =
   ".kandev-kandy-photo-panel:focus{outline:none}" +
   ".kandev-kandy-photo-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc,.kandev-kandy-sob,.kandev-kandy-tear,.kandev-kandy-puddle,.kandev-kandy-gait-waddle,.kandev-kandy-gait-stride,.kandev-kandy-gait-slither,.kandev-kandy-gait-shuffle,.kandev-kandy-gait-hopskip,.kandev-kandy-gait-glide{animation:none}.kandev-kandy-gait-drift{transform:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-token-pile-mound{transition:none}.kandev-kandy-helpcontent{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-vault-descending-creature,.kandev-kandy-vault-trapdoor,.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc,.kandev-kandy-sob,.kandev-kandy-tear,.kandev-kandy-puddle,.kandev-kandy-gait-waddle,.kandev-kandy-gait-stride,.kandev-kandy-gait-slither,.kandev-kandy-gait-shuffle,.kandev-kandy-gait-hopskip,.kandev-kandy-gait-glide{animation:none}.kandev-kandy-gait-drift{transform:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-token-pile-mound{transition:none}.kandev-kandy-helpcontent{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -4611,6 +4615,33 @@ function tokenVaultAction(h, label, onClick) {
   );
 }
 
+function tokenVaultInitialPhase(reducedMotion) {
+  return reducedMotion ? "hub" : "descending";
+}
+
+function tokenVaultDescent(h, DialogTitle, data, panelRef, onBack, onExit) {
+  return h(
+    "section",
+    {
+      ref: panelRef,
+      tabIndex: -1,
+      role: "status",
+      "aria-live": "polite",
+      "aria-label": "Opening Kandy token vault",
+      className: "kandev-kandy-vault-descent",
+    },
+    h(DialogTitle, { className: "sr-only" }, "Opening token vault"),
+    h(
+      "div",
+      { className: "kandev-kandy-vault-descent-stage", "aria-hidden": "true" },
+      h("div", { className: "kandev-kandy-vault-descending-creature" }, creatureSvg(h, data, 92)),
+      h("div", { className: "kandev-kandy-vault-trapdoor" }),
+    ),
+    h("div", { className: "kandev-kandy-vault-descent-label" }, "Opening token vault…"),
+    h("div", { style: { display: "flex", gap: "8px" } }, tokenVaultAction(h, "Back", onBack), tokenVaultAction(h, "Exit vault", onExit)),
+  );
+}
+
 function tokenVaultShell(h, DialogTitle, title, subtitle, panelRef, onBack, onExit, children) {
   return h(
     "section",
@@ -6173,6 +6204,7 @@ function makeKandyWidget(host) {
     var vaultPanelRef = React.useRef(null);
     var vaultEntryRef = React.useRef(null);
     var returnToVaultEntryRef = React.useRef(false);
+    var vaultDescentTimerRef = React.useRef(null);
     var celebrationTimerRef = React.useRef(null);
     var petTimerRef = React.useRef(null);
     var bonkTimerRef = React.useRef(null);
@@ -6847,6 +6879,8 @@ function makeKandyWidget(host) {
     }
 
     function openPhotoBooth() {
+      if (vaultDescentTimerRef.current) clearTimeout(vaultDescentTimerRef.current);
+      vaultDescentTimerRef.current = null;
       setVaultView(null);
       setVaultRevealKey(null);
       returnToPhotoEntryRef.current = true;
@@ -6869,7 +6903,15 @@ function makeKandyWidget(host) {
       setPhotoOpen(false);
       returnToVaultEntryRef.current = true;
       setVaultRevealKey(null);
-      setVaultView("hub");
+      var phase = tokenVaultInitialPhase(prefersReducedMotion());
+      setVaultView(phase);
+      if (phase === "descending") {
+        if (vaultDescentTimerRef.current) clearTimeout(vaultDescentTimerRef.current);
+        vaultDescentTimerRef.current = setTimeout(function () {
+          vaultDescentTimerRef.current = null;
+          if (mountedRef.current) setVaultView("hub");
+        }, 720);
+      }
       setDialogOpen(true);
     }
 
@@ -6884,6 +6926,8 @@ function makeKandyWidget(host) {
     }
 
     function backFromTokenVault() {
+      if (vaultDescentTimerRef.current) clearTimeout(vaultDescentTimerRef.current);
+      vaultDescentTimerRef.current = null;
       setVaultRevealKey(null);
       setVaultView(null);
     }
@@ -6914,6 +6958,8 @@ function makeKandyWidget(host) {
     function changeDialogOpen(nextOpen) {
       setDialogOpen(nextOpen);
       if (!nextOpen) {
+        if (vaultDescentTimerRef.current) clearTimeout(vaultDescentTimerRef.current);
+        vaultDescentTimerRef.current = null;
         returnToPhotoEntryRef.current = false;
         clearPreparedPhoto();
         setPhotoOpen(false);
@@ -6958,6 +7004,7 @@ function makeKandyWidget(host) {
         if (sleepyTimerRef.current) clearTimeout(sleepyTimerRef.current);
         if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
         if (greetTimerRef.current) clearTimeout(greetTimerRef.current);
+        if (vaultDescentTimerRef.current) clearTimeout(vaultDescentTimerRef.current);
         clearHoldTimers(holdRef.current);
         holdRef.current = null;
         if (holdClearTimerRef.current) clearTimeout(holdClearTimerRef.current);
@@ -7203,8 +7250,17 @@ function makeKandyWidget(host) {
                 copyPhoto,
               )
             : vaultView
-              ? vaultView === "hub"
-                ? tokenVaultHub(
+              ? vaultView === "descending"
+                ? tokenVaultDescent(
+                    h,
+                    DialogTitle,
+                    shown,
+                    vaultPanelRef,
+                    backFromTokenVault,
+                    function () { changeDialogOpen(false); },
+                  )
+                : vaultView === "hub"
+                  ? tokenVaultHub(
                     h,
                     DialogTitle,
                     tokenVaultModel,
@@ -7214,7 +7270,7 @@ function makeKandyWidget(host) {
                     backFromTokenVault,
                     function () { changeDialogOpen(false); },
                   )
-                : tokenVaultRoom(
+                  : tokenVaultRoom(
                     h,
                     DialogTitle,
                     tokenVaultModel,
@@ -7400,6 +7456,8 @@ window.registerKandevPlugin(PLUGIN_ID, {
     tokenPileScale: tokenPileScale,
     tokenVaultHub: tokenVaultHub,
     tokenVaultRoom: tokenVaultRoom,
+    tokenVaultInitialPhase: tokenVaultInitialPhase,
+    tokenVaultDescent: tokenVaultDescent,
     photoExportPlan: photoExportPlan,
     photoPaletteFor: photoPaletteFor,
     photoPortraitSvg: photoPortraitSvg,

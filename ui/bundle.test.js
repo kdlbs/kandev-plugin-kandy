@@ -321,6 +321,31 @@ test("token vault hub and chamber render accessible doors and model piles", () =
   assert.ok(render.tokenPileScale("100", "100") > render.tokenPileScale("20", "100"));
 });
 
+test("token vault descent is playful and reduced motion skips it", () => {
+  const { document, plugin } = loadBundle();
+  const render = plugin.__render;
+  assert.equal(typeof render.tokenVaultInitialPhase, "function");
+  assert.equal(render.tokenVaultInitialPhase(false), "descending");
+  assert.equal(render.tokenVaultInitialPhase(true), "hub");
+  const descent = render.tokenVaultDescent(
+    jsx,
+    "DialogTitle",
+    sampleKandy(),
+    { current: null },
+    () => {},
+    () => {},
+  );
+  assert.equal(descent.props.role, "status");
+  assert.match(descent.props.className, /kandev-kandy-vault-descent/);
+  assert.match(textContent(descent), /Opening token vault/);
+  assert.ok(findNode(descent, (node) => node.props && node.props.className === "kandev-kandy-vault-descending-creature"));
+
+  plugin.initialize({ registerComponent() {}, registerWsHandler() {} }, { jsx, ui: {} });
+  const css = document.getElementById("kandev-kandy-style").textContent;
+  assert.match(css, /@keyframes kandev-kandy-vault-descend/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[^{]*\{[^}]*\.kandev-kandy-vault-descending-creature/);
+});
+
 test("chat topbar control uses desktop and phone geometry", () => {
   const { document, plugin } = loadBundle();
   plugin.initialize(
