@@ -435,7 +435,11 @@ func agentRoomLabel(agentType string) string {
 	default:
 		words := strings.FieldsFunc(agentType, func(r rune) bool { return r == '-' || r == '_' })
 		for i := range words {
-			words[i] = strings.ToUpper(words[i][:1]) + words[i][1:]
+			runes := []rune(words[i])
+			if len(runes) > 0 {
+				runes[0] = unicode.ToUpper(runes[0])
+				words[i] = string(runes)
+			}
 		}
 		return strings.Join(words, " ")
 	}
