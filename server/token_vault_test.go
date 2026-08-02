@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/kandev/kandev/pkg/pluginsdk"
 	"github.com/stretchr/testify/require"
@@ -205,4 +206,31 @@ func TestTokenVault_UnknownUnicodeAgentTypeGetsReadableRoom(t *testing.T) {
 	require.Equal(t, "écho-acp", state.TokenVault.Rooms[0].AgentType)
 	require.Equal(t, "Écho Acp", state.TokenVault.Rooms[0].Label)
 	require.Equal(t, "modèle-α", state.TokenVault.Rooms[0].Models[0].Name)
+}
+
+func TestTokenVault_UsageDoesNotMutateCreatureLedger(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	require.NoError(t, p.OnEvent(ctx, busEvent(eventTurnCompleted, map[string]any{})))
+	before := persistedLedger(t, host)
+
+	base := p.now()
+	p.now = func() time.Time { return base.Add(24 * time.Hour) }
+	require.NoError(t, p.OnEvent(ctx, &pluginsdk.Event{
+		EventID:   "delivery-no-xp",
+		EventType: "session_prompt_usage.updated.session-no-xp",
+		Payload: map[string]any{
+			"agent_type": "claude-acp",
+			"model":      "claude-sonnet-4-5",
+			"timestamp":  "2026-07-29T12:00:00Z",
+			"usage":      map[string]any{"total_tokens": float64(123)},
+		},
+	}))
+	after := persistedLedger(t, host)
+
+	require.Equal(t, before.XP, after.XP)
+	require.Equal(t, before.AwardSeq, after.AwardSeq)
+	require.Equal(t, before.LastAwardAt, after.LastAwardAt)
+	require.Equal(t, before.UpdatedAt, after.UpdatedAt)
 }
