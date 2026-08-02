@@ -110,8 +110,13 @@ func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) 
 	}
 	// Token history follows Kandy lineage. Persist a sealed zero-XP Kandy
 	// before its first usage observation so a process restart cannot mint a
-	// different salt and orphan the separate vault row.
-	kandy := p.mutateLedger(ctx, func(*ledger) {})
+	// different salt and orphan the separate vault row. This persistence is
+	// deliberately not a creature mutation: no timestamps or XP bookkeeping
+	// change when token metadata arrives.
+	kandy, persisted := p.ensureTokenVaultLineage(ctx)
+	if !persisted {
+		return
+	}
 	lineage := strconv.FormatUint(uint64(kandy.Salt), 10)
 	vault := cloneTokenVault(p.loadTokenVault(ctx, lineage))
 	for _, digest := range vault.RecentBodyHashes {
@@ -132,6 +137,35 @@ func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) 
 		vault.ObservedSince = usage.Timestamp
 	}
 	p.persistTokenVault(ctx, vault)
+}
+
+func (p *plugin) ensureTokenVaultLineage(ctx context.Context) (*ledger, bool) {
+	kandy := p.loadLedger(ctx)
+	host := p.Host()
+	if host == nil {
+		return kandy, false
+	}
+	stored, found, err := host.GetState(ctx, stateScope, "", stateKey)
+	if err != nil {
+		log.Printf("kandy: checking token vault lineage: %v", err)
+		return kandy, false
+	}
+	if found && ledgerFromMap(stored).Salt == kandy.Salt {
+		return kandy, true
+	}
+	key, _, err := p.ensureSealKey(ctx, host)
+	if err != nil {
+		log.Printf("kandy: seal key unavailable, skipping token vault lineage persist: %v", err)
+		return kandy, false
+	}
+	copy := *kandy
+	sealLedger(&copy, key)
+	if err := host.SetState(ctx, stateScope, "", stateKey, ledgerToMap(&copy)); err != nil {
+		log.Printf("kandy: persisting token vault lineage: %v", err)
+		return kandy, false
+	}
+	p.cached = &copy
+	return p.cached, true
 }
 
 func normalizeTokenUsage(event *pluginsdk.Event) (observedTokenUsage, bool) {
