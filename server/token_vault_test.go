@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,4 +235,107 @@ func TestTokenVault_UsageDoesNotMutateCreatureLedger(t *testing.T) {
 	require.Equal(t, before.AwardSeq, after.AwardSeq)
 	require.Equal(t, before.LastAwardAt, after.LastAwardAt)
 	require.Equal(t, before.UpdatedAt, after.UpdatedAt)
+}
+
+func TestTokenVault_RetainsEveryAgentAndModelWithExactLifetime(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	base := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+
+	for index, agentType := range []string{"claude-acp", "codex-acp", "opencode-acp"} {
+		require.NoError(t, p.OnEvent(ctx, tokenUsageFixture(
+			fmt.Sprintf("large-%d", index), agentType, "shared-model", 4_000_000_000_000_000, base.Add(time.Duration(index)*time.Second),
+		)))
+	}
+	for index := 0; index < 40; index++ {
+		require.NoError(t, p.OnEvent(ctx, tokenUsageFixture(
+			fmt.Sprintf("model-%d", index), "codex-acp", fmt.Sprintf("model-%02d", index), 1, base.Add(time.Duration(index+10)*time.Second),
+		)))
+	}
+
+	vault := fetchKandy(t, p, "").TokenVault
+	require.Equal(t, "12000000000000040", vault.TotalTokens, "lifetime total stays exact above Number.MAX_SAFE_INTEGER")
+	require.Len(t, vault.Rooms, 3)
+	require.Equal(t, "codex-acp", vault.Rooms[0].AgentType, "largest room sorts first")
+	require.Len(t, vault.Rooms[0].Models, 41, "no first-model cap or Other bucket")
+	for _, room := range vault.Rooms {
+		require.NotEqual(t, "Other", room.Label)
+		require.Contains(t, modelNames(room), "shared-model", "same model remains distinct inside every agent room")
+	}
+}
+
+func TestTokenVault_RecentBodyHashRingIsBoundedFIFO(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	base := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	var first, newest *pluginsdk.Event
+	for index := 0; index < tokenVaultDigestLimit+1; index++ {
+		event := tokenUsageFixture(fmt.Sprintf("ring-%d", index), "codex-acp", "gpt", 1, base.Add(time.Duration(index)*time.Second))
+		if index == 0 {
+			first = event
+		}
+		newest = event
+		require.NoError(t, p.OnEvent(ctx, event))
+	}
+	require.Equal(t, "513", fetchKandy(t, p, "").TokenVault.TotalTokens)
+	require.NoError(t, p.OnEvent(ctx, newest))
+	require.Equal(t, "513", fetchKandy(t, p, "").TokenVault.TotalTokens, "newest digest remains protected")
+	require.NoError(t, p.OnEvent(ctx, first))
+	require.Equal(t, "514", fetchKandy(t, p, "").TokenVault.TotalTokens, "oldest digest was evicted first")
+
+	stored := host.state[stateMapKey(stateScope, "", tokenVaultStateKey)]
+	hashes, ok := stored["recent_body_hashes"].([]any)
+	require.True(t, ok)
+	require.Len(t, hashes, tokenVaultDigestLimit)
+}
+
+func TestTokenVault_PersistsAndExposesOnlyAggregateMetadata(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	event := tokenUsageFixture("privacy", "claude-acp", "sonnet", 42, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+	event.Payload["task_id"] = "PRIVATE_TASK_NEVER_STORE"
+	event.Payload["session_id"] = "PRIVATE_SESSION_NEVER_STORE"
+	event.Payload["agent_id"] = "PRIVATE_AGENT_NEVER_STORE"
+	event.Payload["prompt"] = "PRIVATE_PROMPT_NEVER_STORE"
+	event.Payload["usage"].(map[string]any)["provider_reported_cost_subcents"] = float64(99_999)
+	require.NoError(t, p.OnEvent(ctx, event))
+
+	storedJSON, err := json.Marshal(host.state[stateMapKey(stateScope, "", tokenVaultStateKey)])
+	require.NoError(t, err)
+	response, err := p.HandleWebhook(ctx, &pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET"})
+	require.NoError(t, err)
+	for _, forbidden := range []string{
+		"PRIVATE_TASK_NEVER_STORE", "PRIVATE_SESSION_NEVER_STORE", "PRIVATE_AGENT_NEVER_STORE", "PRIVATE_PROMPT_NEVER_STORE",
+		"provider_reported_cost_subcents", "input_tokens", "output_tokens", "cached_read_tokens", "thought_tokens",
+	} {
+		require.NotContains(t, string(storedJSON), forbidden)
+		require.NotContains(t, string(response.Body), forbidden)
+	}
+}
+
+func tokenUsageFixture(id, agentType, model string, tokens int64, timestamp time.Time) *pluginsdk.Event {
+	return &pluginsdk.Event{
+		EventID:   "delivery-" + id,
+		EventType: "session_prompt_usage.updated.session-" + id,
+		Payload: map[string]any{
+			"task_id":    "task-" + id,
+			"session_id": "session-" + id,
+			"agent_id":   "agent-" + id,
+			"agent_type": agentType,
+			"model":      model,
+			"timestamp":  timestamp.UTC().Format(time.RFC3339),
+			"usage":      map[string]any{"total_tokens": float64(tokens), "estimated": false},
+		},
+	}
+}
+
+func modelNames(room tokenVaultRoomResponse) string {
+	names := make([]string, 0, len(room.Models))
+	for _, model := range room.Models {
+		names = append(names, model.Name)
+	}
+	return strings.Join(names, "\n")
 }
