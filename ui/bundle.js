@@ -4468,6 +4468,69 @@ var PHOTO_HABITATS = ["Verdant", "Aquatic", "Alpine", "Ember"];
 var PHOTO_MOODS = { elated: true, happy: true, content: true, bored: true, sad: true, gloomy: true };
 var PHOTO_TEMPERAMENTS = { beloved: true, content: true, neutral: true, wary: true, fearful: true };
 
+var TOKEN_VAULT_STATUSES = { empty: true, ready: true, partial: true };
+
+function tokenVaultDecimal(value) {
+  var text = typeof value === "string" ? value.trim() : "";
+  if (!/^\d+$/.test(text)) return "0";
+  return text.replace(/^0+(?=\d)/, "");
+}
+
+function compareTokenVaultDecimals(left, right) {
+  left = tokenVaultDecimal(left);
+  right = tokenVaultDecimal(right);
+  if (left.length !== right.length) return left.length > right.length ? 1 : -1;
+  if (left === right) return 0;
+  return left > right ? 1 : -1;
+}
+
+function tokenVaultText(value, fallback, limit) {
+  var text = typeof value === "string" ? value.trim() : "";
+  if (!text) return fallback;
+  return text.slice(0, limit);
+}
+
+// Strict aggregate-only allowlist. Raw event identity and conversation data
+// have no path from the webhook response into the vault renderer.
+function tokenVaultModelFor(data) {
+  var source = data && data.token_vault && typeof data.token_vault === "object" ? data.token_vault : {};
+  var status = TOKEN_VAULT_STATUSES[source.status] ? source.status : "empty";
+  var rooms = Array.isArray(source.rooms)
+    ? source.rooms.map(function (room) {
+        room = room && typeof room === "object" ? room : {};
+        var models = Array.isArray(room.models)
+          ? room.models.map(function (model) {
+              model = model && typeof model === "object" ? model : {};
+              return {
+                name: tokenVaultText(model.name, "Mystery model", 128),
+                tokens: tokenVaultDecimal(model.tokens),
+              };
+            })
+          : [];
+        models.sort(function (left, right) {
+          var tokenOrder = compareTokenVaultDecimals(right.tokens, left.tokens);
+          return tokenOrder || left.name.localeCompare(right.name);
+        });
+        return {
+          agentType: tokenVaultText(room.agent_type, "mystery-agent", 64),
+          label: tokenVaultText(room.label, "Mystery agent", 80),
+          tokens: tokenVaultDecimal(room.tokens),
+          models: models,
+        };
+      })
+    : [];
+  rooms.sort(function (left, right) {
+    var tokenOrder = compareTokenVaultDecimals(right.tokens, left.tokens);
+    return tokenOrder || left.label.localeCompare(right.label);
+  });
+  return {
+    status: status,
+    observedSince: typeof source.observed_since === "string" ? source.observed_since : "",
+    totalTokens: tokenVaultDecimal(source.total_tokens),
+    rooms: rooms,
+  };
+}
+
 function photoInt(value, fallback) {
   var n = Number(value);
   return isFinite(n) ? Math.floor(n) : fallback;
@@ -6944,6 +7007,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     storedDialogZoom: storedDialogZoom,
     persistDialogZoom: persistDialogZoom,
     photoModelFor: photoModelFor,
+    tokenVaultModelFor: tokenVaultModelFor,
     photoExportPlan: photoExportPlan,
     photoPaletteFor: photoPaletteFor,
     photoPortraitSvg: photoPortraitSvg,

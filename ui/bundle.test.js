@@ -159,6 +159,64 @@ test("photo model allowlists visible presentation fields and categorical tempera
   assert.equal(JSON.stringify(model).includes("SECRET"), false);
 });
 
+test("token vault model allowlists and sorts aggregate usage only", () => {
+  const render = loadBundle().plugin.__render;
+  assert.equal(typeof render.tokenVaultModelFor, "function");
+  const model = render.tokenVaultModelFor(
+    sampleKandy({
+      token_vault: {
+        status: "partial",
+        observed_since: "2026-07-28T12:00:00Z",
+        total_tokens: "162",
+        task_id: "TASK-SECRET",
+        prompt: "PROMPT-SECRET",
+        rooms: [
+          {
+            agent_type: "codex-acp",
+            label: "Codex",
+            tokens: "42",
+            session_id: "SESSION-SECRET",
+            models: [
+              { name: "small", tokens: "2", response: "RESPONSE-SECRET" },
+              { name: "large", tokens: "40" },
+            ],
+          },
+          {
+            agent_type: "claude-acp",
+            label: "Claude",
+            tokens: "120",
+            models: [{ name: "sonnet", tokens: "120" }],
+          },
+        ],
+      },
+    }),
+  );
+
+  assert.deepEqual(JSON.parse(JSON.stringify(model)), {
+    status: "partial",
+    observedSince: "2026-07-28T12:00:00Z",
+    totalTokens: "162",
+    rooms: [
+      {
+        agentType: "claude-acp",
+        label: "Claude",
+        tokens: "120",
+        models: [{ name: "sonnet", tokens: "120" }],
+      },
+      {
+        agentType: "codex-acp",
+        label: "Codex",
+        tokens: "42",
+        models: [
+          { name: "large", tokens: "40" },
+          { name: "small", tokens: "2" },
+        ],
+      },
+    ],
+  });
+  assert.equal(JSON.stringify(model).includes("SECRET"), false);
+});
+
 test("chat topbar control uses desktop and phone geometry", () => {
   const { document, plugin } = loadBundle();
   plugin.initialize(
