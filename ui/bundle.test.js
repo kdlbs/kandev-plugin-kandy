@@ -749,7 +749,7 @@ test("clipboard failures distinguish blocked and unsupported copies", () => {
   assert.equal(render.photoCopyFailureStatus(new Error("failed"), { isSecureContext: true }), "error");
 });
 
-test("widget includes accessible dialog Photo Booth entry while hover card stays action-free", () => {
+test("widget includes dialog-only Photo Booth and token vault entries", () => {
   const cleanups = [];
   const React = {
     Fragment: "Fragment",
@@ -816,6 +816,14 @@ test("widget includes accessible dialog Photo Booth entry while hover card stays
     tooltip,
     (node) => node.type === "button" && node.props["aria-label"] === "Open Kandy Photo Booth",
   );
+  const vaultButton = findNode(
+    dialog,
+    (node) => node.type === "button" && node.props["aria-label"] === "Show me your token vault",
+  );
+  const tooltipVaultButton = findNode(
+    tooltip,
+    (node) => node.type === "button" && node.props["aria-label"] === "Show me your token vault",
+  );
 
   assert.ok(dialogEntry, "dialog positions Photo Booth at the top right");
   assert.ok(dialogButton, "dialog exposes the camera control");
@@ -830,6 +838,9 @@ test("widget includes accessible dialog Photo Booth entry while hover card stays
     "camera hit target stays compact instead of inheriting card zoom",
   );
   assert.equal(tooltipButton, null, "hover preview remains unchanged");
+  assert.ok(vaultButton, "full dialog exposes the token-vault entrance");
+  assert.equal(vaultButton.props.type, "button");
+  assert.equal(tooltipVaultButton, null, "hover preview remains action-free");
 
   cleanups.forEach((cleanup) => cleanup && cleanup());
   runtime.plugin.destroy();
