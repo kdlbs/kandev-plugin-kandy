@@ -152,3 +152,35 @@ func TestTokenVault_EstimatedFallbackIsMarkedPartial(t *testing.T) {
 	require.Equal(t, "partial", vault["status"])
 	require.Equal(t, "10641", vault["total_tokens"], "cache and thought tokens must not be added twice")
 }
+
+func TestTokenVault_TamperingRestartsOnlyVault(t *testing.T) {
+	host := newFakeHost(nil)
+	ctx := context.Background()
+	p1 := newTestPlugin(t, host)
+	event := &pluginsdk.Event{
+		EventID:   "delivery-valid",
+		EventType: "session_prompt_usage.updated.session-1",
+		Payload: map[string]any{
+			"agent_type": "gemini-acp",
+			"model":      "gemini-2.5-pro",
+			"timestamp":  "2026-07-28T12:00:00Z",
+			"usage": map[string]any{
+				"input_tokens":  float64(9_796),
+				"output_tokens": float64(2),
+				"total_tokens":  float64(9_798),
+				"estimated":     false,
+			},
+		},
+	}
+	require.NoError(t, p1.OnEvent(ctx, event))
+
+	stored := host.state[stateMapKey(stateScope, "", tokenVaultStateKey)]
+	require.NotNil(t, stored)
+	stored["total_tokens"] = "999999"
+
+	p2 := newTestPlugin(t, host)
+	state := fetchKandy(t, p2, "")
+	require.False(t, state.Counterfeit, "vault corruption must not mark or rebirth Kandy")
+	require.Equal(t, "empty", state.TokenVault.Status)
+	require.Equal(t, "0", state.TokenVault.TotalTokens)
+}
