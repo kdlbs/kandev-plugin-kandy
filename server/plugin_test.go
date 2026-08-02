@@ -22,30 +22,38 @@ type fakeHost struct {
 	config       map[string]any
 	state        map[string]map[string]any
 	secrets      map[string]string
-	getStateErr  error
+	getStateErr  map[string]error
+	setStateErr  map[string]error
 	getSecretErr error
 	setSecretErr error
 }
 
 func newFakeHost(config map[string]any) *fakeHost {
 	return &fakeHost{
-		config:  config,
-		state:   map[string]map[string]any{},
-		secrets: map[string]string{},
+		config:      config,
+		state:       map[string]map[string]any{},
+		secrets:     map[string]string{},
+		getStateErr: map[string]error{},
+		setStateErr: map[string]error{},
 	}
 }
 
 func stateMapKey(scope, scopeID, key string) string { return scope + "|" + scopeID + "|" + key }
 
 func (h *fakeHost) GetState(_ context.Context, scope, scopeID, key string) (map[string]any, bool, error) {
-	if h.getStateErr != nil {
-		return nil, false, h.getStateErr
+	mapKey := stateMapKey(scope, scopeID, key)
+	if err := h.getStateErr[mapKey]; err != nil {
+		return nil, false, err
 	}
-	value, ok := h.state[stateMapKey(scope, scopeID, key)]
+	value, ok := h.state[mapKey]
 	return value, ok, nil
 }
 func (h *fakeHost) SetState(_ context.Context, scope, scopeID, key string, value map[string]any) error {
-	h.state[stateMapKey(scope, scopeID, key)] = value
+	mapKey := stateMapKey(scope, scopeID, key)
+	if err := h.setStateErr[mapKey]; err != nil {
+		return err
+	}
+	h.state[mapKey] = value
 	return nil
 }
 func (h *fakeHost) DeleteState(_ context.Context, scope, scopeID, key string) error {
@@ -428,7 +436,7 @@ func TestMood_TransientLedgerNeverClaimsJustFed(t *testing.T) {
 
 	// A state read that errors falls into the same stand-in path.
 	host := newFakeHost(nil)
-	host.getStateErr = errors.New("state store unavailable")
+	host.getStateErr[stateMapKey(stateScope, "", stateKey)] = errors.New("state store unavailable")
 	p2 := newPlugin()
 	p2.now = func() time.Time { return time.Date(2026, 8, 5, 7, 16, 0, 0, time.UTC) }
 	p2.saltFunc = func() uint32 { return 42 }
@@ -437,7 +445,7 @@ func TestMood_TransientLedgerNeverClaimsJustFed(t *testing.T) {
 
 	// And a stand-in is never cached: once the real ledger is readable the
 	// persisted truth wins immediately.
-	host.getStateErr = nil
+	delete(host.getStateErr, stateMapKey(stateScope, "", stateKey))
 	host.state[stateMapKey(stateScope, "", stateKey)] = ledgerToMap(&ledger{
 		XP: 32165, Salt: 42,
 		CreatedAt:   "2026-07-29T18:52:27Z",

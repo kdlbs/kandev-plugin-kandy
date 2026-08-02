@@ -118,7 +118,11 @@ func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) 
 		return
 	}
 	lineage := strconv.FormatUint(uint64(kandy.Salt), 10)
-	vault := cloneTokenVault(p.loadTokenVault(ctx, lineage))
+	loaded, err := p.loadTokenVault(ctx, lineage)
+	if err != nil {
+		return
+	}
+	vault := cloneTokenVault(loaded)
 	for _, digest := range vault.RecentBodyHashes {
 		if digest == usage.BodyHash {
 			return
@@ -308,9 +312,9 @@ func addDecimal(current string, delta *big.Int) string {
 	return value.Add(value, delta).String()
 }
 
-func (p *plugin) loadTokenVault(ctx context.Context, lineage string) *tokenVaultLedger {
+func (p *plugin) loadTokenVault(ctx context.Context, lineage string) (*tokenVaultLedger, error) {
 	if p.vaultCached != nil && p.vaultCached.Lineage == lineage {
-		return p.vaultCached
+		return p.vaultCached, nil
 	}
 	fresh := &tokenVaultLedger{
 		SchemaVersion: tokenVaultSchemaVersion,
@@ -320,34 +324,34 @@ func (p *plugin) loadTokenVault(ctx context.Context, lineage string) *tokenVault
 	}
 	host := p.Host()
 	if host == nil {
-		return fresh
+		return fresh, nil
 	}
 	value, found, err := host.GetState(ctx, stateScope, "", tokenVaultStateKey)
 	if err != nil {
 		log.Printf("kandy: reading token vault state: %v", err)
-		return fresh
+		return nil, err
 	}
 	if !found {
 		p.vaultCached = fresh
-		return p.vaultCached
+		return p.vaultCached, nil
 	}
 	loaded, ok := tokenVaultFromMap(value)
 	if !ok || loaded.SchemaVersion != tokenVaultSchemaVersion || loaded.Lineage != lineage {
 		p.vaultCached = fresh
-		return p.vaultCached
+		return p.vaultCached, nil
 	}
 	key, _, err := p.ensureSealKey(ctx, host)
 	if err != nil {
 		log.Printf("kandy: token vault seal key unavailable, serving unverified this round: %v", err)
-		return loaded
+		return loaded, nil
 	}
 	if !tokenVaultSealValid(loaded, key) {
 		log.Printf("kandy: token vault seal invalid; restarting token history without changing Kandy")
 		p.vaultCached = fresh
-		return p.vaultCached
+		return p.vaultCached, nil
 	}
 	p.vaultCached = loaded
-	return p.vaultCached
+	return p.vaultCached, nil
 }
 
 func (p *plugin) persistTokenVault(ctx context.Context, vault *tokenVaultLedger) {
@@ -403,8 +407,11 @@ func tokenVaultFromMap(value map[string]any) (*tokenVaultLedger, bool) {
 }
 
 func (p *plugin) presentTokenVault(ctx context.Context, lineage uint32) tokenVaultResponse {
-	vault := p.loadTokenVault(ctx, strconv.FormatUint(uint64(lineage), 10))
 	response := tokenVaultResponse{Status: "empty", TotalTokens: "0", Rooms: []tokenVaultRoomResponse{}}
+	vault, err := p.loadTokenVault(ctx, strconv.FormatUint(uint64(lineage), 10))
+	if err != nil {
+		return response
+	}
 	if vault.ObservedSince == "" || vault.TotalTokens == "0" {
 		return response
 	}
