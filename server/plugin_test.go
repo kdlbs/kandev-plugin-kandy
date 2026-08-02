@@ -19,22 +19,24 @@ import (
 // vault outage for the seal decision-table tests.
 type fakeHost struct {
 	pluginsdk.UnimplementedHostData
-	config       map[string]any
-	state        map[string]map[string]any
-	secrets      map[string]string
-	getStateErr  map[string]error
-	setStateErr  map[string]error
-	getSecretErr error
-	setSecretErr error
+	config         map[string]any
+	state          map[string]map[string]any
+	secrets        map[string]string
+	getStateErr    map[string]error
+	setStateErr    map[string]error
+	commitStateErr map[string]error
+	getSecretErr   error
+	setSecretErr   error
 }
 
 func newFakeHost(config map[string]any) *fakeHost {
 	return &fakeHost{
-		config:      config,
-		state:       map[string]map[string]any{},
-		secrets:     map[string]string{},
-		getStateErr: map[string]error{},
-		setStateErr: map[string]error{},
+		config:         config,
+		state:          map[string]map[string]any{},
+		secrets:        map[string]string{},
+		getStateErr:    map[string]error{},
+		setStateErr:    map[string]error{},
+		commitStateErr: map[string]error{},
 	}
 }
 
@@ -54,6 +56,9 @@ func (h *fakeHost) SetState(_ context.Context, scope, scopeID, key string, value
 		return err
 	}
 	h.state[mapKey] = value
+	if err := h.commitStateErr[mapKey]; err != nil {
+		return err
+	}
 	return nil
 }
 func (h *fakeHost) DeleteState(_ context.Context, scope, scopeID, key string) error {

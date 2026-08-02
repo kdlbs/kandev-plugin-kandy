@@ -142,6 +142,70 @@ func TestTokenVault_ReadFailureDoesNotOverwriteHistory(t *testing.T) {
 	require.Equal(t, "100", fetchKandy(t, p3, "").TokenVault.TotalTokens, "failed read must not replace stored lifetime history")
 }
 
+func TestTokenVault_WriteRetryHandlesKnownAndAmbiguousFailure(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		configure func(*fakeHost, string)
+	}{
+		{
+			name: "known failure",
+			configure: func(host *fakeHost, key string) {
+				host.setStateErr[key] = fmt.Errorf("write rejected")
+			},
+		},
+		{
+			name: "ambiguous commit",
+			configure: func(host *fakeHost, key string) {
+				host.commitStateErr[key] = fmt.Errorf("response lost after commit")
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			host := newFakeHost(nil)
+			ctx := context.Background()
+			p := newTestPlugin(t, host)
+			event := tokenUsageFixture("write-retry", "claude-acp", "sonnet", 33, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+			key := stateMapKey(stateScope, "", tokenVaultStateKey)
+			testCase.configure(host, key)
+			require.NoError(t, p.OnEvent(ctx, event))
+			delete(host.setStateErr, key)
+			delete(host.commitStateErr, key)
+
+			require.NoError(t, p.OnEvent(ctx, event))
+			require.Equal(t, "33", fetchKandy(t, newTestPlugin(t, host), "").TokenVault.TotalTokens)
+		})
+	}
+}
+
+func TestTokenVault_UnknownSchemaStartsFreshHistory(t *testing.T) {
+	host := newFakeHost(nil)
+	ctx := context.Background()
+	p1 := newTestPlugin(t, host)
+	require.NoError(t, p1.OnEvent(ctx, tokenUsageFixture("old-schema", "codex-acp", "old", 100, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))))
+	host.state[stateMapKey(stateScope, "", tokenVaultStateKey)]["schema_version"] = float64(999)
+
+	p2 := newTestPlugin(t, host)
+	require.NoError(t, p2.OnEvent(ctx, tokenUsageFixture("new-schema", "codex-acp", "new", 7, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))))
+	vault := fetchKandy(t, p2, "").TokenVault
+	require.Equal(t, "7", vault.TotalTokens)
+	require.Equal(t, "new", vault.Rooms[0].Models[0].Name)
+}
+
+func TestTokenVault_NewKandyLineageStartsFreshHistory(t *testing.T) {
+	host := newFakeHost(nil)
+	ctx := context.Background()
+	p1 := newTestPlugin(t, host)
+	require.NoError(t, p1.OnEvent(ctx, tokenUsageFixture("old-lineage", "codex-acp", "old", 100, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))))
+	require.NoError(t, host.DeleteState(ctx, stateScope, "", stateKey))
+
+	p2 := newTestPlugin(t, host)
+	p2.saltFunc = func() uint32 { return 99 }
+	require.NoError(t, p2.OnEvent(ctx, tokenUsageFixture("new-lineage", "codex-acp", "new", 9, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))))
+	vault := fetchKandy(t, p2, "").TokenVault
+	require.Equal(t, "9", vault.TotalTokens)
+	require.Equal(t, "new", vault.Rooms[0].Models[0].Name)
+}
+
 func TestTokenVault_EstimatedFallbackIsMarkedPartial(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
