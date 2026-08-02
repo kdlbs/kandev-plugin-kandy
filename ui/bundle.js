@@ -5171,6 +5171,41 @@ function photoBoothButton(h, onOpen, buttonRef) {
   );
 }
 
+function tokenVaultButton(h, onOpen, buttonRef) {
+  return h(
+    "button",
+    {
+      type: "button",
+      ref: buttonRef,
+      "aria-label": "Show me your token vault",
+      title: "Show me your token vault",
+      className: "kandev-kandy-control kandev-kandy-vault-entry",
+      onClick: onOpen,
+      style: {
+        minWidth: "66px",
+        height: "40px",
+        minHeight: "40px",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "5px",
+        padding: "0 9px",
+        border: "none",
+        borderRadius: "10px",
+        background: "color-mix(in oklch,var(--background) 86%,transparent)",
+        color: "inherit",
+        boxShadow: "0 0 0 1px color-mix(in oklch,var(--foreground) 7%,transparent),0 1px 4px rgba(0,0,0,0.08)",
+        backdropFilter: "blur(8px)",
+        cursor: "pointer",
+        fontSize: "10px",
+        fontWeight: 700,
+      },
+    },
+    h("span", { "aria-hidden": "true", style: { fontSize: "14px" } }, "▣"),
+    "Vault",
+  );
+}
+
 function renderPhotoPng(svgNode, suppliedEnv) {
   return new Promise(function (resolve, reject) {
     if (!svgNode) {
@@ -6038,6 +6073,12 @@ function makeKandyWidget(host) {
     var photoHook = React.useState(false);
     var photoOpen = photoHook[0];
     var setPhotoOpen = photoHook[1];
+    var vaultViewHook = React.useState(null);
+    var vaultView = vaultViewHook[0];
+    var setVaultView = vaultViewHook[1];
+    var vaultRevealHook = React.useState(null);
+    var vaultRevealKey = vaultRevealHook[0];
+    var setVaultRevealKey = vaultRevealHook[1];
     var photoThemeHook = React.useState(function () {
       return currentPhotoTheme();
     });
@@ -6110,6 +6151,9 @@ function makeKandyWidget(host) {
     var photoPanelRef = React.useRef(null);
     var photoEntryRef = React.useRef(null);
     var returnToPhotoEntryRef = React.useRef(false);
+    var vaultPanelRef = React.useRef(null);
+    var vaultEntryRef = React.useRef(null);
+    var returnToVaultEntryRef = React.useRef(false);
     var celebrationTimerRef = React.useRef(null);
     var petTimerRef = React.useRef(null);
     var bonkTimerRef = React.useRef(null);
@@ -6784,6 +6828,8 @@ function makeKandyWidget(host) {
     }
 
     function openPhotoBooth() {
+      setVaultView(null);
+      setVaultRevealKey(null);
       returnToPhotoEntryRef.current = true;
       clearPreparedPhoto();
       setPhotoTheme(currentPhotoTheme());
@@ -6796,6 +6842,35 @@ function makeKandyWidget(host) {
       clearPreparedPhoto();
       setPhotoStatus("idle");
       setPhotoOpen(false);
+    }
+
+    function openTokenVault() {
+      clearPreparedPhoto();
+      setPhotoStatus("idle");
+      setPhotoOpen(false);
+      returnToVaultEntryRef.current = true;
+      setVaultRevealKey(null);
+      setVaultView("hub");
+      setDialogOpen(true);
+    }
+
+    function openTokenRoom(agentType) {
+      setVaultRevealKey(null);
+      setVaultView(agentType);
+    }
+
+    function backToTokenHub() {
+      setVaultRevealKey(null);
+      setVaultView("hub");
+    }
+
+    function backFromTokenVault() {
+      setVaultRevealKey(null);
+      setVaultView(null);
+    }
+
+    function toggleVaultCount(key) {
+      setVaultRevealKey(vaultRevealKey === key ? null : key);
     }
 
     function copyPhoto() {
@@ -6824,6 +6899,9 @@ function makeKandyWidget(host) {
         clearPreparedPhoto();
         setPhotoOpen(false);
         setPhotoStatus("idle");
+        returnToVaultEntryRef.current = false;
+        setVaultRevealKey(null);
+        setVaultView(null);
       }
     }
 
@@ -6883,6 +6961,20 @@ function makeKandyWidget(host) {
         }
       },
       [photoOpen],
+    );
+
+    React.useEffect(
+      function () {
+        if (vaultView && vaultPanelRef.current && vaultPanelRef.current.focus) {
+          vaultPanelRef.current.focus();
+          return;
+        }
+        if (!vaultView && returnToVaultEntryRef.current) {
+          returnToVaultEntryRef.current = false;
+          if (vaultEntryRef.current && vaultEntryRef.current.focus) vaultEntryRef.current.focus();
+        }
+      },
+      [vaultView],
     );
 
     var shown = data || EGG_PLACEHOLDER;
@@ -6978,6 +7070,7 @@ function makeKandyWidget(host) {
       hint: HEARTS_BY_MOOD[(data || EGG_PLACEHOLDER).mood || "content"] <= 4,
     };
     var photoModel = photoModelFor(data || EGG_PLACEHOLDER, timeOfDay);
+    var tokenVaultModel = tokenVaultModelFor(data || EGG_PLACEHOLDER);
     var photoRenderKey = JSON.stringify([
       photoTheme,
       photoModel.stageName,
@@ -7075,7 +7168,7 @@ function makeKandyWidget(host) {
             // zoom ~2.06 and the corner grip lands on the overlay
             // (dismissing the dialog on the next drag).
             className: "w-auto max-w-none sm:max-w-none p-0 gap-0 overflow-hidden rounded-2xl",
-            style: photoOpen ? { maxWidth: "420px" } : undefined,
+            style: photoOpen ? { maxWidth: "420px" } : vaultView ? { width: "min(680px, calc(100vw - 32px))" } : undefined,
             showCloseButton: false,
           },
           photoOpen
@@ -7090,7 +7183,30 @@ function makeKandyWidget(host) {
                 showKandyCard,
                 copyPhoto,
               )
-            : h(
+            : vaultView
+              ? vaultView === "hub"
+                ? tokenVaultHub(
+                    h,
+                    DialogTitle,
+                    tokenVaultModel,
+                    creatureSvg(h, shown, 64),
+                    vaultPanelRef,
+                    openTokenRoom,
+                    backFromTokenVault,
+                    function () { changeDialogOpen(false); },
+                  )
+                : tokenVaultRoom(
+                    h,
+                    DialogTitle,
+                    tokenVaultModel,
+                    vaultView,
+                    vaultRevealKey,
+                    vaultPanelRef,
+                    backToTokenHub,
+                    function () { changeDialogOpen(false); },
+                    toggleVaultCount,
+                  )
+              : h(
                 React.Fragment,
                 null,
                 h(DialogTitle, { className: "sr-only" }, "Kandy"),
@@ -7120,6 +7236,18 @@ function makeKandyWidget(host) {
                       },
                     },
                     photoBoothButton(h, openPhotoBooth, photoEntryRef),
+                  ),
+                  h(
+                    "div",
+                    {
+                      style: {
+                        position: "absolute",
+                        top: "8px",
+                        left: "8px",
+                        zIndex: 3,
+                      },
+                    },
+                    tokenVaultButton(h, openTokenVault, vaultEntryRef),
                   ),
                   // The resize grip lives OUTSIDE the zoomed wrapper (its
                   // 16px hit area never scales) but inside the relative
@@ -7257,6 +7385,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     photoPaletteFor: photoPaletteFor,
     photoPortraitSvg: photoPortraitSvg,
     photoBoothButton: photoBoothButton,
+    tokenVaultButton: tokenVaultButton,
     photoBoothPanel: photoBoothPanel,
     renderPhotoPng: renderPhotoPng,
     copyPhotoBlob: copyPhotoBlob,
