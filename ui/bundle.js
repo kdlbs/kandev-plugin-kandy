@@ -4472,13 +4472,17 @@ var TOKEN_VAULT_STATUSES = { empty: true, ready: true, partial: true };
 
 function tokenVaultDecimal(value) {
   var text = typeof value === "string" ? value.trim() : "";
-  if (!/^\d+$/.test(text)) return "0";
+  if (!/^\d+$/.test(text)) return null;
   return text.replace(/^0+(?=\d)/, "");
 }
 
 function compareTokenVaultDecimals(left, right) {
   left = tokenVaultDecimal(left);
   right = tokenVaultDecimal(right);
+  if (left === null || right === null) {
+    if (left === right) return 0;
+    return left === null ? -1 : 1;
+  }
   if (left.length !== right.length) return left.length > right.length ? 1 : -1;
   if (left === right) return 0;
   return left > right ? 1 : -1;
