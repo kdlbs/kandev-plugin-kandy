@@ -157,42 +157,35 @@ jobs:
       - name: Checkout plugin
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
-          path: plugin
           ref: ${{ github.event_name == 'push' && github.ref || needs.prepare.outputs.tag }}
-
-      - name: Checkout kandev SDK
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          repository: kdlbs/kandev
-          path: kandev
-          sparse-checkout: apps/backend
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: plugin/go.mod
-          cache-dependency-path: plugin/go.sum
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Verify
-        working-directory: plugin
         run: |
-          test -z "$(gofmt -l ./server)" || { echo "gofmt needed:"; gofmt -l ./server; exit 1; }
-          go vet ./server/...
+          GOWORK=off test -z "$(gofmt -l ./server)" || { echo "gofmt needed:"; gofmt -l ./server; exit 1; }
           make test
+          make vet
 
       - name: Package all platforms
-        working-directory: plugin
         run: make package
 
       - name: Extract checksums
-        working-directory: plugin
-        run: tar -xzf kandev-plugin-kandy-*.tar.gz checksums.txt
+        run: |
+          archive="$(find dist -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          tar -xzf "$archive" -C dist checksums.txt
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.event_name == 'push' && github.ref_name || needs.prepare.outputs.tag }}
           files: |
-            plugin/kandev-plugin-kandy-*.tar.gz
-            plugin/checksums.txt
+            dist/kandev-plugin-kandy-*.tar.gz
+            dist/checksums.txt
           generate_release_notes: true

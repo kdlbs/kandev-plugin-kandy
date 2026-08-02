@@ -1,0 +1,74 @@
+name: Build plugin PR artifact
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      GOWORK: off
+
+    steps:
+      - name: Check out PR
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Download Go dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: make test
+
+      - name: Run vet
+        run: make vet
+
+      - name: Build PR package
+        env:
+          PR_VERSION: pr-${{ github.event.pull_request.number }}-${{ github.run_number }}
+        run: make package-pr PR_VERSION="$PR_VERSION"
+
+      - name: Verify archive
+        env:
+          PR_VERSION: pr-${{ github.event.pull_request.number }}-${{ github.run_number }}
+        run: |
+          set -euo pipefail
+
+          count="$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l)"
+          test "$count" -eq 1
+
+          archive="$(find dist -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          tar -xzf "$archive" -C "$tmp"
+
+          test -f "$tmp/manifest.yaml"
+          test -f "$tmp/checksums.txt"
+
+          (
+            cd "$tmp"
+            sha256sum -c checksums.txt
+          )
+
+          GOWORK=off go run ./scripts/verify-plugin-package "$tmp" "$PR_VERSION" "$archive"
+
+      - name: Upload PR artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: kandev-plugin-kandy-pr-${{ github.event.pull_request.number }}-${{ github.run_number }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
