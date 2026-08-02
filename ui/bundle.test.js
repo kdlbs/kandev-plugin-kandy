@@ -340,6 +340,25 @@ test("chat topbar control uses desktop and phone geometry", () => {
   );
 });
 
+test("token vault CSS uses vertical responsive grids without paging tracks", () => {
+  const { document, plugin } = loadBundle();
+  plugin.initialize(
+    { registerComponent() {}, registerWsHandler() {} },
+    { jsx, ui: {} },
+  );
+  const css = document.getElementById("kandev-kandy-style").textContent;
+
+  assert.match(css, /\.kandev-kandy-vault-panel\{[^}]*max-height:calc\(100vh - 32px\)[^}]*overflow:hidden/);
+  assert.match(css, /\.kandev-kandy-vault-bar\{[^}]*position:sticky[^}]*top:0/);
+  assert.match(css, /\.kandev-kandy-vault-scroll\{[^}]*overflow-y:auto[^}]*overflow-x:hidden/);
+  assert.match(css, /\.kandev-kandy-vault-grid,.kandev-kandy-token-grid\{[^}]*grid-template-columns:repeat\(auto-fit,minmax\(140px,1fr\)\)/);
+  assert.match(css, /@media \(max-width:480px\)\{\.kandev-kandy-vault-grid,.kandev-kandy-token-grid\{grid-template-columns:1fr\}/);
+  assert.match(css, /\.kandev-kandy-token-pile:hover \.kandev-kandy-vault-exact/);
+  assert.match(css, /\.kandev-kandy-token-pile:focus-visible \.kandev-kandy-vault-exact/);
+  assert.match(css, /\.kandev-kandy-token-pile\.is-revealed \.kandev-kandy-vault-exact/);
+  assert.doesNotMatch(css, /vault-(?:carousel|pager|track)/);
+});
+
 test("photo export uses fixed high-resolution PNG dimensions and explicit theme palettes", () => {
   const render = loadBundle().plugin.__render;
   const plan = render.photoExportPlan();
