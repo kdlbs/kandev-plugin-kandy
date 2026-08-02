@@ -21,26 +21,38 @@ type fakeHost struct {
 	config       map[string]any
 	state        map[string]map[string]any
 	secrets      map[string]string
+	getStateErr  map[string]error
+	setStateErr  map[string]error
 	getSecretErr error
 	setSecretErr error
 }
 
 func newFakeHost(config map[string]any) *fakeHost {
 	return &fakeHost{
-		config:  config,
-		state:   map[string]map[string]any{},
-		secrets: map[string]string{},
+		config:      config,
+		state:       map[string]map[string]any{},
+		secrets:     map[string]string{},
+		getStateErr: map[string]error{},
+		setStateErr: map[string]error{},
 	}
 }
 
 func stateMapKey(scope, scopeID, key string) string { return scope + "|" + scopeID + "|" + key }
 
 func (h *fakeHost) GetState(_ context.Context, scope, scopeID, key string) (map[string]any, bool, error) {
-	value, ok := h.state[stateMapKey(scope, scopeID, key)]
+	mapKey := stateMapKey(scope, scopeID, key)
+	if err := h.getStateErr[mapKey]; err != nil {
+		return nil, false, err
+	}
+	value, ok := h.state[mapKey]
 	return value, ok, nil
 }
 func (h *fakeHost) SetState(_ context.Context, scope, scopeID, key string, value map[string]any) error {
-	h.state[stateMapKey(scope, scopeID, key)] = value
+	mapKey := stateMapKey(scope, scopeID, key)
+	if err := h.setStateErr[mapKey]; err != nil {
+		return err
+	}
+	h.state[mapKey] = value
 	return nil
 }
 func (h *fakeHost) DeleteState(_ context.Context, scope, scopeID, key string) error {

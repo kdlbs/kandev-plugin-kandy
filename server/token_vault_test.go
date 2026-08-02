@@ -125,6 +125,23 @@ func TestTokenVault_DuplicateBodyCountsOnceAcrossRestart(t *testing.T) {
 	require.Equal(t, "10652", vault["total_tokens"])
 }
 
+func TestTokenVault_ReadFailureDoesNotOverwriteHistory(t *testing.T) {
+	host := newFakeHost(nil)
+	ctx := context.Background()
+	p1 := newTestPlugin(t, host)
+	recorded := tokenUsageFixture("recorded", "codex-acp", "gpt-5.6", 100, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+	retryLater := tokenUsageFixture("retry-later", "codex-acp", "gpt-5.6", 25, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))
+	require.NoError(t, p1.OnEvent(ctx, recorded))
+
+	host.getStateErr[stateMapKey(stateScope, "", tokenVaultStateKey)] = fmt.Errorf("temporary host read failure")
+	p2 := newTestPlugin(t, host)
+	require.NoError(t, p2.OnEvent(ctx, retryLater))
+	delete(host.getStateErr, stateMapKey(stateScope, "", tokenVaultStateKey))
+
+	p3 := newTestPlugin(t, host)
+	require.Equal(t, "100", fetchKandy(t, p3, "").TokenVault.TotalTokens, "failed read must not replace stored lifetime history")
+}
+
 func TestTokenVault_EstimatedFallbackIsMarkedPartial(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
