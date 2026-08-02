@@ -135,6 +135,7 @@ var WS_ACTIONS = [
   "session.turn.completed",
   "session.message.added",
   "session.state_changed",
+  "session.prompt_usage",
 ];
 // The plugin backend awards XP when its own event delivery lands, which races
 // the WS notification to the browser. Debounce so a burst of events costs one
@@ -4619,6 +4620,14 @@ function tokenVaultInitialPhase(reducedMotion) {
   return reducedMotion ? "hub" : "descending";
 }
 
+function tokenVaultResolvedView(model, view) {
+  if (!view || view === "hub" || view === "descending") return view;
+  for (var i = 0; i < model.rooms.length; i++) {
+    if (model.rooms[i].agentType === view) return view;
+  }
+  return "hub";
+}
+
 function tokenVaultDescent(h, DialogTitle, data, panelRef, onBack, onExit) {
   return h(
     "section",
@@ -7137,6 +7146,7 @@ function makeKandyWidget(host) {
     };
     var photoModel = photoModelFor(data || EGG_PLACEHOLDER, timeOfDay);
     var tokenVaultModel = tokenVaultModelFor(data || EGG_PLACEHOLDER);
+    var resolvedVaultView = tokenVaultResolvedView(tokenVaultModel, vaultView);
     var photoRenderKey = JSON.stringify([
       photoTheme,
       photoModel.stageName,
@@ -7234,7 +7244,7 @@ function makeKandyWidget(host) {
             // zoom ~2.06 and the corner grip lands on the overlay
             // (dismissing the dialog on the next drag).
             className: "w-auto max-w-none sm:max-w-none p-0 gap-0 overflow-hidden rounded-2xl",
-            style: photoOpen ? { maxWidth: "420px" } : vaultView ? { width: "min(680px, calc(100vw - 32px))" } : undefined,
+            style: photoOpen ? { maxWidth: "420px" } : resolvedVaultView ? { width: "min(680px, calc(100vw - 32px))" } : undefined,
             showCloseButton: false,
           },
           photoOpen
@@ -7249,8 +7259,8 @@ function makeKandyWidget(host) {
                 showKandyCard,
                 copyPhoto,
               )
-            : vaultView
-              ? vaultView === "descending"
+            : resolvedVaultView
+              ? resolvedVaultView === "descending"
                 ? tokenVaultDescent(
                     h,
                     DialogTitle,
@@ -7259,7 +7269,7 @@ function makeKandyWidget(host) {
                     backFromTokenVault,
                     function () { changeDialogOpen(false); },
                   )
-                : vaultView === "hub"
+                : resolvedVaultView === "hub"
                   ? tokenVaultHub(
                     h,
                     DialogTitle,
@@ -7274,7 +7284,7 @@ function makeKandyWidget(host) {
                     h,
                     DialogTitle,
                     tokenVaultModel,
-                    vaultView,
+                    resolvedVaultView,
                     vaultRevealKey,
                     vaultPanelRef,
                     backToTokenHub,
@@ -7457,6 +7467,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     tokenVaultHub: tokenVaultHub,
     tokenVaultRoom: tokenVaultRoom,
     tokenVaultInitialPhase: tokenVaultInitialPhase,
+    tokenVaultResolvedView: tokenVaultResolvedView,
     tokenVaultDescent: tokenVaultDescent,
     photoExportPlan: photoExportPlan,
     photoPaletteFor: photoPaletteFor,

@@ -346,6 +346,35 @@ test("token vault descent is playful and reduced motion skips it", () => {
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[^{]*\{[^}]*\.kandev-kandy-vault-descending-creature/);
 });
 
+test("token vault resolves removed chambers to hub and subscribes to live usage", () => {
+  const runtime = loadBundle();
+  const render = runtime.plugin.__render;
+  assert.equal(typeof render.tokenVaultResolvedView, "function");
+  const model = render.tokenVaultModelFor(
+    sampleKandy({
+      token_vault: {
+        status: "ready",
+        total_tokens: "3",
+        rooms: [{ agent_type: "codex-acp", label: "Codex", tokens: "3", models: [] }],
+      },
+    }),
+  );
+  assert.equal(render.tokenVaultResolvedView(model, "codex-acp"), "codex-acp");
+  assert.equal(render.tokenVaultResolvedView(model, "removed-acp"), "hub");
+
+  const actions = [];
+  runtime.plugin.initialize(
+    {
+      registerComponent() {},
+      registerWsHandler(action) {
+        actions.push(action);
+      },
+    },
+    { jsx, ui: {} },
+  );
+  assert.ok(actions.includes("session.prompt_usage"));
+});
+
 test("chat topbar control uses desktop and phone geometry", () => {
   const { document, plugin } = loadBundle();
   plugin.initialize(
