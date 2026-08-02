@@ -217,6 +217,25 @@ test("token vault model allowlists and sorts aggregate usage only", () => {
   assert.equal(JSON.stringify(model).includes("SECRET"), false);
 });
 
+test("token vault model never fabricates zero for unavailable counts", () => {
+  const render = loadBundle().plugin.__render;
+  const missing = render.tokenVaultModelFor(sampleKandy());
+  const malformed = render.tokenVaultModelFor(
+    sampleKandy({
+      token_vault: {
+        status: "partial",
+        total_tokens: "not-a-number",
+        rooms: [{ agent_type: "codex-acp", label: "Codex", models: [{ name: "gpt", tokens: -1 }] }],
+      },
+    }),
+  );
+
+  assert.equal(missing.totalTokens, null);
+  assert.equal(malformed.totalTokens, null);
+  assert.equal(malformed.rooms[0].tokens, null);
+  assert.equal(malformed.rooms[0].models[0].tokens, null);
+});
+
 test("chat topbar control uses desktop and phone geometry", () => {
   const { document, plugin } = loadBundle();
   plugin.initialize(
