@@ -131,7 +131,7 @@ func safeEventInteger(value any) (*big.Int, bool, bool) {
 		return new(big.Int), true, false
 	}
 	number, ok := value.(float64)
-	if !ok || math.IsNaN(number) || math.IsInf(number, 0) || number < 0 || number > float64(1<<53) || math.Trunc(number) != number {
+	if !ok || math.IsNaN(number) || math.IsInf(number, 0) || number < 0 || number >= float64(1<<53) || math.Trunc(number) != number {
 		return nil, false, true
 	}
 	return big.NewInt(int64(number)), true, true
