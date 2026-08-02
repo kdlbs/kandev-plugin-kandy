@@ -18,6 +18,10 @@ an egg. It never stops.
   your browser — nothing is uploaded, and no surrounding task or app UI
   enters the image. On plain-HTTP deployments, Kandy uses the browser's
   native image-copy path when available.
+- **Token vault**: ask Kandy to show its vault and it dives through a
+  trapdoor into an underground hub. Each agent CLI/adapter has a chamber;
+  each model used through that adapter has a pile. Larger piles mean more
+  observed tokens. Hover, focus, or tap a pile for its exact lifetime count.
 - **Moods**: it celebrates when XP lands and gets bored, sad, and eventually
   gloomy (rain cloud included) when nothing ships for days.
 - **Care**: left-click drops it a treat; right-click dumps a bucket of cold
@@ -65,31 +69,83 @@ or `POST /api/plugins/install`.
 ## How it works and what it reads
 
 Kandy is a visual, instance-wide companion. It does not call an agent, read a
-conversation, or analyze work. Kandev sends it three activity notifications:
+conversation, or analyze work. Kandev sends it three activity notifications
+for private XP bookkeeping:
 
 - a message was added;
 - an agent turn completed; or
 - an agent run completed.
 
-For each notification, Kandy uses only its type to update an aggregate XP
-ledger. It deliberately does **not** inspect event payloads, so it does not
-read message text, prompts, responses, tool calls, files, agent identity, or
-session identity. The top-bar UI listens for session updates only to know when
-to refresh its own card; it ignores the update data. One Kandy is shared by
+For those three notifications, Kandy still uses only the event type. The XP
+recipe and activity counters remain private and unchanged.
+
+Kandev also sends the typed per-session
+`session_prompt_usage.updated.*` event. Kandy reads only this aggregate usage
+metadata:
+
+- source timestamp;
+- task, session, and lifecycle agent IDs, transiently and only to construct a
+  duplicate-suppression hash;
+- agent type (the CLI/adapter slug, such as `claude-acp` or `codex-acp`);
+- observed model name; and
+- input, output, cache-read, cache-write, thought, and total token integers,
+  plus the whole-record `estimated` flag.
+
+Kandy prefers a positive observed `total_tokens` (which some adapters or
+Kandev may infer). When total is
+missing or zero, it uses positive input plus output only; it never adds cache
+or thought tokens because provider semantics can overlap. Fallback or
+estimated usage marks the vault partial. Missing agent/model names enter
+explicit Mystery buckets. Agent type identifies the CLI/adapter, not
+necessarily the model provider, configured profile, person, or agent run.
+Aliases and renamed models remain separate piles.
+
+The task/session/lifecycle IDs and usage categories are never persisted,
+logged, or returned to the browser. Only a SHA-256 digest of a canonical event
+body survives for practical duplicate suppression. Kandy never reads or stores
+message text, prompts, responses, reasoning, tool calls, files, credentials,
+or provider-reported cost. The top-bar UI listens for session updates only to
+know when to refetch Kandy's own webhook. One Kandy and one vault are shared by
 the whole Kandev instance, rather than being tied to a person, task, agent, or
 session.
 
-The plugin stores one small instance-scoped ledger in Kandev Host state:
-aggregate XP and activity counts, timestamps, a random appearance seed, and
-the pet/bonk temperament state. It stores no conversation content or token
-data. It also stores one integrity key in kandev's encrypted secrets vault,
-used only to detect out-of-band edits to that ledger. Its browser UI uses the local clock only for the day/night scene and
-sleep schedule, and calls only Kandy's own Kandev-hosted webhooks; it has no
-external service or analytics integration.
+The plugin stores two instance-scoped aggregate ledgers in Kandev Host state.
+The existing creature ledger keeps XP/activity counts, timestamps, appearance
+seed, and care temperament. The separate `kandy-token-vault` ledger keeps the
+Kandy lineage, observation boundary, exact decimal-string lifetime total, one
+counter per distinct agent type/model pair, a partial-data flag, and the most
+recent 512 canonical-body hashes. Repeated usage updates counters; no per-turn
+history is stored. Distinct agent/model aggregates have no artificial cap.
 
-Kandy does not use, request, or spend LLM tokens. Agent work can consume
-tokens independently, but Kandy sees only the three completed activity
-signals above—not token counts—and adds no model calls or token cost.
+Both ledgers use domain-separated HMAC-SHA256 signatures backed by one key in
+kandev's encrypted secrets vault. Vault corruption restarts only token history;
+it cannot counterfeit or rebirth Kandy. The browser UI uses the local clock
+only for day/night and sleep, and calls only Kandy's Kandev-hosted webhooks; it
+has no external service or analytics integration.
+
+Kandy does not use, request, or spend LLM tokens. It observes aggregate usage
+reported by existing agent work and adds no model calls. Token count is not
+price, billing history, quota, or cost; Kandy ignores monetary fields and
+never estimates a price.
+
+## Token-vault boundary and lifecycle
+
+“Tokens in this vault” means valid usage events Kandy caught after vault
+observation began. There is no supported usage reader or cursor for backfill
+or reconciliation in Kandev v0.83.0, so the first iteration is deliberately
+best effort. Events can be missed while the plugin is disabled, restarting,
+overloaded, or when an agent reports no usable usage. Identical bodies are
+suppressed within the most recent 512 digests; an older duplicate can count
+again, while two legitimately identical bodies can collide. The vault says
+“observed” and never claims complete billing or lifetime history before its
+displayed start date.
+
+Host state participates in Kandev database backup/restore and survives plugin
+restart and upgrade. Disabling preserves captured history but misses events.
+There is no dedicated vault export/reset UI in this iteration. A new Kandy
+lineage starts an empty vault; rollback ignores the separate state; re-upgrade
+resumes it when lineage still matches. Uninstall removes the Kandy and ends
+its vault history.
 
 ## Development
 
@@ -112,7 +168,7 @@ its `checksums.txt` asset.
 
 ## State
 
-One small JSON ledger in kandev Host state (scope `instance`), so the kandy
-participates in kandev backups, survives plugin upgrades, and is removed on
-uninstall. Uninstalling the plugin is, in the kindest possible terms, the end
-of that kandy's story.
+Two aggregate JSON ledgers in kandev Host state (scope `instance`) participate
+in kandev backups, survive plugin upgrades, and are removed on uninstall.
+Uninstalling the plugin is, in the kindest possible terms, the end of that
+kandy's story and its token vault.
