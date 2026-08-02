@@ -6959,6 +6959,7 @@ function makeKandyWidget(host) {
       if (vaultDescentTimerRef.current) clearTimeout(vaultDescentTimerRef.current);
       vaultDescentTimerRef.current = null;
       setVaultRevealKey(null);
+      returnToVaultDoorRef.current = null;
       setVaultView(null);
     }
 
@@ -7060,11 +7061,15 @@ function makeKandyWidget(host) {
       [photoOpen],
     );
 
+    var tokenVaultModel = tokenVaultModelFor(data || EGG_PLACEHOLDER);
+    var resolvedVaultView = tokenVaultResolvedView(tokenVaultModel, vaultView);
+
     React.useEffect(
       function () {
-        if (vaultView === "hub" && returnToVaultDoorRef.current) {
-          if (focusVaultDoor(vaultPanelRef.current, returnToVaultDoorRef.current)) {
-            returnToVaultDoorRef.current = null;
+        if (resolvedVaultView === "hub" && returnToVaultDoorRef.current) {
+          var restoredDoor = focusVaultDoor(vaultPanelRef.current, returnToVaultDoorRef.current);
+          returnToVaultDoorRef.current = null;
+          if (restoredDoor) {
             return;
           }
         }
@@ -7077,7 +7082,7 @@ function makeKandyWidget(host) {
           if (vaultEntryRef.current && vaultEntryRef.current.focus) vaultEntryRef.current.focus();
         }
       },
-      [vaultView],
+      [resolvedVaultView],
     );
 
     var shown = data || EGG_PLACEHOLDER;
@@ -7173,8 +7178,6 @@ function makeKandyWidget(host) {
       hint: HEARTS_BY_MOOD[(data || EGG_PLACEHOLDER).mood || "content"] <= 4,
     };
     var photoModel = photoModelFor(data || EGG_PLACEHOLDER, timeOfDay);
-    var tokenVaultModel = tokenVaultModelFor(data || EGG_PLACEHOLDER);
-    var resolvedVaultView = tokenVaultResolvedView(tokenVaultModel, vaultView);
     var photoRenderKey = JSON.stringify([
       photoTheme,
       photoModel.stageName,

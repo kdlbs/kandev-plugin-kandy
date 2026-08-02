@@ -341,6 +341,11 @@ test("token vault restores focus to the selected chamber door", () => {
   assert.equal(render.focusVaultDoor(panel, "codex-acp"), true);
   assert.equal(focused, "codex-acp");
   assert.equal(render.focusVaultDoor(panel, "removed-acp"), false);
+  assert.match(
+    bundleSource,
+    /function backFromTokenVault\(\)[\s\S]*?returnToVaultDoorRef\.current = null;[\s\S]*?setVaultView\(null\)/,
+  );
+  assert.match(bundleSource, /\[resolvedVaultView\],/);
 });
 
 test("token vault descent is playful and reduced motion skips it", () => {
