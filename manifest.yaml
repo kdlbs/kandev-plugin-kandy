@@ -1,6 +1,7 @@
 id: "kandev-plugin-kandy"
 api_version: 1
-version: "0.10.0"
+version: "0.11.0"
+min_kandev_version: "0.83.0"
 display_name: "Kandy"
 description: "A tiny creature that grows as your agents work — it feeds on agent runs, turns, and conversation, and evolves forever in your session top bar."
 author: "kandev"
@@ -16,11 +17,11 @@ runtime:
     darwin-arm64: "server/plugin-darwin-arm64"
     windows-amd64: "server/plugin-windows-amd64.exe"
 
-# The kandy's lifetime XP ledger lives in Host state (scope "instance"),
-# fed by work signals from the event bus. The XP recipe is intentionally
-# server-side only — the UI never sees the factor breakdown. `secrets`
-# holds the ledger's HMAC integrity key in kandev's encrypted vault so
-# direct DB edits of the ledger are detectable (v0.9.0, see server/seal.go).
+# The kandy's lifetime XP ledger and aggregate token vault live in Host state
+# (scope "instance"), fed by typed event-bus signals. The XP recipe remains
+# server-side only — token observations never award XP. `secrets` holds the
+# HMAC integrity key in kandev's encrypted vault; each ledger uses its own
+# signature domain so vault corruption cannot counterfeit the creature.
 capabilities:
   state: true
   secrets: true
@@ -28,10 +29,11 @@ capabilities:
     - "turn.completed"
     - "agent.completed"
     - "message.added"
+    - "session_prompt_usage.updated.*"
 
 webhooks:
   - key: "kandy"
-    description: "Current kandy presentation state as JSON (GET; dev-only ?debug_grant=<n> when debug config is on)"
+    description: "Current kandy presentation and aggregate observed-token vault as JSON (GET; dev-only ?debug_grant=<n> when debug config is on)"
     method: "GET"
   - key: "pet"
     description: "Pet the kandy (POST): stamps last_petted_at, which briefly lifts the displayed mood and slowly warms its temperament. Never grants XP. Refused for 60s after a bonk."
@@ -42,4 +44,3 @@ webhooks:
 
 ui:
   bundle: "/ui/bundle.js"
-

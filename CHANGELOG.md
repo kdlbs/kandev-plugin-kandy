@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0] - 2026-08-02
+
+### Added
+
+- Add Kandy's underground token vault with lifetime agent-adapter chambers and model piles.
+- Collect privacy-limited aggregate token usage from Kandev's typed prompt-usage event with bounded duplicate suppression.
+
 ## [0.9.4] - 2026-08-01
 
 ### Changed
