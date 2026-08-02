@@ -108,8 +108,12 @@ func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) 
 	if !ok {
 		return
 	}
-	lineage := strconv.FormatUint(uint64(p.loadLedger(ctx).Salt), 10)
-	vault := p.loadTokenVault(ctx, lineage)
+	// Token history follows Kandy lineage. Persist a sealed zero-XP Kandy
+	// before its first usage observation so a process restart cannot mint a
+	// different salt and orphan the separate vault row.
+	kandy := p.mutateLedger(ctx, func(*ledger) {})
+	lineage := strconv.FormatUint(uint64(kandy.Salt), 10)
+	vault := cloneTokenVault(p.loadTokenVault(ctx, lineage))
 	for _, digest := range vault.RecentBodyHashes {
 		if digest == usage.BodyHash {
 			return
@@ -298,19 +302,51 @@ func (p *plugin) loadTokenVault(ctx context.Context, lineage string) *tokenVault
 		p.vaultCached = fresh
 		return p.vaultCached
 	}
+	key, _, err := p.ensureSealKey(ctx, host)
+	if err != nil {
+		log.Printf("kandy: token vault seal key unavailable, serving unverified this round: %v", err)
+		return loaded
+	}
+	if !tokenVaultSealValid(loaded, key) {
+		log.Printf("kandy: token vault seal invalid; restarting token history without changing Kandy")
+		p.vaultCached = fresh
+		return p.vaultCached
+	}
 	p.vaultCached = loaded
 	return p.vaultCached
 }
 
 func (p *plugin) persistTokenVault(ctx context.Context, vault *tokenVaultLedger) {
-	p.vaultCached = vault
 	host := p.Host()
 	if host == nil {
+		p.vaultCached = vault
 		return
 	}
+	key, _, err := p.ensureSealKey(ctx, host)
+	if err != nil {
+		log.Printf("kandy: token vault seal key unavailable, skipping persist: %v", err)
+		p.vaultCached = nil
+		return
+	}
+	sealTokenVault(vault, key)
 	if err := host.SetState(ctx, stateScope, "", tokenVaultStateKey, tokenVaultToMap(vault)); err != nil {
 		log.Printf("kandy: persisting token vault state: %v", err)
+		p.vaultCached = nil
+		return
 	}
+	p.vaultCached = vault
+}
+
+func cloneTokenVault(vault *tokenVaultLedger) *tokenVaultLedger {
+	encoded, err := json.Marshal(vault)
+	if err != nil {
+		return &tokenVaultLedger{}
+	}
+	var clone tokenVaultLedger
+	if err := json.Unmarshal(encoded, &clone); err != nil {
+		return &tokenVaultLedger{}
+	}
+	return &clone
 }
 
 func tokenVaultToMap(vault *tokenVaultLedger) map[string]any {
