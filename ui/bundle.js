@@ -4628,6 +4628,18 @@ function tokenVaultResolvedView(model, view) {
   return "hub";
 }
 
+function focusVaultDoor(panel, agentType) {
+  if (!panel || !panel.querySelectorAll) return false;
+  var doors = panel.querySelectorAll("[data-vault-agent]");
+  for (var i = 0; i < doors.length; i++) {
+    if (doors[i].dataset && doors[i].dataset.vaultAgent === agentType && doors[i].focus) {
+      doors[i].focus();
+      return true;
+    }
+  }
+  return false;
+}
+
 function tokenVaultDescent(h, DialogTitle, data, panelRef, onBack, onExit) {
   return h(
     "section",
@@ -4682,6 +4694,7 @@ function tokenVaultDoor(h, room, onOpen) {
   return h(
     "button",
     {
+      key: room.agentType,
       type: "button",
       className: "kandev-kandy-vault-door",
       "data-vault-agent": room.agentType,
@@ -4764,6 +4777,7 @@ function tokenModelPile(h, room, model, maximum, revealedKey, onToggle) {
   return h(
     "button",
     {
+      key: key,
       type: "button",
       className: "kandev-kandy-token-pile" + (revealed ? " is-revealed" : ""),
       "data-vault-model": model.name,
@@ -4793,7 +4807,7 @@ function tokenModelPile(h, room, model, maximum, revealedKey, onToggle) {
   );
 }
 
-function tokenVaultRoom(h, DialogTitle, vault, agentType, revealedKey, panelRef, onBack, onExit, onToggle) {
+function tokenVaultRoom(h, DialogTitle, vault, agentType, revealedKey, panelRef, onBack, onExit, onToggle, creature) {
   var room = null;
   for (var i = 0; i < vault.rooms.length; i++) {
     if (vault.rooms[i].agentType === agentType) {
@@ -4815,16 +4829,21 @@ function tokenVaultRoom(h, DialogTitle, vault, agentType, revealedKey, panelRef,
     onExit,
     h(
       "div",
-      { className: "kandev-kandy-vault-room" },
-      room.models.length
-        ? h(
-            "div",
-            { className: "kandev-kandy-token-grid", "aria-label": room.label + " model piles" },
-            room.models.map(function (model) {
-              return tokenModelPile(h, room, model, maximum, revealedKey, onToggle);
-            }),
-          )
-        : h("div", { className: "kandev-kandy-vault-empty" }, "No model piles yet."),
+      { className: "kandev-kandy-vault-scene kandev-kandy-vault-room-scene" },
+      h("div", { className: "kandev-kandy-vault-kandy" }, creature),
+      h(
+        "div",
+        { className: "kandev-kandy-vault-room" },
+        room.models.length
+          ? h(
+              "div",
+              { className: "kandev-kandy-token-grid", "aria-label": room.label + " model piles" },
+              room.models.map(function (model) {
+                return tokenModelPile(h, room, model, maximum, revealedKey, onToggle);
+              }),
+            )
+          : h("div", { className: "kandev-kandy-vault-empty" }, "No model piles yet."),
+      ),
     ),
   );
 }
@@ -6213,6 +6232,7 @@ function makeKandyWidget(host) {
     var vaultPanelRef = React.useRef(null);
     var vaultEntryRef = React.useRef(null);
     var returnToVaultEntryRef = React.useRef(false);
+    var returnToVaultDoorRef = React.useRef(null);
     var vaultDescentTimerRef = React.useRef(null);
     var celebrationTimerRef = React.useRef(null);
     var petTimerRef = React.useRef(null);
@@ -6926,6 +6946,7 @@ function makeKandyWidget(host) {
 
     function openTokenRoom(agentType) {
       setVaultRevealKey(null);
+      returnToVaultDoorRef.current = agentType;
       setVaultView(agentType);
     }
 
@@ -6974,6 +6995,7 @@ function makeKandyWidget(host) {
         setPhotoOpen(false);
         setPhotoStatus("idle");
         returnToVaultEntryRef.current = false;
+        returnToVaultDoorRef.current = null;
         setVaultRevealKey(null);
         setVaultView(null);
       }
@@ -7040,6 +7062,12 @@ function makeKandyWidget(host) {
 
     React.useEffect(
       function () {
+        if (vaultView === "hub" && returnToVaultDoorRef.current) {
+          if (focusVaultDoor(vaultPanelRef.current, returnToVaultDoorRef.current)) {
+            returnToVaultDoorRef.current = null;
+            return;
+          }
+        }
         if (vaultView && vaultPanelRef.current && vaultPanelRef.current.focus) {
           vaultPanelRef.current.focus();
           return;
@@ -7267,7 +7295,7 @@ function makeKandyWidget(host) {
                     shown,
                     vaultPanelRef,
                     backFromTokenVault,
-                    function () { changeDialogOpen(false); },
+                    backFromTokenVault,
                   )
                 : resolvedVaultView === "hub"
                   ? tokenVaultHub(
@@ -7278,7 +7306,7 @@ function makeKandyWidget(host) {
                     vaultPanelRef,
                     openTokenRoom,
                     backFromTokenVault,
-                    function () { changeDialogOpen(false); },
+                    backFromTokenVault,
                   )
                   : tokenVaultRoom(
                     h,
@@ -7288,8 +7316,9 @@ function makeKandyWidget(host) {
                     vaultRevealKey,
                     vaultPanelRef,
                     backToTokenHub,
-                    function () { changeDialogOpen(false); },
+                    backFromTokenVault,
                     toggleVaultCount,
+                    creatureSvg(h, shown, 64),
                   )
               : h(
                 React.Fragment,
@@ -7468,6 +7497,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     tokenVaultRoom: tokenVaultRoom,
     tokenVaultInitialPhase: tokenVaultInitialPhase,
     tokenVaultResolvedView: tokenVaultResolvedView,
+    focusVaultDoor: focusVaultDoor,
     tokenVaultDescent: tokenVaultDescent,
     photoExportPlan: photoExportPlan,
     photoPaletteFor: photoPaletteFor,

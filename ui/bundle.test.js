@@ -286,6 +286,7 @@ test("token vault hub and chamber render accessible doors and model piles", () =
   assert.equal(hub.props.role, "region");
   assert.equal(hub.props["aria-label"], "Kandy token vault");
   assert.equal(doors.length, 2);
+  assert.equal(doors[0].props.key, "claude-acp");
   assert.match(doors[0].props["aria-label"], /Claude, 9,007,199,254,740,993 tokens, open chamber/);
   doors[1].props.onClick();
   assert.equal(opened, "codex-acp");
@@ -305,6 +306,7 @@ test("token vault hub and chamber render accessible doors and model piles", () =
     (key) => {
       revealed = key;
     },
+    { type: "kandy-in-room" },
   );
   const piles = [];
   visit(room, (node) => {
@@ -312,6 +314,7 @@ test("token vault hub and chamber render accessible doors and model piles", () =
   });
 
   assert.equal(piles.length, 2);
+  assert.equal(piles[0].props.key, "codex-acp\u0000gpt-5.6-codex");
   assert.equal(piles[0].props["aria-pressed"], true);
   assert.equal(piles[1].props["aria-pressed"], false);
   assert.match(piles[0].props["aria-label"], /gpt-5\.6-codex, 100 tokens in Codex chamber/);
@@ -319,6 +322,25 @@ test("token vault hub and chamber render accessible doors and model piles", () =
   piles[1].props.onClick();
   assert.equal(revealed, "codex-acp\u0000gpt-5.6-mini-with-a-very-long-model-name");
   assert.ok(render.tokenPileScale("100", "100") > render.tokenPileScale("20", "100"));
+  assert.ok(findNode(room, (node) => node.props && /kandev-kandy-vault-room-scene/.test(node.props.className || "")));
+  assert.ok(findNode(room, (node) => node.type === "kandy-in-room"));
+});
+
+test("token vault restores focus to the selected chamber door", () => {
+  const render = loadBundle().plugin.__render;
+  let focused = null;
+  const panel = {
+    querySelectorAll() {
+      return [
+        { dataset: { vaultAgent: "claude-acp" }, focus() { focused = "claude-acp"; } },
+        { dataset: { vaultAgent: "codex-acp" }, focus() { focused = "codex-acp"; } },
+      ];
+    },
+  };
+
+  assert.equal(render.focusVaultDoor(panel, "codex-acp"), true);
+  assert.equal(focused, "codex-acp");
+  assert.equal(render.focusVaultDoor(panel, "removed-acp"), false);
 });
 
 test("token vault descent is playful and reduced motion skips it", () => {
