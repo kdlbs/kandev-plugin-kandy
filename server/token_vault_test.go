@@ -184,3 +184,25 @@ func TestTokenVault_TamperingRestartsOnlyVault(t *testing.T) {
 	require.Equal(t, "empty", state.TokenVault.Status)
 	require.Equal(t, "0", state.TokenVault.TotalTokens)
 }
+
+func TestTokenVault_UnknownUnicodeAgentTypeGetsReadableRoom(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	event := &pluginsdk.Event{
+		EventID:   "delivery-unicode",
+		EventType: "session_prompt_usage.updated.session-unicode",
+		Payload: map[string]any{
+			"agent_type": "  écho-\u0007acp  ",
+			"model":      "  modèle-α\u0000  ",
+			"timestamp":  "2026-07-28T12:00:00Z",
+			"usage":      map[string]any{"total_tokens": float64(7)},
+		},
+	}
+
+	require.NoError(t, p.OnEvent(context.Background(), event))
+	state := fetchKandy(t, p, "")
+	require.Len(t, state.TokenVault.Rooms, 1)
+	require.Equal(t, "écho-acp", state.TokenVault.Rooms[0].AgentType)
+	require.Equal(t, "Écho Acp", state.TokenVault.Rooms[0].Label)
+	require.Equal(t, "modèle-α", state.TokenVault.Rooms[0].Models[0].Name)
+}
