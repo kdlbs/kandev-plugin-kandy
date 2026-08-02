@@ -4488,6 +4488,28 @@ function compareTokenVaultDecimals(left, right) {
   return left > right ? 1 : -1;
 }
 
+function tokenCountBigInt(value) {
+  var decimal = tokenVaultDecimal(value);
+  if (decimal === null) return null;
+  try {
+    return BigInt(decimal);
+  } catch (_) {
+    return null;
+  }
+}
+
+function formatTokenExact(value, locale) {
+  var count = tokenCountBigInt(value);
+  if (count === null) return "Unavailable";
+  return new Intl.NumberFormat(locale).format(count);
+}
+
+function formatTokenCompact(value, locale) {
+  var count = tokenCountBigInt(value);
+  if (count === null) return "Unavailable";
+  return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(count);
+}
+
 function tokenVaultText(value, fallback, limit) {
   var text = typeof value === "string" ? value.trim() : "";
   if (!text) return fallback;
@@ -7012,6 +7034,9 @@ window.registerKandevPlugin(PLUGIN_ID, {
     persistDialogZoom: persistDialogZoom,
     photoModelFor: photoModelFor,
     tokenVaultModelFor: tokenVaultModelFor,
+    tokenCountBigInt: tokenCountBigInt,
+    formatTokenExact: formatTokenExact,
+    formatTokenCompact: formatTokenCompact,
     photoExportPlan: photoExportPlan,
     photoPaletteFor: photoPaletteFor,
     photoPortraitSvg: photoPortraitSvg,

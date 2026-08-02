@@ -236,6 +236,14 @@ test("token vault model never fabricates zero for unavailable counts", () => {
   assert.equal(malformed.rooms[0].models[0].tokens, null);
 });
 
+test("token vault formats large decimal strings without precision loss", () => {
+  const render = loadBundle().plugin.__render;
+  assert.equal(typeof render.formatTokenExact, "function");
+  assert.equal(render.formatTokenExact("9007199254740993", "en-US"), "9,007,199,254,740,993");
+  assert.equal(render.formatTokenExact(null, "en-US"), "Unavailable");
+  assert.match(render.formatTokenCompact("9007199254740993", "en-US"), /^[\d,.]+[A-Z]+$/);
+});
+
 test("chat topbar control uses desktop and phone geometry", () => {
   const { document, plugin } = loadBundle();
   plugin.initialize(
