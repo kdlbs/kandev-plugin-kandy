@@ -244,6 +244,83 @@ test("token vault formats large decimal strings without precision loss", () => {
   assert.match(render.formatTokenCompact("9007199254740993", "en-US"), /^[\d,.]+[A-Z]+$/);
 });
 
+test("token vault hub and chamber render accessible doors and model piles", () => {
+  const render = loadBundle().plugin.__render;
+  assert.equal(typeof render.tokenVaultHub, "function");
+  assert.equal(typeof render.tokenVaultRoom, "function");
+  const model = render.tokenVaultModelFor(
+    sampleKandy({
+      token_vault: {
+        status: "partial",
+        observed_since: "2026-07-28T12:00:00Z",
+        total_tokens: "9007199254741113",
+        rooms: [
+          {
+            agent_type: "claude-acp",
+            label: "Claude",
+            tokens: "9007199254740993",
+            models: [{ name: "claude-sonnet-4-5", tokens: "9007199254740993" }],
+          },
+          {
+            agent_type: "codex-acp",
+            label: "Codex",
+            tokens: "120",
+            models: [
+              { name: "gpt-5.6-codex", tokens: "100" },
+              { name: "gpt-5.6-mini-with-a-very-long-model-name", tokens: "20" },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  let opened = null;
+  const hub = render.tokenVaultHub(jsx, "DialogTitle", model, { type: "kandy" }, { current: null }, (agentType) => {
+    opened = agentType;
+  }, () => {}, () => {});
+  const doors = [];
+  visit(hub, (node) => {
+    if (node.type === "button" && node.props["data-vault-agent"]) doors.push(node);
+  });
+
+  assert.equal(hub.props.role, "region");
+  assert.equal(hub.props["aria-label"], "Kandy token vault");
+  assert.equal(doors.length, 2);
+  assert.match(doors[0].props["aria-label"], /Claude, 9,007,199,254,740,993 tokens, open chamber/);
+  doors[1].props.onClick();
+  assert.equal(opened, "codex-acp");
+  assert.match(textContent(hub), /Some usage is estimated or incomplete/);
+  assert.doesNotMatch(textContent(hub), /next page|page 1/i);
+
+  let revealed = null;
+  const room = render.tokenVaultRoom(
+    jsx,
+    "DialogTitle",
+    model,
+    "codex-acp",
+    "codex-acp\u0000gpt-5.6-codex",
+    { current: null },
+    () => {},
+    () => {},
+    (key) => {
+      revealed = key;
+    },
+  );
+  const piles = [];
+  visit(room, (node) => {
+    if (node.type === "button" && node.props["data-vault-model"]) piles.push(node);
+  });
+
+  assert.equal(piles.length, 2);
+  assert.equal(piles[0].props["aria-pressed"], true);
+  assert.equal(piles[1].props["aria-pressed"], false);
+  assert.match(piles[0].props["aria-label"], /gpt-5\.6-codex, 100 tokens in Codex chamber/);
+  assert.match(textContent(room), /gpt-5\.6-mini-with-a-very-long-model-name/);
+  piles[1].props.onClick();
+  assert.equal(revealed, "codex-acp\u0000gpt-5.6-mini-with-a-very-long-model-name");
+  assert.ok(render.tokenPileScale("100", "100") > render.tokenPileScale("20", "100"));
+});
+
 test("chat topbar control uses desktop and phone geometry", () => {
   const { document, plugin } = loadBundle();
   plugin.initialize(
