@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"math"
@@ -20,6 +22,7 @@ const (
 	tokenVaultStateKey      = "kandy-token-vault"
 	tokenUsageEventPrefix   = "session_prompt_usage.updated."
 	tokenVaultSchemaVersion = 1
+	tokenVaultDigestLimit   = 512
 )
 
 type tokenVaultLedger struct {
@@ -69,6 +72,29 @@ type observedTokenUsage struct {
 	Model     string
 	Tokens    *big.Int
 	Timestamp string
+	BodyHash  string
+}
+
+type canonicalTokenField struct {
+	Present bool   `json:"present"`
+	Value   string `json:"value,omitempty"`
+}
+
+type canonicalTokenUsageBody struct {
+	Timestamp   string              `json:"timestamp"`
+	TaskID      string              `json:"task_id"`
+	SessionID   string              `json:"session_id"`
+	AgentID     string              `json:"agent_id"`
+	AgentType   string              `json:"agent_type"`
+	Model       string              `json:"model"`
+	Input       canonicalTokenField `json:"input"`
+	Output      canonicalTokenField `json:"output"`
+	CacheRead   canonicalTokenField `json:"cache_read"`
+	CacheWrite  canonicalTokenField `json:"cache_write"`
+	Thought     canonicalTokenField `json:"thought"`
+	Total       canonicalTokenField `json:"total"`
+	Estimated   bool                `json:"estimated"`
+	HasEstimate bool                `json:"has_estimate"`
 }
 
 func isTokenUsageEvent(eventType string) bool {
@@ -82,7 +108,16 @@ func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) 
 	}
 	lineage := strconv.FormatUint(uint64(p.loadLedger(ctx).Salt), 10)
 	vault := p.loadTokenVault(ctx, lineage)
+	for _, digest := range vault.RecentBodyHashes {
+		if digest == usage.BodyHash {
+			return
+		}
+	}
 	addTokenUsage(vault, usage)
+	vault.RecentBodyHashes = append(vault.RecentBodyHashes, usage.BodyHash)
+	if len(vault.RecentBodyHashes) > tokenVaultDigestLimit {
+		vault.RecentBodyHashes = append([]string(nil), vault.RecentBodyHashes[len(vault.RecentBodyHashes)-tokenVaultDigestLimit:]...)
+	}
 	vault.UpdatedAt = p.now().UTC().Format(time.RFC3339)
 	if vault.ObservedSince == "" {
 		vault.ObservedSince = usage.Timestamp
@@ -98,17 +133,20 @@ func normalizeTokenUsage(event *pluginsdk.Event) (observedTokenUsage, bool) {
 	if !ok {
 		return observedTokenUsage{}, false
 	}
-	tokens, valid, present := safeEventInteger(usageMap["total_tokens"])
-	if !valid {
-		return observedTokenUsage{}, false
-	}
-	if !present || tokens.Sign() == 0 {
-		input, inputValid, _ := safeEventInteger(usageMap["input_tokens"])
-		output, outputValid, _ := safeEventInteger(usageMap["output_tokens"])
-		if !inputValid || !outputValid {
+	fields := map[string]canonicalTokenField{}
+	parsedFields := map[string]*big.Int{}
+	for _, name := range []string{"input_tokens", "output_tokens", "cached_read_tokens", "cached_write_tokens", "thought_tokens", "total_tokens"} {
+		value, valid, present := safeEventInteger(usageMap[name])
+		if !valid {
 			return observedTokenUsage{}, false
 		}
-		tokens = new(big.Int).Add(input, output)
+		parsedFields[name] = value
+		fields[name] = canonicalTokenField{Present: present, Value: value.String()}
+	}
+	tokens := parsedFields["total_tokens"]
+	present := fields["total_tokens"].Present
+	if !present || tokens.Sign() == 0 {
+		tokens = new(big.Int).Add(parsedFields["input_tokens"], parsedFields["output_tokens"])
 	}
 	if tokens.Sign() <= 0 {
 		return observedTokenUsage{}, false
@@ -118,11 +156,41 @@ func normalizeTokenUsage(event *pluginsdk.Event) (observedTokenUsage, bool) {
 	if err != nil {
 		return observedTokenUsage{}, false
 	}
+	agentType := sanitizeVaultLabel(stringValue(event.Payload["agent_type"]), "mystery-agent", 64)
+	model := sanitizeVaultLabel(stringValue(event.Payload["model"]), "Mystery model", 128)
+	estimated, hasEstimate := usageMap["estimated"].(bool)
+	if rawEstimate, present := usageMap["estimated"]; present {
+		if _, ok := rawEstimate.(bool); !ok {
+			return observedTokenUsage{}, false
+		}
+	}
+	canonical := canonicalTokenUsageBody{
+		Timestamp:   parsed.UTC().Format(time.RFC3339Nano),
+		TaskID:      stringValue(event.Payload["task_id"]),
+		SessionID:   stringValue(event.Payload["session_id"]),
+		AgentID:     stringValue(event.Payload["agent_id"]),
+		AgentType:   agentType,
+		Model:       model,
+		Input:       fields["input_tokens"],
+		Output:      fields["output_tokens"],
+		CacheRead:   fields["cached_read_tokens"],
+		CacheWrite:  fields["cached_write_tokens"],
+		Thought:     fields["thought_tokens"],
+		Total:       fields["total_tokens"],
+		Estimated:   estimated,
+		HasEstimate: hasEstimate,
+	}
+	canonicalJSON, err := json.Marshal(canonical)
+	if err != nil {
+		return observedTokenUsage{}, false
+	}
+	digest := sha256.Sum256(canonicalJSON)
 	return observedTokenUsage{
-		AgentType: sanitizeVaultLabel(stringValue(event.Payload["agent_type"]), "mystery-agent", 64),
-		Model:     sanitizeVaultLabel(stringValue(event.Payload["model"]), "Mystery model", 128),
+		AgentType: agentType,
+		Model:     model,
 		Tokens:    tokens,
 		Timestamp: parsed.UTC().Format(time.RFC3339),
+		BodyHash:  hex.EncodeToString(digest[:]),
 	}, true
 }
 
