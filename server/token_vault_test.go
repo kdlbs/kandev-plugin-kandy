@@ -57,3 +57,30 @@ func TestTokenVault_ObservedUsageAppearsInKandyWebhook(t *testing.T) {
 		},
 	}, body["token_vault"])
 }
+
+func TestTokenVault_RejectsUnsafeTokenNumbers(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	event := &pluginsdk.Event{
+		EventID:   "delivery-unsafe",
+		EventType: "session_prompt_usage.updated.session-1",
+		Payload: map[string]any{
+			"agent_type": "codex-acp",
+			"model":      "gpt-5.6",
+			"timestamp":  "2026-07-28T12:00:00Z",
+			"usage": map[string]any{
+				"total_tokens": float64(9_007_199_254_740_992),
+			},
+		},
+	}
+
+	require.NoError(t, p.OnEvent(context.Background(), event))
+	resp, err := p.HandleWebhook(context.Background(), &pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET"})
+	require.NoError(t, err)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	vault, ok := body["token_vault"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "empty", vault["status"])
+	require.Equal(t, "0", vault["total_tokens"])
+}
