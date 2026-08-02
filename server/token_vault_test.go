@@ -84,3 +84,40 @@ func TestTokenVault_RejectsUnsafeTokenNumbers(t *testing.T) {
 	require.Equal(t, "empty", vault["status"])
 	require.Equal(t, "0", vault["total_tokens"])
 }
+
+func TestTokenVault_DuplicateBodyCountsOnceAcrossRestart(t *testing.T) {
+	host := newFakeHost(nil)
+	ctx := context.Background()
+	p1 := newTestPlugin(t, host)
+	payload := map[string]any{
+		"task_id":    "task-private",
+		"session_id": "session-private",
+		"agent_id":   "agent-private",
+		"agent_type": "opencode-acp",
+		"model":      "open-model",
+		"timestamp":  "2026-07-28T12:00:00Z",
+		"usage": map[string]any{
+			"input_tokens":   float64(10_639),
+			"output_tokens":  float64(2),
+			"thought_tokens": float64(11),
+			"total_tokens":   float64(10_652),
+			"estimated":      false,
+		},
+	}
+	require.NoError(t, p1.OnEvent(ctx, &pluginsdk.Event{
+		EventID: "delivery-original", EventType: "session_prompt_usage.updated.session-private", Payload: payload,
+	}))
+
+	// A producer republication can receive another delivery ID. The stable
+	// normalized body, not transport identity, is the practical dedupe seam.
+	p2 := newTestPlugin(t, host)
+	require.NoError(t, p2.OnEvent(ctx, &pluginsdk.Event{
+		EventID: "delivery-republished", EventType: "session_prompt_usage.updated.session-private", Payload: payload,
+	}))
+	resp, err := p2.HandleWebhook(ctx, &pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET"})
+	require.NoError(t, err)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	vault := body["token_vault"].(map[string]any)
+	require.Equal(t, "10652", vault["total_tokens"])
+}
