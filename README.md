@@ -90,13 +90,12 @@ metadata:
   plus the whole-record `estimated` flag.
 
 Kandy prefers a positive observed `total_tokens` (which some adapters or
-Kandev may infer). When total is
-missing or zero, it uses positive input plus output only; it never adds cache
-or thought tokens because provider semantics can overlap. Fallback or
-estimated usage marks the vault partial. Missing agent/model names enter
-explicit Mystery buckets. Agent type identifies the CLI/adapter, not
-necessarily the model provider, configured profile, person, or agent run.
-Aliases and renamed models remain separate piles.
+Kandev may infer). When total is missing or zero, it uses positive input plus
+output only; it never adds cache or thought tokens because provider semantics
+can overlap. Fallback or estimated usage marks the vault partial. Missing
+agent/model names enter explicit Mystery buckets. Agent type identifies the
+CLI/adapter, not necessarily the model provider, configured profile, person,
+or agent run. Aliases and renamed models remain separate piles.
 
 The task/session/lifecycle IDs and usage categories are never persisted,
 logged, or returned to the browser. Only a SHA-256 digest of a canonical event
