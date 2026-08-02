@@ -4557,6 +4557,219 @@ function tokenVaultModelFor(data) {
   };
 }
 
+function tokenPileScale(value, maximum) {
+  var decimal = tokenVaultDecimal(value);
+  var maxDecimal = tokenVaultDecimal(maximum);
+  if (decimal === null || maxDecimal === null || decimal === "0" || maxDecimal === "0") return 0.34;
+  function log10Decimal(text) {
+    var head = Number(text.slice(0, 15));
+    return text.length - 1 + Math.log10(head / Math.pow(10, Math.min(text.length, 15) - 1));
+  }
+  var ratio = Math.pow(10, Math.min(0, log10Decimal(decimal) - log10Decimal(maxDecimal)));
+  return 0.34 + 0.66 * Math.sqrt(Math.max(0, Math.min(1, ratio)));
+}
+
+function tokenVaultHue(agentType, model) {
+  var input = String(agentType || "") + "\u0000" + String(model || "");
+  var hash = 2166136261;
+  for (var i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ((hash >>> 0) % 280) + 28;
+}
+
+function tokenVaultAction(h, label, onClick) {
+  return h(
+    "button",
+    {
+      type: "button",
+      className: "kandev-kandy-vault-action",
+      "aria-label": label,
+      onClick: onClick,
+    },
+    label,
+  );
+}
+
+function tokenVaultShell(h, DialogTitle, title, subtitle, panelRef, onBack, onExit, children) {
+  return h(
+    "section",
+    {
+      ref: panelRef,
+      tabIndex: -1,
+      role: "region",
+      "aria-label": "Kandy token vault",
+      className: "kandev-kandy-vault-panel",
+    },
+    h(
+      "header",
+      { className: "kandev-kandy-vault-bar" },
+      tokenVaultAction(h, "Back", onBack),
+      h(
+        "div",
+        { className: "kandev-kandy-vault-heading" },
+        h(DialogTitle, { className: "kandev-kandy-vault-title" }, title),
+        subtitle ? h("div", { className: "kandev-kandy-vault-subtitle" }, subtitle) : null,
+      ),
+      tokenVaultAction(h, "Exit vault", onExit),
+    ),
+    h("div", { className: "kandev-kandy-vault-scroll" }, children),
+  );
+}
+
+function tokenVaultDoor(h, room, onOpen) {
+  var exact = formatTokenExact(room.tokens);
+  return h(
+    "button",
+    {
+      type: "button",
+      className: "kandev-kandy-vault-door",
+      "data-vault-agent": room.agentType,
+      "aria-label": room.label + ", " + exact + " tokens, open chamber",
+      onClick: function () {
+        onOpen(room.agentType);
+      },
+    },
+    h(
+      "svg",
+      { viewBox: "0 0 88 88", "aria-hidden": "true", className: "kandev-kandy-vault-door-art" },
+      h("path", {
+        d: "M15 78V42C15 21 28 10 44 10s29 11 29 32v36Z",
+        fill: "color-mix(in oklch,var(--muted) 82%,#65472f)",
+        stroke: "color-mix(in oklch,var(--foreground) 25%,transparent)",
+        strokeWidth: 3,
+      }),
+      h("path", {
+        d: "M25 78V43c0-14 8-23 19-23s19 9 19 23v35Z",
+        fill: "color-mix(in oklch,var(--background) 65%,#2f241d)",
+      }),
+      h("circle", { cx: 56, cy: 50, r: 2.5, fill: "#f6c85f" }),
+    ),
+    h("span", { className: "kandev-kandy-vault-door-label" }, room.label),
+    h("span", { className: "kandev-kandy-vault-door-count" }, formatTokenCompact(room.tokens) + " tokens"),
+  );
+}
+
+function tokenVaultHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, onBack, onExit) {
+  var statusLine = model.status === "partial" ? "Some usage is estimated or incomplete." : "Tokens Kandy caught while listening.";
+  var body;
+  if (!model.rooms.length) {
+    body = h(
+      "div",
+      { className: "kandev-kandy-vault-empty" },
+      creature,
+      h("div", { className: "kandev-kandy-vault-empty-door", "aria-hidden": "true" }, "⌂"),
+      h("strong", null, "No chambers yet."),
+      h("span", null, "Kandy is listening."),
+    );
+  } else {
+    body = h(
+      "div",
+      { className: "kandev-kandy-vault-hub" },
+      h("div", { className: "kandev-kandy-vault-kandy" }, creature),
+      h(
+        "div",
+        { className: "kandev-kandy-vault-grid", "aria-label": "Agent chambers" },
+        model.rooms.map(function (room) {
+          return tokenVaultDoor(h, room, onOpenRoom);
+        }),
+      ),
+    );
+  }
+  return tokenVaultShell(
+    h,
+    DialogTitle,
+    "Token vault",
+    (model.totalTokens === null ? "Unavailable" : formatTokenExact(model.totalTokens) + " observed tokens") + " · " + statusLine,
+    panelRef,
+    onBack,
+    onExit,
+    h(
+      "div",
+      { className: "kandev-kandy-vault-scene" },
+      body,
+      model.observedSince
+        ? h("p", { className: "kandev-kandy-vault-boundary" }, "Observed since " + model.observedSince.slice(0, 10) + ". No backfill.")
+        : null,
+    ),
+  );
+}
+
+function tokenModelPile(h, room, model, maximum, revealedKey, onToggle) {
+  var key = room.agentType + "\u0000" + model.name;
+  var exact = formatTokenExact(model.tokens);
+  var revealed = revealedKey === key;
+  var scale = tokenPileScale(model.tokens, maximum);
+  var hue = tokenVaultHue(room.agentType, model.name);
+  return h(
+    "button",
+    {
+      type: "button",
+      className: "kandev-kandy-token-pile" + (revealed ? " is-revealed" : ""),
+      "data-vault-model": model.name,
+      "aria-label": model.name + ", " + exact + " tokens in " + room.label + " chamber",
+      "aria-pressed": revealed,
+      onClick: function () {
+        onToggle(key);
+      },
+    },
+    h(
+      "span",
+      { className: "kandev-kandy-token-pile-floor", "aria-hidden": "true" },
+      h("span", {
+        className: "kandev-kandy-token-pile-mound",
+        style: {
+          width: Math.round(38 + scale * 58) + "%",
+          height: Math.round(24 + scale * 62) + "%",
+          background:
+            "radial-gradient(circle at 30% 22%,hsl(" + hue + " 92% 78%),transparent 12%)," +
+            "repeating-radial-gradient(ellipse at 50% 100%,hsl(" + hue + " 72% 58%) 0 7px,hsl(" + ((hue + 24) % 360) + " 72% 46%) 8px 11px)",
+        },
+      }),
+    ),
+    h("span", { className: "kandev-kandy-token-pile-name" }, model.name),
+    h("span", { className: "kandev-kandy-token-pile-compact" }, formatTokenCompact(model.tokens) + " tokens"),
+    h("span", { className: "kandev-kandy-vault-exact" }, exact + " tokens"),
+  );
+}
+
+function tokenVaultRoom(h, DialogTitle, vault, agentType, revealedKey, panelRef, onBack, onExit, onToggle) {
+  var room = null;
+  for (var i = 0; i < vault.rooms.length; i++) {
+    if (vault.rooms[i].agentType === agentType) {
+      room = vault.rooms[i];
+      break;
+    }
+  }
+  if (!room) {
+    return tokenVaultShell(h, DialogTitle, "Token vault", "That chamber is no longer available.", panelRef, onBack, onExit, null);
+  }
+  var maximum = room.models.length ? room.models[0].tokens : null;
+  return tokenVaultShell(
+    h,
+    DialogTitle,
+    room.label + " chamber",
+    formatTokenExact(room.tokens) + " observed tokens",
+    panelRef,
+    onBack,
+    onExit,
+    h(
+      "div",
+      { className: "kandev-kandy-vault-room" },
+      room.models.length
+        ? h(
+            "div",
+            { className: "kandev-kandy-token-grid", "aria-label": room.label + " model piles" },
+            room.models.map(function (model) {
+              return tokenModelPile(h, room, model, maximum, revealedKey, onToggle);
+            }),
+          )
+        : h("div", { className: "kandev-kandy-vault-empty" }, "No model piles yet."),
+    ),
+  );
+}
+
 function photoInt(value, fallback) {
   var n = Number(value);
   return isFinite(n) ? Math.floor(n) : fallback;
@@ -7037,6 +7250,9 @@ window.registerKandevPlugin(PLUGIN_ID, {
     tokenCountBigInt: tokenCountBigInt,
     formatTokenExact: formatTokenExact,
     formatTokenCompact: formatTokenCompact,
+    tokenPileScale: tokenPileScale,
+    tokenVaultHub: tokenVaultHub,
+    tokenVaultRoom: tokenVaultRoom,
     photoExportPlan: photoExportPlan,
     photoPaletteFor: photoPaletteFor,
     photoPortraitSvg: photoPortraitSvg,
