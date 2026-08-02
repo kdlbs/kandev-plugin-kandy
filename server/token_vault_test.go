@@ -121,3 +121,34 @@ func TestTokenVault_DuplicateBodyCountsOnceAcrossRestart(t *testing.T) {
 	vault := body["token_vault"].(map[string]any)
 	require.Equal(t, "10652", vault["total_tokens"])
 }
+
+func TestTokenVault_EstimatedFallbackIsMarkedPartial(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	event := &pluginsdk.Event{
+		EventID:   "delivery-codex",
+		EventType: "session_prompt_usage.updated.session-codex",
+		Payload: map[string]any{
+			"agent_type": "codex-acp",
+			"model":      "gpt-5.6-codex",
+			"timestamp":  "2026-07-28T12:00:00Z",
+			"usage": map[string]any{
+				"input_tokens":       float64(10_639),
+				"output_tokens":      float64(2),
+				"cached_read_tokens": float64(900),
+				"thought_tokens":     float64(11),
+				"total_tokens":       float64(0),
+				"estimated":          true,
+			},
+		},
+	}
+
+	require.NoError(t, p.OnEvent(context.Background(), event))
+	resp, err := p.HandleWebhook(context.Background(), &pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET"})
+	require.NoError(t, err)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(resp.Body, &body))
+	vault := body["token_vault"].(map[string]any)
+	require.Equal(t, "partial", vault["status"])
+	require.Equal(t, "10641", vault["total_tokens"], "cache and thought tokens must not be added twice")
+}
