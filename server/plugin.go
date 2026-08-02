@@ -317,8 +317,7 @@ func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookReques
 	}
 
 	l := p.loadLedger(ctx)
-	view := p.presentLedger(l, idleOverride)
-	view.TokenVault = p.presentTokenVault(ctx, l.Salt)
+	view := p.presentKandy(ctx, l, idleOverride)
 	body, err := json.Marshal(view)
 	if err != nil {
 		return jsonResponse(500, []byte(`{"error":"encoding state"}`)), nil
@@ -341,8 +340,7 @@ func (p *plugin) handlePet(ctx context.Context) *pluginsdk.WebhookResponse {
 	// stamp, no lift, no temperament change. The UI mirrors this with a
 	// turn-away reaction.
 	if p.within(l.LastBonkedAt, distrustWindow) {
-		view := p.presentLedger(l, nil)
-		view.TokenVault = p.presentTokenVault(ctx, l.Salt)
+		view := p.presentKandy(ctx, l, nil)
 		view.Flavor = "It doesn't trust you right now."
 		return presentResponse(view)
 	}
@@ -364,8 +362,7 @@ func (p *plugin) handlePet(ctx context.Context) *pluginsdk.WebhookResponse {
 		l.Temperament = clampTemperament(l.Temperament + gain)
 		l.LastPetEffectAt = p.now().UTC().Format(time.RFC3339)
 	})
-	view := p.presentLedger(l, nil)
-	view.TokenVault = p.presentTokenVault(ctx, l.Salt)
+	view := p.presentKandy(ctx, l, nil)
 	return presentResponse(view)
 }
 
@@ -390,8 +387,7 @@ func (p *plugin) handleBonk(ctx context.Context) *pluginsdk.WebhookResponse {
 		l.LastBonkedAt = p.now().UTC().Format(time.RFC3339)
 		l.LastPettedAt = "" // a bonk cancels any active pet lift
 	})
-	view := p.presentLedger(l, nil)
-	view.TokenVault = p.presentTokenVault(ctx, l.Salt)
+	view := p.presentKandy(ctx, l, nil)
 	view.Flavor = "Your kandy got drenched."
 	return presentResponse(view)
 }
@@ -402,6 +398,12 @@ func presentResponse(view kandyResponse) *pluginsdk.WebhookResponse {
 		return jsonResponse(500, []byte(`{"error":"encoding state"}`))
 	}
 	return jsonResponse(200, body)
+}
+
+func (p *plugin) presentKandy(ctx context.Context, l *ledger, idleOverride *time.Duration) kandyResponse {
+	view := p.presentLedger(l, idleOverride)
+	view.TokenVault = p.presentTokenVault(ctx, l.Salt)
+	return view
 }
 
 // applyDebugGrant handles the ?debug_grant dev/demo knob. It grants XP only
