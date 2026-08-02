@@ -31,6 +31,7 @@ type tokenVaultLedger struct {
 	ObservedSince    string           `json:"observed_since"`
 	UpdatedAt        string           `json:"updated_at"`
 	TotalTokens      string           `json:"total_tokens"`
+	Partial          bool             `json:"partial,omitempty"`
 	Rooms            []tokenVaultRoom `json:"rooms"`
 	RecentBodyHashes []string         `json:"recent_body_hashes,omitempty"`
 	SealVersion      int              `json:"seal_version,omitempty"`
@@ -73,6 +74,7 @@ type observedTokenUsage struct {
 	Tokens    *big.Int
 	Timestamp string
 	BodyHash  string
+	Partial   bool
 }
 
 type canonicalTokenField struct {
@@ -114,6 +116,9 @@ func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) 
 		}
 	}
 	addTokenUsage(vault, usage)
+	if usage.Partial {
+		vault.Partial = true
+	}
 	vault.RecentBodyHashes = append(vault.RecentBodyHashes, usage.BodyHash)
 	if len(vault.RecentBodyHashes) > tokenVaultDigestLimit {
 		vault.RecentBodyHashes = append([]string(nil), vault.RecentBodyHashes[len(vault.RecentBodyHashes)-tokenVaultDigestLimit:]...)
@@ -145,7 +150,8 @@ func normalizeTokenUsage(event *pluginsdk.Event) (observedTokenUsage, bool) {
 	}
 	tokens := parsedFields["total_tokens"]
 	present := fields["total_tokens"].Present
-	if !present || tokens.Sign() == 0 {
+	usedFallback := !present || tokens.Sign() == 0
+	if usedFallback {
 		tokens = new(big.Int).Add(parsedFields["input_tokens"], parsedFields["output_tokens"])
 	}
 	if tokens.Sign() <= 0 {
@@ -191,6 +197,7 @@ func normalizeTokenUsage(event *pluginsdk.Event) (observedTokenUsage, bool) {
 		Tokens:    tokens,
 		Timestamp: parsed.UTC().Format(time.RFC3339),
 		BodyHash:  hex.EncodeToString(digest[:]),
+		Partial:   usedFallback || estimated,
 	}, true
 }
 
@@ -332,6 +339,9 @@ func (p *plugin) presentTokenVault(ctx context.Context, lineage uint32) tokenVau
 		return response
 	}
 	response.Status = "ready"
+	if vault.Partial {
+		response.Status = "partial"
+	}
 	response.ObservedSince = vault.ObservedSince
 	response.TotalTokens = vault.TotalTokens
 	for _, room := range vault.Rooms {
