@@ -4,8 +4,9 @@
 
 ### Added
 
-- Add Kandy's underground token vault with lifetime agent-adapter chambers and model piles.
+- Add Kandy's underground Token Grotto with lifetime agent-adapter chambers and model piles.
 - Collect privacy-limited aggregate token usage from Kandev's typed prompt-usage event with bounded duplicate suppression.
+- Stand chamber piles on fixed floor spots, ranked by size and recency, and merge the overflow into one pile that opens into a list.
 
 ## [0.9.4] - 2026-08-01
 

@@ -17,11 +17,12 @@ runtime:
     darwin-arm64: "server/plugin-darwin-arm64"
     windows-amd64: "server/plugin-windows-amd64.exe"
 
-# The kandy's lifetime XP ledger and aggregate token vault live in Host state
+# The kandy's lifetime XP ledger and aggregate Token Grotto live in Host state
 # (scope "instance"), fed by typed event-bus signals. The XP recipe remains
 # server-side only — token observations never award XP. `secrets` holds the
 # HMAC integrity key in kandev's encrypted vault; each ledger uses its own
-# signature domain so vault corruption cannot counterfeit the creature.
+# signature domain so vault corruption cannot counterfeit the creature. Token
+# chambers are adapter/model aggregates; this event has no provider field.
 capabilities:
   state: true
   secrets: true
@@ -33,7 +34,7 @@ capabilities:
 
 webhooks:
   - key: "kandy"
-    description: "Current kandy presentation state as JSON (GET; dev-only ?debug_grant=<n> when debug config is on)"
+    description: "Current kandy presentation and aggregate observed-token grotto as JSON (GET; dev-only ?debug_grant=<n> when debug config is on)"
     method: "GET"
   - key: "pet"
     description: "Pet the kandy (POST): stamps last_petted_at, which briefly lifts the displayed mood and slowly warms its temperament. Never grants XP. Refused for 60s after a bonk."

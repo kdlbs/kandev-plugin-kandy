@@ -346,3 +346,27 @@ celebration hop on the animation-safe wrapper), two golden motion arcs by
 its head, the chip's small hop, and a time-appropriate greeting line.
 A fresh install (no stamp) doesn't greet; broken storage degrades to
 "never greet", not a crash.
+
+## 13. Token Grotto (v0.11.0)
+
+Kandy observes typed `session_prompt_usage.updated.*` events and keeps only
+lifetime aggregates: one total, one counter per agent adapter, and one counter
+per adapter/model pair. It stores no per-event history. Aggregate cardinality
+is intentionally uncapped because every genuinely used adapter/model chamber
+belongs to Kandy's history; repeated events only update existing counters, so
+storage growth follows distinct adapter/model pairs rather than workload size.
+
+Kandev's stable delivery `EventID` is hashed for practical idempotency. The
+most recent 512 keys survive restarts and cover normal retries, including
+ambiguous Host-state writes. Distinct event IDs remain distinct even when
+their aggregate usage bodies match. Without an authoritative usage reader or
+cursor, a replay older than the window can count again and missed events cannot
+be reconciled; UI and README describe history as observed, never complete.
+
+Positive `total_tokens` wins. Missing or zero total falls back to input plus
+output without adding cache or thought categories whose semantics may overlap.
+Estimated/fallback usage and recognized events with malformed, missing, zero,
+or otherwise unusable counts latch the vault partial. Rejected payloads are
+never persisted. The event identifies agent adapter and model but carries no
+authoritative provider, so chambers are explicitly adapter/model breakdowns;
+provider breakdown remains unavailable until Kandev adds a typed field.
