@@ -146,6 +146,12 @@ var WS_DEBOUNCE_MS = 1500;
 // arrive on their own, without needing a refetch or a page interaction.
 var TIME_TICK_MS = 60000;
 
+// The two halves of the grotto walk, each matching its CSS animation with a
+// frame to spare: Kandy leaves frame, the panel swaps while it is off screen,
+// then it walks back in on the other side.
+var VAULT_WALK_OUT_MS = 640;
+var VAULT_WALK_IN_MS = 940;
+
 function localHour() {
   var d = new Date();
   return d.getHours() + d.getMinutes() / 60;
@@ -2613,26 +2619,57 @@ var KANDY_CSS =
   // Token vault: one bounded underground scene, sticky navigation, and
   // ordinary vertical overflow. Door/pile grids reflow; there is no
   // carousel, page state, or horizontal content track.
-  ".kandev-kandy-vault-panel{box-sizing:border-box;width:100%;max-height:calc(100vh - 32px);overflow:hidden;border:1px solid var(--border);border-radius:16px;background:var(--background);color:var(--foreground);box-shadow:0 18px 50px rgba(0,0,0,.28)}" +
+  ".kandev-kandy-vault-panel{--grotto-ink:#f4ede2;--grotto-ink-dim:#b6a894;--grotto-edge:rgba(255,255,255,.1);box-sizing:border-box;width:100%;max-height:calc(100vh - 32px);overflow:hidden;border:1px solid var(--grotto-edge);border-radius:16px;background:linear-gradient(180deg,#241d17,#100d0b);color:var(--grotto-ink);box-shadow:0 18px 50px rgba(0,0,0,.45)}" +
   ".kandev-kandy-vault-panel:focus{outline:none}.kandev-kandy-vault-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-3px}" +
-  ".kandev-kandy-vault-bar{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);background:color-mix(in oklch,var(--background) 92%,transparent);backdrop-filter:blur(10px)}" +
-  ".kandev-kandy-vault-heading{min-width:0;text-align:center}.kandev-kandy-vault-title{display:block;font-size:16px;font-weight:750;line-height:1.2;overflow-wrap:anywhere}.kandev-kandy-vault-subtitle{margin-top:2px;color:var(--muted-foreground);font-size:10px;line-height:1.35;overflow-wrap:anywhere}" +
-  ".kandev-kandy-vault-action{min-height:40px;min-width:44px;padding:0 10px;border:1px solid var(--border);border-radius:10px;background:var(--muted);color:inherit;font-size:11px;font-weight:650;cursor:pointer}.kandev-kandy-vault-action:focus-visible,.kandev-kandy-vault-door:focus-visible,.kandev-kandy-token-pile:focus-visible,.kandev-kandy-vault-entry:focus-visible{outline:2px solid var(--ring);outline-offset:2px}" +
+  ".kandev-kandy-vault-bar{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--grotto-edge);background:linear-gradient(180deg,rgba(30,24,19,.96),rgba(22,18,15,.86));backdrop-filter:blur(10px)}" +
+  ".kandev-kandy-vault-heading{min-width:0;text-align:center}.kandev-kandy-vault-title{display:block;font-size:16px;font-weight:750;line-height:1.2;overflow-wrap:anywhere}.kandev-kandy-vault-subtitle{margin-top:2px;color:var(--grotto-ink-dim);font-size:10px;line-height:1.35;overflow-wrap:anywhere}" +
+  ".kandev-kandy-vault-action{min-height:40px;min-width:44px;padding:0 10px;border:1px solid var(--grotto-edge);border-radius:10px;background:rgba(255,255,255,.07);color:inherit;font-size:11px;font-weight:650;cursor:pointer}.kandev-kandy-vault-action:hover{background:rgba(255,255,255,.13)}.kandev-kandy-vault-action:focus-visible,.kandev-kandy-vault-door:focus-visible,.kandev-kandy-token-pile:focus-visible,.kandev-kandy-vault-entry:focus-visible{outline:2px solid var(--ring);outline-offset:2px}" +
   ".kandev-kandy-vault-scroll{max-height:calc(100vh - 104px);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;touch-action:pan-y}" +
-  ".kandev-kandy-vault-scene{min-height:320px;padding:18px;background:radial-gradient(circle at 50% 4%,color-mix(in oklch,var(--primary) 12%,transparent),transparent 38%),linear-gradient(180deg,color-mix(in oklch,var(--muted) 70%,#382f2a),color-mix(in oklch,var(--background) 82%,#17130f));box-sizing:border-box}" +
-  ".kandev-kandy-vault-hub{display:flex;flex-direction:column;gap:14px}.kandev-kandy-vault-kandy{display:flex;justify-content:center;min-height:72px}.kandev-kandy-vault-kandy svg{filter:drop-shadow(0 8px 8px rgba(0,0,0,.24))}" +
-  ".kandev-kandy-vault-grid,.kandev-kandy-token-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;align-items:stretch}" +
-  ".kandev-kandy-vault-door{min-width:0;min-height:154px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;padding:10px;border:1px solid color-mix(in oklch,var(--border) 72%,transparent);border-radius:18px;background:color-mix(in oklch,var(--popover) 82%,transparent);color:var(--foreground);box-shadow:inset 0 -18px 24px rgba(0,0,0,.08),0 8px 18px rgba(0,0,0,.13);cursor:pointer}" +
-  ".kandev-kandy-vault-door:hover{background:color-mix(in oklch,var(--popover) 92%,var(--primary) 8%)}.kandev-kandy-vault-door-art{width:78px;height:78px}.kandev-kandy-vault-door-label{max-width:100%;font-size:13px;font-weight:750;line-height:1.2;overflow-wrap:anywhere}.kandev-kandy-vault-door-count{color:var(--muted-foreground);font-size:10px}" +
-  ".kandev-kandy-vault-room{min-height:300px}.kandev-kandy-token-pile{position:relative;min-width:0;min-height:210px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;padding:12px 10px 30px;border:1px solid color-mix(in oklch,var(--border) 70%,transparent);border-radius:18px;background:color-mix(in oklch,var(--popover) 76%,transparent);color:var(--foreground);cursor:pointer;overflow:hidden}" +
-  ".kandev-kandy-token-pile-floor{position:relative;width:100%;height:126px;display:flex;align-items:flex-end;justify-content:center}.kandev-kandy-token-pile-floor::after{content:\"\";position:absolute;left:8%;right:8%;bottom:0;height:16px;border-radius:50%;background:rgba(0,0,0,.2);filter:blur(3px)}.kandev-kandy-token-pile-mound{position:relative;z-index:1;display:block;min-width:38%;min-height:30%;border-radius:50% 50% 18% 18%/38% 38% 12% 12%;box-shadow:inset 0 8px 14px rgba(255,255,255,.2),inset 0 -10px 18px rgba(0,0,0,.2),0 8px 14px rgba(0,0,0,.22);transition:width .16s ease,height .16s ease}" +
-  ".kandev-kandy-token-pile-name{max-width:100%;font-size:12px;font-weight:720;line-height:1.25;overflow-wrap:anywhere}.kandev-kandy-token-pile-compact{color:var(--muted-foreground);font-size:10px}.kandev-kandy-vault-exact{position:absolute;left:8px;right:8px;bottom:7px;font-size:10px;font-variant-numeric:tabular-nums;opacity:0;visibility:hidden}.kandev-kandy-token-pile:hover .kandev-kandy-vault-exact,.kandev-kandy-token-pile:focus-visible .kandev-kandy-vault-exact,.kandev-kandy-token-pile.is-revealed .kandev-kandy-vault-exact{opacity:1;visibility:visible}" +
-  ".kandev-kandy-vault-boundary{margin:16px 0 0;color:var(--muted-foreground);font-size:10px;text-align:center}.kandev-kandy-vault-empty{min-height:270px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--muted-foreground)}.kandev-kandy-vault-empty-door{font-size:58px;line-height:1;opacity:.45}" +
-  "@media (max-width:480px){.kandev-kandy-vault-grid,.kandev-kandy-token-grid{grid-template-columns:1fr}.kandev-kandy-vault-scene{padding:12px}.kandev-kandy-vault-bar{gap:6px;padding:8px}.kandev-kandy-vault-subtitle{font-size:9px}.kandev-kandy-vault-action{padding:0 8px}}" +
-  "@keyframes kandev-kandy-vault-descend{0%{opacity:1;transform:translateY(0) scale(1)}72%{opacity:1;transform:translateY(92px) scale(.92)}100%{opacity:0;transform:translateY(132px) scale(.82)}}" +
-  "@keyframes kandev-kandy-vault-open{0%{transform:scaleX(.15);opacity:.25}100%{transform:scaleX(1);opacity:1}}" +
-  ".kandev-kandy-vault-descent{box-sizing:border-box;width:min(420px,calc(100vw - 32px));min-height:360px;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;overflow:hidden;border:1px solid var(--border);border-radius:16px;background:linear-gradient(180deg,color-mix(in oklch,var(--background) 92%,#31536a),color-mix(in oklch,var(--background) 76%,#1b1510));color:var(--foreground)}" +
-  ".kandev-kandy-vault-descent:focus{outline:none}.kandev-kandy-vault-descent-stage{position:relative;width:220px;height:220px;display:flex;align-items:flex-start;justify-content:center}.kandev-kandy-vault-descending-creature{position:relative;z-index:2;animation:kandev-kandy-vault-descend .72s ease-in forwards}.kandev-kandy-vault-trapdoor{position:absolute;z-index:1;left:38px;right:38px;bottom:28px;height:30px;border-radius:50%;background:#17100c;box-shadow:0 0 0 7px color-mix(in oklch,var(--muted) 70%,#493425),inset 0 8px 12px rgba(0,0,0,.75);animation:kandev-kandy-vault-open .25s ease-out both}.kandev-kandy-vault-descent-label{font-size:13px;font-weight:700}" +
+  ".kandev-kandy-vault-scene{position:relative;isolation:isolate;overflow:hidden;display:flex;flex-direction:column;min-height:340px;padding:18px;box-sizing:border-box;background:#0d1418}" +
+  ".kandev-kandy-vault-backdrop{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;pointer-events:none}" +
+  ".kandev-kandy-token-stage{position:absolute;inset:0;z-index:1;width:100%;height:100%;display:block;pointer-events:none;overflow:visible}" +
+  ".kandev-kandy-vault-hub{position:relative;z-index:1;flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(70px,auto) minmax(0,1fr);gap:14px 24px;align-content:start}.kandev-kandy-vault-kandy{display:flex;align-items:flex-end;justify-content:center;min-height:72px}.kandev-kandy-vault-room-scene .kandev-kandy-vault-kandy{margin-top:auto}.kandev-kandy-vault-kandy.is-left{justify-content:flex-start;padding-left:8px}.kandev-kandy-vault-kandy.is-right{justify-content:flex-end;padding-right:8px}.kandev-kandy-vault-kandy svg{filter:drop-shadow(0 8px 8px rgba(0,0,0,.24))}" +
+  ".kandev-kandy-vault-door{position:relative;min-width:0;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--grotto-edge);background:linear-gradient(180deg,rgba(20,30,34,.72),rgba(6,11,14,.82));color:var(--grotto-ink);box-shadow:inset 0 -14px 20px rgba(0,0,0,.3),0 8px 18px rgba(0,0,0,.35);cursor:pointer;text-align:left}" +
+  ".kandev-kandy-vault-door.is-left{margin-right:auto;border-radius:12px 34px 34px 12px;padding-right:16px}" +
+  ".kandev-kandy-vault-door.is-right{margin-left:auto;flex-direction:row-reverse;border-radius:34px 12px 12px 34px;padding-left:16px;text-align:right}" +
+  ".kandev-kandy-vault-door-body{min-width:0;display:flex;flex-direction:column;gap:2px}" +
+  ".kandev-kandy-vault-door::after{content:\"\";position:absolute;top:50%;width:22px;height:2px;background:repeating-linear-gradient(90deg,rgba(196,238,215,.45) 0 5px,transparent 5px 11px)}" +
+  ".kandev-kandy-vault-door.is-left::after{right:-22px}.kandev-kandy-vault-door.is-right::after{left:-22px}" +
+  ".kandev-kandy-vault-door:hover{background:linear-gradient(180deg,rgba(255,214,150,.16),rgba(0,0,0,.26))}.kandev-kandy-vault-door-art{width:46px;height:46px;flex:0 0 auto}.kandev-kandy-vault-door-label{max-width:100%;font-size:13px;font-weight:750;line-height:1.2;overflow-wrap:anywhere}.kandev-kandy-vault-door-count{color:var(--grotto-ink-dim);font-size:10px}" +
+  ".kandev-kandy-vault-room{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;justify-content:flex-end;min-height:240px}" +
+  ".kandev-kandy-token-pile{pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent}.kandev-kandy-token-pile:focus{outline:none}" +
+  ".kandev-kandy-token-pile-hit{fill:transparent;stroke:none}.kandev-kandy-token-pile:focus-visible .kandev-kandy-token-pile-hit{stroke:var(--ring);stroke-width:3}" +
+  ".kandev-kandy-token-pile-name,.kandev-kandy-token-pile-compact,.kandev-kandy-vault-exact{text-anchor:middle;paint-order:stroke;stroke:rgba(6,5,4,.72);stroke-width:5;stroke-linejoin:round;font-family:inherit}" +
+  ".kandev-kandy-token-pile-name{fill:var(--grotto-ink);font-size:23px;font-weight:750}.kandev-kandy-token-pile-compact{fill:var(--grotto-ink-dim);font-size:19px}" +
+  ".kandev-kandy-vault-exact{fill:#ffe4a8;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;opacity:0;visibility:hidden}" +
+  ".kandev-kandy-token-pile:hover .kandev-kandy-token-pile-stone,.kandev-kandy-token-pile:focus-visible .kandev-kandy-token-pile-stone,.kandev-kandy-token-pile.is-revealed .kandev-kandy-token-pile-stone{filter:drop-shadow(0 2px 3px rgba(0,0,0,.3)) brightness(1.14)}" +
+  ".kandev-kandy-token-pile-shadow{fill:rgba(0,0,0,.24);filter:blur(3px)}.kandev-kandy-token-pile-stone{filter:drop-shadow(0 2px 2px rgba(0,0,0,.28))}.kandev-kandy-token-pile-stone-fill{stroke:rgba(255,255,255,.24);stroke-width:1}.kandev-kandy-token-pile-stone-fill.is-basalt{fill:#59646c}.kandev-kandy-token-pile-stone-fill.is-umber{fill:#956d4e}.kandev-kandy-token-pile-stone-fill.is-moss{fill:#577e6c}.kandev-kandy-token-pile-stone-fill.is-amethyst{fill:#74668c}.kandev-kandy-token-pile-stone-glow{fill:none;stroke:rgba(255,246,202,.6);stroke-width:1.3;stroke-linecap:round;opacity:.85}" +
+  ".kandev-kandy-token-pile:hover .kandev-kandy-vault-exact,.kandev-kandy-token-pile:focus-visible .kandev-kandy-vault-exact,.kandev-kandy-token-pile.is-revealed .kandev-kandy-vault-exact{opacity:1;visibility:visible}" +
+  ".kandev-kandy-vault-manifest{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:2;box-sizing:border-box;width:min(300px,calc(100% - 24px));max-height:62%;overflow-y:auto;overscroll-behavior:contain;padding:10px 12px;border:1px solid var(--grotto-edge);border-radius:12px;background:rgba(12,10,8,.94);color:var(--grotto-ink);font-size:11px}" +
+  ".kandev-kandy-vault-manifest strong{display:block;margin-bottom:6px;font-size:11px}.kandev-kandy-vault-manifest ul{margin:0;padding:0;list-style:none}" +
+  ".kandev-kandy-vault-manifest li{display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-top:1px solid rgba(255,255,255,.07);font-variant-numeric:tabular-nums}" +
+  ".kandev-kandy-vault-manifest-name{min-width:0;overflow-wrap:anywhere;text-align:left}" +
+  ".kandev-kandy-vault-boundary{margin:16px 0 0;color:var(--grotto-ink-dim);font-size:10px;text-align:center}.kandev-kandy-vault-empty{min-height:270px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--grotto-ink-dim)}.kandev-kandy-vault-empty-door{font-size:58px;line-height:1;opacity:.45}" +
+  "@media (max-width:480px){.kandev-kandy-vault-hub{grid-template-columns:1fr;grid-template-rows:auto!important;gap:10px}.kandev-kandy-vault-hub>*{grid-column:1!important;grid-row:auto!important}.kandev-kandy-vault-door{margin:0!important;border-radius:14px!important}.kandev-kandy-vault-door::after{display:none}.kandev-kandy-vault-scene{padding:12px}.kandev-kandy-vault-bar{gap:6px;padding:8px}.kandev-kandy-vault-subtitle{font-size:9px}.kandev-kandy-vault-action{padding:0 8px}}" +
+  // Kandy walks between the surface and the grotto: it strolls out of frame,
+  // the panel swaps while it is gone, then it walks back in — down from the
+  // ceiling into the grotto, in from the side back on the surface. These
+  // classes sit on their own wrapper so the archetype gait keeps animating
+  // underneath them.
+  "@keyframes kandev-kandy-walkoff{0%{transform:translateX(0);opacity:1}78%{opacity:1}100%{transform:translateX(190px);opacity:0}}" +
+  "@keyframes kandev-kandy-walkin-shore{0%{transform:translate(-170px,120px);opacity:0}22%{opacity:1}100%{transform:translate(0,0);opacity:1}}" +
+  "@keyframes kandev-kandy-walkin-side{0%{transform:translateX(-180px);opacity:0}16%{opacity:1}100%{transform:translateX(0);opacity:1}}" +
+  ".kandev-kandy-walkoff{animation:kandev-kandy-walkoff .62s linear both}" +
+  "@keyframes kandev-kandy-walkoff-left{0%{transform:translateX(0);opacity:1}78%{opacity:1}100%{transform:translateX(-190px);opacity:0}}" +
+  "@keyframes kandev-kandy-walkin-shore-right{0%{transform:translate(170px,120px);opacity:0}22%{opacity:1}100%{transform:translate(0,0);opacity:1}}" +
+  "@keyframes kandev-kandy-walkin-entrance{0%{transform:translateY(-85px);opacity:0}70%{opacity:.9}100%{transform:translateY(0);opacity:1}}" +
+  "@keyframes kandev-kandy-walkout-entrance{0%{transform:translateY(0);opacity:1}30%{opacity:.9}100%{transform:translateY(-85px);opacity:0}}" +
+  ".kandev-kandy-walkoff-left{animation:kandev-kandy-walkoff-left .62s linear both}" +
+  ".kandev-kandy-walkin-shore-right{animation:kandev-kandy-walkin-shore-right .76s linear both}" +
+  ".kandev-kandy-walkin-entrance{animation:kandev-kandy-walkin-entrance .9s ease-out both}" +
+  ".kandev-kandy-walkout-entrance{animation:kandev-kandy-walkout-entrance .62s ease-in both}" +
+  ".kandev-kandy-walkin-shore{animation:kandev-kandy-walkin-shore .76s linear both}" +
+  ".kandev-kandy-walkin-side{animation:kandev-kandy-walkin-side .7s linear both}" +
   // Resize grip: a ~16px muted diagonal-lines affordance hugging the
   // dialog's bottom-right corner, OUTSIDE the zoomed wrapper so its hit
   // area never scales. touch-action:none keeps pointer-captured drags from
@@ -2824,7 +2861,7 @@ var KANDY_CSS =
   ".kandev-kandy-photo-panel:focus{outline:none}" +
   ".kandev-kandy-photo-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-vault-descending-creature,.kandev-kandy-vault-trapdoor,.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc,.kandev-kandy-sob,.kandev-kandy-tear,.kandev-kandy-puddle,.kandev-kandy-gait-waddle,.kandev-kandy-gait-stride,.kandev-kandy-gait-slither,.kandev-kandy-gait-shuffle,.kandev-kandy-gait-hopskip,.kandev-kandy-gait-glide{animation:none}.kandev-kandy-gait-drift{transform:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-token-pile-mound{transition:none}.kandev-kandy-helpcontent{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-walkoff,.kandev-kandy-walkoff-left,.kandev-kandy-walkin-shore,.kandev-kandy-walkin-shore-right,.kandev-kandy-walkin-entrance,.kandev-kandy-walkout-entrance,.kandev-kandy-walkin-side,.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc,.kandev-kandy-sob,.kandev-kandy-tear,.kandev-kandy-puddle,.kandev-kandy-gait-waddle,.kandev-kandy-gait-stride,.kandev-kandy-gait-slither,.kandev-kandy-gait-shuffle,.kandev-kandy-gait-hopskip,.kandev-kandy-gait-glide{animation:none}.kandev-kandy-gait-drift{transform:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-token-pile-stone{animation:none!important;transition:none!important}.kandev-kandy-helpcontent{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -4481,16 +4518,20 @@ function burstSparkles(h, big) {
   return h("div", { key: "burstwrap", style: { position: "absolute", inset: 0, pointerEvents: "none" } }, out);
 }
 
-// ---------------------------------------------------------------------------
-// Photo Booth — a dedicated, static SVG artboard. Clipboard copy rasterizes
-// this SVG only: no app DOM, task text, account data, upload, or external service.
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// TOKEN GROTTO — the underground scene reached from the dialog, in five parts:
+//
+//   1. data model .... webhook DTO allowlist, exact decimal math, pile geometry
+//   2. navigation .... which walk animation a surface/transit pair wears
+//   3. scenery ....... two authored inline-SVG backdrops (cave mouth, chamber)
+//   4. scenes ........ shell, chamber doors, hub, model piles
+//   5. entry ......... the dialog button, filed with its Photo Booth twin below
+//
+// Everything here is presentation over aggregate agent-type/model totals. No
+// raw event identity, conversation content, cost, or XP reaches this code.
+// ===========================================================================
 
-var PHOTO_VIEWBOX = { width: 800, height: 1000 };
-var PHOTO_EXPORT = { width: 1600, height: 2000, mimeType: "image/png" };
-var PHOTO_HABITATS = ["Verdant", "Aquatic", "Alpine", "Ember"];
-var PHOTO_MOODS = { elated: true, happy: true, content: true, bored: true, sad: true, gloomy: true };
-var PHOTO_TEMPERAMENTS = { beloved: true, content: true, neutral: true, wary: true, fearful: true };
+// --- Grotto data model -----------------------------------------------------
 
 var TOKEN_VAULT_STATUSES = { empty: true, ready: true, partial: true };
 
@@ -4554,6 +4595,7 @@ function tokenVaultModelFor(data) {
               return {
                 name: tokenVaultText(model.name, "Mystery model", 128),
                 tokens: tokenVaultDecimal(model.tokens),
+                lastSeen: typeof model.last_seen === "string" ? model.last_seen : "",
               };
             })
           : [];
@@ -4584,23 +4626,74 @@ function tokenVaultModelFor(data) {
 function tokenPileScale(value, maximum) {
   var decimal = tokenVaultDecimal(value);
   var maxDecimal = tokenVaultDecimal(maximum);
-  if (decimal === null || maxDecimal === null || decimal === "0" || maxDecimal === "0") return 0.34;
+  if (decimal === null || maxDecimal === null || decimal === "0" || maxDecimal === "0") return 0.16;
   function log10Decimal(text) {
     var head = Number(text.slice(0, 15));
     return text.length - 1 + Math.log10(head / Math.pow(10, Math.min(text.length, 15) - 1));
   }
+  // Area, not height, tracks the share of the chamber's largest pile, so the
+  // dominant model reads as dominant instead of collapsing into its neighbours.
+  // The floor is deliberately low: a bare minimum keeps the smallest pile
+  // clickable without dragging every pile toward the same silhouette.
   var ratio = Math.pow(10, Math.min(0, log10Decimal(decimal) - log10Decimal(maxDecimal)));
-  return 0.34 + 0.66 * Math.sqrt(Math.max(0, Math.min(1, ratio)));
+  return 0.16 + 0.84 * Math.sqrt(Math.max(0, Math.min(1, ratio)));
 }
 
-function tokenVaultHue(agentType, model) {
+function tokenVaultHash(agentType, model) {
   var input = String(agentType || "") + "\u0000" + String(model || "");
   var hash = 2166136261;
   for (var i = 0; i < input.length; i++) {
     hash ^= input.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  return ((hash >>> 0) % 280) + 28;
+  return hash >>> 0;
+}
+
+function tokenPileFragmentsFor(agentType, model, value, maximum) {
+  var scale = tokenPileScale(value, maximum);
+  var colors = ["basalt", "umber", "moss", "amethyst"];
+  // A cairn grows by stacking narrower courses on a fixed footing, never by
+  // spreading wider, so neighbouring piles stay comparable inside their tiles.
+  var courses = 2 + Math.round(scale * 11);
+  // A bigger hoard is both taller and broader: courses stack higher and the
+  // footing slabs are cut wider, so neighbouring piles read as different sizes
+  // rather than as one cairn drawn twice.
+  var footing = 24 + scale * 34;
+  var fragments = [];
+  var bottom = 4;
+  var index = 0;
+  for (var layer = 0; layer < courses; layer++) {
+    var taper = courses === 1 ? 0 : layer / (courses - 1);
+    var slots = layer === 0 ? 2 : 1;
+    var slabWidth = Math.round(footing * (1 - taper * 0.45));
+    for (var slot = 0; slot < slots; slot++) {
+      var stoneHash = tokenVaultHash(agentType, model + "\u0000" + index);
+      var width = slots === 2 ? Math.round(slabWidth / 2) - 1 + (stoneHash % 3) : slabWidth - 3 + (stoneHash % 5);
+      var height = Math.max(8, Math.round(11 - taper * 3) + ((stoneHash >>> 4) % 3));
+      var inset = Math.max(2, Math.round(width * 0.14));
+      var top = Math.max(2, Math.round(height * 0.18));
+      fragments.push({
+        width: width,
+        height: height,
+        left: Math.round(63 + (slot - (slots - 1) / 2) * (width + 2) - width / 2),
+        bottom: bottom,
+        tilt: ((stoneHash >>> 8) % 5) - 2,
+        layer: layer,
+        slot: slot,
+        variant: "glowstone",
+        color: colors[(tokenVaultHash(agentType, model) + layer) % colors.length],
+        path: "M2 " + (height - 3) + " Q1 " + Math.round(height / 2) + " " + inset + " " + top + " Q" + Math.round(width / 2) + " 0 " + (width - inset) + " " + top + " Q" + (width - 1) + " " + Math.round(height / 2) + " " + (width - 3) + " " + (height - 2) + " Q" + Math.round(width / 2) + " " + (height + 1) + " 2 " + (height - 3) + " Z",
+        // Only the capstone catches the light, marking the top of the stack.
+        glowPath:
+          layer === courses - 1
+            ? "M" + inset + " " + top + " Q" + Math.round(width / 2) + " " + Math.max(1, top - 3) + " " + (width - inset) + " " + top
+            : null,
+      });
+      index++;
+    }
+    bottom += Math.max(6, Math.round(9 - taper * 3));
+  }
+  return fragments;
 }
 
 function tokenVaultAction(h, label, onClick) {
@@ -4616,16 +4709,58 @@ function tokenVaultAction(h, label, onClick) {
   );
 }
 
-function tokenVaultInitialPhase(reducedMotion) {
-  return reducedMotion ? "hub" : "descending";
-}
-
 function tokenVaultResolvedView(model, view) {
-  if (!view || view === "hub" || view === "descending") return view;
+  if (!view || view === "hub") return view;
   for (var i = 0; i < model.rooms.length; i++) {
     if (model.rooms[i].agentType === view) return view;
   }
   return "hub";
+}
+
+// --- Grotto navigation -----------------------------------------------------
+
+// Which walk class the creature on a given surface wears for a transit step.
+// Surfaces are "card" (above ground), "hub" (the cave), and "room" (a
+// chamber). Side is the wall the chosen passage sits on, so Kandy leaves and
+// arrives on the same side it travelled through; anything else stands still.
+// A passage on the hub's right wall puts Kandy on the chamber's left: you leave
+// one room by its right side and walk in through the far room's left, the way
+// screen direction works on film. The mirrored side is where Kandy then stands.
+function vaultRoomSide(side) {
+  return side === "left" ? "right" : "left";
+}
+
+function walkOffClass(side) {
+  return side === "left" ? "kandev-kandy-walkoff-left" : "kandev-kandy-walkoff";
+}
+
+function walkInClass(side) {
+  return side === "left" ? "kandev-kandy-walkin-shore" : "kandev-kandy-walkin-shore-right";
+}
+
+function vaultTransitClass(transit, surface, side) {
+  if (surface === "card") {
+    if (transit === "depart-surface") return "kandev-kandy-walkoff";
+    if (transit === "arrive-surface") return "kandev-kandy-walkin-side";
+    return null;
+  }
+  if (surface === "hub") {
+    // Out through the passage's own wall; back in through it as well. With no
+    // passage in play the visitor is leaving the grotto entirely, so Kandy
+    // climbs back out through the cave mouth it came in by.
+    if (transit === "depart-hub") return side ? walkOffClass(side) : "kandev-kandy-walkout-entrance";
+    // Coming down from the surface there is no passage to match: Kandy appears
+    // at the cave mouth in the middle of the scene and walks out of it.
+    if (transit === "arrive-hub") return side ? walkInClass(side) : "kandev-kandy-walkin-entrance";
+    return null;
+  }
+  if (surface === "room") {
+    if (transit === "arrive-room") return walkInClass(vaultRoomSide(side));
+    // It leaves a chamber the same way it came in.
+    if (transit === "depart-room") return walkOffClass(vaultRoomSide(side));
+    return null;
+  }
+  return null;
 }
 
 function focusVaultDoor(panel, agentType) {
@@ -4640,28 +4775,508 @@ function focusVaultDoor(panel, agentType) {
   return false;
 }
 
-function tokenVaultDescent(h, DialogTitle, data, panelRef, onBack, onExit) {
+// --- Grotto scenery: shared SVG helpers ------------------------------------
+//
+// The backdrops are decorative inline SVG: they scale with the panel, need no
+// asset pipeline, and keep an underground palette of their own instead of
+// inheriting the surface theme. Each backdrop owns a namespaced id prefix and
+// its own <defs> set — the host page carries SVG defs too, and a bare "water"
+// or "softBlur" would collide with them and with the other backdrop.
+//
+// Geometry lives in flat const tables above each backdrop rather than inline
+// in the tree: the tables are authored art, the function is the assembly.
+
+function grottoRef(prefix, id) {
+  return "url(#" + prefix + id + ")";
+}
+
+function grottoStops(h, stops) {
+  return stops.map(function (stop, index) {
+    return h("stop", {
+      key: "stop" + index,
+      offset: stop[0],
+      stopColor: stop[1],
+      stopOpacity: stop.length > 2 ? stop[2] : undefined,
+    });
+  });
+}
+
+function grottoLinear(h, prefix, id, coords, stops) {
   return h(
-    "section",
-    {
-      ref: panelRef,
-      tabIndex: -1,
-      role: "status",
-      "aria-live": "polite",
-      "aria-label": "Opening Kandy token vault",
-      className: "kandev-kandy-vault-descent",
-    },
-    h(DialogTitle, { className: "sr-only" }, "Opening token vault"),
-    h(
-      "div",
-      { className: "kandev-kandy-vault-descent-stage", "aria-hidden": "true" },
-      h("div", { className: "kandev-kandy-vault-descending-creature" }, creatureSvg(h, data, 92)),
-      h("div", { className: "kandev-kandy-vault-trapdoor" }),
-    ),
-    h("div", { className: "kandev-kandy-vault-descent-label" }, "Opening token vault…"),
-    h("div", { style: { display: "flex", gap: "8px" } }, tokenVaultAction(h, "Back", onBack), tokenVaultAction(h, "Exit vault", onExit)),
+    "linearGradient",
+    { key: id, id: prefix + id, x1: coords[0], y1: coords[1], x2: coords[2], y2: coords[3] },
+    grottoStops(h, stops),
   );
 }
+
+function grottoShapes(h, tag, list) {
+  return list.map(function (props, index) {
+    return h(tag, Object.assign({ key: tag + index }, props));
+  });
+}
+
+// --- Grotto scenery: cave entrance (the hub backdrop) ----------------------
+
+var GROTTO_ID = "kandev-kandy-grotto-";
+
+var GROTTO_STALACTITES = [
+  "M60 48 C88 69 104 100 103 172 L131 108 L151 62 Z",
+  "M175 42 C208 73 217 123 211 224 L243 138 L268 59 Z",
+  "M305 42 C337 78 343 111 338 176 L369 113 L394 55 Z",
+  "M775 47 C800 78 810 116 807 199 L838 123 L855 58 Z",
+  "M895 54 C922 80 940 127 936 231 L970 139 L996 61 Z",
+  "M1050 35 C1091 80 1094 138 1087 194 L1124 110 L1150 44 Z",
+];
+
+var GROTTO_PLANTS = [
+  "M490 420 C480 360 500 315 512 280 C511 340 523 377 520 425 Z",
+  "M522 425 C520 375 548 330 570 300 C551 359 557 393 555 430 Z",
+  "M704 425 C700 367 720 324 740 288 C728 354 735 395 733 430 Z",
+  "M739 430 C741 386 768 345 786 318 C769 373 770 405 771 433 Z",
+];
+
+var GROTTO_RIPPLES = [
+  ["M438 534 C523 548 672 547 761 531", "#82bcb1", 4],
+  ["M490 569 C557 579 650 579 719 568", "#5f9994", 3],
+  ["M415 613 C520 628 694 628 795 611", "#315f64", 5],
+  ["M118 548 C205 536 286 540 357 554", "#315b62", 3],
+  ["M862 553 C942 536 1031 537 1112 549", "#315b62", 3],
+  ["M52 652 C173 638 286 640 383 656", "#173640", 5],
+  ["M817 655 C925 637 1065 639 1173 653", "#173640", 5],
+];
+
+var GROTTO_PEBBLES = [
+  { cx: 356, cy: 640, rx: 48, ry: 22 },
+  { cx: 418, cy: 656, rx: 31, ry: 15 },
+  { cx: 816, cy: 647, rx: 44, ry: 20 },
+  { cx: 875, cy: 661, rx: 27, ry: 13 },
+];
+
+var GROTTO_MOTES = [
+  { cx: 524, cy: 288, r: 3, opacity: 0.8 },
+  { cx: 560, cy: 241, r: 2, opacity: 0.6 },
+  { cx: 682, cy: 279, r: 2.5, opacity: 0.7 },
+  { cx: 650, cy: 204, r: 2, opacity: 0.55 },
+  { cx: 710, cy: 337, r: 3, opacity: 0.5 },
+  { cx: 488, cy: 351, r: 2, opacity: 0.45 },
+];
+
+function grottoBackdrop(h) {
+  return h(
+    "svg",
+    {
+      className: "kandev-kandy-vault-backdrop",
+      viewBox: "0 0 1200 700",
+      preserveAspectRatio: "xMidYMid slice",
+      "aria-hidden": "true",
+      focusable: "false",
+    },
+    h(
+      "defs",
+      null,
+      grottoLinear(h, GROTTO_ID, "cave", ["0", "0", "0", "1"], [
+        ["0%", "#10151d"],
+        ["55%", "#17252b"],
+        ["100%", "#0a1217"],
+      ]),
+      h(
+        "radialGradient",
+        { id: GROTTO_ID + "glow", cx: "50%", cy: "47%", r: "55%" },
+        grottoStops(h, [
+          ["0%", "#d8f4dc", 0.95],
+          ["28%", "#78c5a5", 0.75],
+          ["65%", "#2e6d68", 0.25],
+          ["100%", "#16383a", 0],
+        ]),
+      ),
+      grottoLinear(h, GROTTO_ID, "sky", ["0", "0", "0", "1"], [
+        ["0%", "#b9e4cf"],
+        ["55%", "#61a995"],
+        ["100%", "#285e5c"],
+      ]),
+      grottoLinear(h, GROTTO_ID, "far", ["0", "0", "1", "1"], [
+        ["0%", "#304046"],
+        ["55%", "#1d2b30"],
+        ["100%", "#111a1e"],
+      ]),
+      grottoLinear(h, GROTTO_ID, "mid", ["0", "0", "1", "0"], [
+        ["0%", "#11181d"],
+        ["50%", "#263238"],
+        ["100%", "#0c1216"],
+      ]),
+      grottoLinear(h, GROTTO_ID, "front", ["0", "0", "0.8", "1"], [
+        ["0%", "#171b21"],
+        ["45%", "#252c32"],
+        ["100%", "#080b0f"],
+      ]),
+      grottoLinear(h, GROTTO_ID, "water", ["0", "0", "0", "1"], [
+        ["0%", "#315f64"],
+        ["20%", "#183b43"],
+        ["100%", "#07161d"],
+      ]),
+      grottoLinear(h, GROTTO_ID, "reflection", ["0", "0", "0", "1"], [
+        ["0%", "#a7e0c8", 0.5],
+        ["100%", "#4b9790", 0],
+      ]),
+      h(
+        "filter",
+        { id: GROTTO_ID + "blurglow", x: "-50%", y: "-50%", width: "200%", height: "200%" },
+        h("feGaussianBlur", { stdDeviation: 24 }),
+      ),
+      h(
+        "filter",
+        { id: GROTTO_ID + "softblur", x: "-20%", y: "-20%", width: "140%", height: "140%" },
+        h("feGaussianBlur", { stdDeviation: 7 }),
+      ),
+      h(
+        "filter",
+        { id: GROTTO_ID + "rock", x: "-10%", y: "-10%", width: "120%", height: "120%" },
+        h("feTurbulence", { type: "fractalNoise", baseFrequency: "0.018", numOctaves: 3, seed: 8, result: "noise" }),
+        h("feColorMatrix", {
+          in: "noise",
+          type: "matrix",
+          values: "0 0 0 0 0.45 0 0 0 0 0.48 0 0 0 0 0.50 0 0 0 0.22 0",
+          result: "texture",
+        }),
+        h("feBlend", { in: "SourceGraphic", in2: "texture", mode: "soft-light" }),
+      ),
+      h(
+        "clipPath",
+        { id: GROTTO_ID + "opening" },
+        h("path", {
+          d: "M474 405 C448 340 451 249 499 184 C535 135 579 105 624 111 C672 117 713 155 739 207 C770 270 765 347 735 410 C684 433 527 436 474 405 Z",
+        }),
+      ),
+    ),
+    h("rect", { width: 1200, height: 700, fill: grottoRef(GROTTO_ID, "cave") }),
+    h("ellipse", { cx: 610, cy: 305, rx: 300, ry: 275, fill: grottoRef(GROTTO_ID, "glow"), filter: grottoRef(GROTTO_ID, "blurglow") }),
+    // Daylight through the mouth of the cave: sky, ridgelines, and ferns.
+    h(
+      "g",
+      { clipPath: grottoRef(GROTTO_ID, "opening") },
+      h("rect", { x: 430, y: 80, width: 370, height: 380, fill: grottoRef(GROTTO_ID, "sky") }),
+      h("path", { d: "M410 370 L490 280 L540 325 L615 220 L690 310 L750 245 L825 365 Z", fill: "#396f68", opacity: 0.6 }),
+      h("path", { d: "M400 405 L500 315 L575 360 L655 285 L735 350 L820 300 L845 420 Z", fill: "#234b4c", opacity: 0.8 }),
+      h("g", { fill: "#183f3d", opacity: 0.8 }, grottoShapes(h, "path", GROTTO_PLANTS.map(function (d) {
+        return { d: d };
+      }))),
+    ),
+    h("path", {
+      d: "M0 0 H1200 V260 C1100 232 1035 236 956 275 C880 312 835 351 770 390 C740 300 759 221 715 150 C677 88 630 58 580 73 C526 90 476 140 450 208 C426 271 437 337 457 394 C370 354 303 302 230 278 C150 251 77 251 0 274 Z",
+      fill: grottoRef(GROTTO_ID, "far"),
+      filter: grottoRef(GROTTO_ID, "rock"),
+    }),
+    h("path", {
+      d: "M0 0 H1200 V104 C1135 93 1100 127 1038 117 C977 107 947 67 882 79 C825 90 790 120 729 98 C672 77 645 35 578 57 C510 80 463 92 407 65 C341 32 304 70 245 78 C177 87 115 51 0 93 Z",
+      fill: "#090d11",
+    }),
+    h("g", { fill: grottoRef(GROTTO_ID, "front"), filter: grottoRef(GROTTO_ID, "rock") }, grottoShapes(h, "path", GROTTO_STALACTITES.map(function (d) {
+      return { d: d };
+    }))),
+    h("path", {
+      d: "M0 92 C80 119 144 166 188 229 C229 288 247 348 284 393 C317 433 363 456 425 475 L424 700 H0 Z",
+      fill: grottoRef(GROTTO_ID, "mid"),
+      filter: grottoRef(GROTTO_ID, "rock"),
+    }),
+    h("path", {
+      d: "M1200 77 C1110 107 1049 156 1014 217 C979 278 962 341 920 390 C880 436 832 462 775 484 L775 700 H1200 Z",
+      fill: grottoRef(GROTTO_ID, "mid"),
+      filter: grottoRef(GROTTO_ID, "rock"),
+    }),
+    h("path", {
+      d: "M0 402 C77 375 128 390 192 423 C244 449 296 455 356 474 C395 487 426 506 456 536 L454 700 H0 Z",
+      fill: "#11171b",
+    }),
+    h("path", {
+      d: "M1200 389 C1119 375 1067 405 1010 434 C957 460 908 469 848 487 C807 500 777 521 745 551 L748 700 H1200 Z",
+      fill: "#101519",
+    }),
+    h("path", {
+      d: "M0 505 C165 485 283 507 401 520 C526 534 660 518 789 518 C927 518 1066 492 1200 510 V700 H0 Z",
+      fill: grottoRef(GROTTO_ID, "water"),
+    }),
+    h("path", {
+      d: "M525 430 C560 420 653 420 693 432 C677 481 664 526 685 622 C646 642 568 642 525 620 C550 530 540 484 525 430 Z",
+      fill: grottoRef(GROTTO_ID, "reflection"),
+      filter: grottoRef(GROTTO_ID, "softblur"),
+    }),
+    h(
+      "g",
+      { fill: "none", strokeLinecap: "round", opacity: 0.45 },
+      grottoShapes(h, "path", GROTTO_RIPPLES.map(function (ripple) {
+        return { d: ripple[0], stroke: ripple[1], strokeWidth: ripple[2] };
+      })),
+    ),
+    h("path", {
+      d: "M0 590 C57 550 111 546 168 572 C222 597 263 603 333 588 C380 578 414 591 457 629 L488 700 H0 Z",
+      fill: grottoRef(GROTTO_ID, "front"),
+      filter: grottoRef(GROTTO_ID, "rock"),
+    }),
+    h("path", {
+      d: "M1200 577 C1137 548 1080 553 1024 580 C968 607 924 606 868 590 C818 576 782 596 742 636 L714 700 H1200 Z",
+      fill: grottoRef(GROTTO_ID, "front"),
+      filter: grottoRef(GROTTO_ID, "rock"),
+    }),
+    h("g", { fill: "#242d31" }, grottoShapes(h, "ellipse", GROTTO_PEBBLES)),
+    h("g", { fill: "#c4eed7" }, grottoShapes(h, "circle", GROTTO_MOTES)),
+    h("rect", { width: 1200, height: 700, fill: "none", stroke: "#020406", strokeWidth: 70, opacity: 0.42 }),
+  );
+}
+
+// --- Grotto scenery: chamber (the per-agent-type backdrop) -----------------
+//
+// Chambers are a different room from the hub: a torch-lit vault with a stone
+// floor. The piles are the content, so the floor carries no marked spots — the
+// stones the model piles draw are the only thing standing on it.
+
+var CHAMBER_ID = "kandev-kandy-chamber-";
+
+var CHAMBER_BLOCKS = [
+  "M260 170 C430 135 770 135 940 170",
+  "M230 255 C420 218 780 218 970 255",
+  "M220 350 C430 319 770 319 980 350",
+  "M215 440 C430 415 770 415 985 440",
+  "M345 125 L331 476",
+  "M475 75 L468 479",
+  "M600 48 L600 479",
+  "M725 75 L732 479",
+  "M855 125 L869 476",
+];
+
+var CHAMBER_STALACTITES = [
+  "M84 35 C102 68 110 112 104 176 L137 89 L159 40 Z",
+  "M244 35 C264 71 269 120 262 196 L292 112 L313 43 Z",
+  "M403 25 C427 62 430 100 425 150 L452 82 L468 29 Z",
+  "M732 29 L748 82 L775 150 C770 100 773 62 797 25 Z",
+  "M887 43 L908 112 L938 196 C931 120 936 71 956 35 Z",
+  "M1041 40 L1063 89 L1096 176 C1090 112 1098 68 1116 35 Z",
+];
+
+var CHAMBER_TORCHES = [
+  "translate(232 255) scale(1.05)",
+  "translate(460 190) scale(0.95)",
+  "translate(740 190) scale(0.95)",
+  "translate(968 255) scale(1.05)",
+];
+
+var CHAMBER_POOLS = [
+  { cx: 250, cy: 275, rx: 245, ry: 235 },
+  { cx: 500, cy: 235, rx: 245, ry: 225 },
+  { cx: 700, cy: 235, rx: 245, ry: 225 },
+  { cx: 950, cy: 275, rx: 245, ry: 235 },
+];
+
+var CHAMBER_PERSPECTIVE = [
+  "M600 455 L184 700",
+  "M600 455 L365 700",
+  "M600 455 L525 700",
+  "M600 455 L675 700",
+  "M600 455 L835 700",
+  "M600 455 L1016 700",
+  "M192 505 C403 487 797 487 1008 505",
+  "M116 565 C371 539 829 539 1084 565",
+  "M42 642 C340 607 860 607 1158 642",
+];
+
+var CHAMBER_CRACKS = [
+  "M81 526 L132 548 L109 580 L153 604",
+  "M1088 514 L1047 541 L1072 574 L1026 602",
+  "M570 505 L552 524 L567 544",
+  "M630 566 L649 583 L637 607",
+  "M378 629 L353 647 L370 672",
+  "M824 620 L847 641 L832 667",
+];
+
+var CHAMBER_STONES = [
+  { cx: 106, cy: 606, rx: 31, ry: 13 },
+  { cx: 153, cy: 625, rx: 18, ry: 8 },
+  { cx: 1093, cy: 602, rx: 32, ry: 13 },
+  { cx: 1048, cy: 625, rx: 19, ry: 8 },
+  { cx: 570, cy: 677, rx: 13, ry: 6 },
+  { cx: 631, cy: 646, rx: 11, ry: 5 },
+];
+
+var CHAMBER_GROUND_LIGHT = [
+  { cx: 278, cy: 529, rx: 235, ry: 95 },
+  { cx: 922, cy: 529, rx: 235, ry: 95 },
+  { cx: 600, cy: 520, rx: 280, ry: 110 },
+];
+
+function chamberTorch(h) {
+  return h(
+    "g",
+    { id: CHAMBER_ID + "torch" },
+    h("path", { d: "M-16 11 L16 11 L10 23 L-10 23 Z", fill: "#28211c", stroke: "#080909", strokeWidth: 4 }),
+    h("rect", { x: -7, y: 17, width: 14, height: 58, rx: 4, fill: "#5a3820", stroke: "#18110c", strokeWidth: 4 }),
+    h("path", { d: "M-9 38 L9 31", stroke: "#8c5c31", strokeWidth: 4, opacity: 0.7 }),
+    h("path", { d: "M-9 55 L9 48", stroke: "#8c5c31", strokeWidth: 4, opacity: 0.7 }),
+    h("ellipse", {
+      cx: 0,
+      cy: -15,
+      rx: 34,
+      ry: 48,
+      fill: grottoRef(CHAMBER_ID, "flame-outer"),
+      filter: grottoRef(CHAMBER_ID, "flameglow"),
+      opacity: 0.85,
+    }),
+    h("path", { d: "M0 7 C-25 -8 -19 -31 -6 -48 C-7 -29 5 -27 8 -47 C28 -25 25 -4 0 7 Z", fill: "#ed5c19" }),
+    h("path", {
+      d: "M0 3 C-12 -7 -8 -23 1 -34 C2 -23 10 -18 7 -7 C5 -1 2 1 0 3 Z",
+      fill: grottoRef(CHAMBER_ID, "flame-core"),
+    }),
+  );
+}
+
+function chamberBackdrop(h) {
+  return h(
+    "svg",
+    {
+      className: "kandev-kandy-vault-backdrop",
+      viewBox: "0 0 1200 700",
+      preserveAspectRatio: "xMidYMax slice",
+      "aria-hidden": "true",
+      focusable: "false",
+    },
+    h(
+      "defs",
+      null,
+      h(
+        "radialGradient",
+        { id: CHAMBER_ID + "dark", cx: "50%", cy: "38%", r: "80%" },
+        grottoStops(h, [
+          ["0%", "#302a24"],
+          ["48%", "#191817"],
+          ["100%", "#07090a"],
+        ]),
+      ),
+      grottoLinear(h, CHAMBER_ID, "rear", ["0", "0", "0", "1"], [
+        ["0%", "#171819"],
+        ["55%", "#282622"],
+        ["100%", "#111315"],
+      ]),
+      grottoLinear(h, CHAMBER_ID, "wall-left", ["0", "0", "1", "0"], [
+        ["0%", "#080a0b"],
+        ["100%", "#302b25"],
+      ]),
+      grottoLinear(h, CHAMBER_ID, "wall-right", ["1", "0", "0", "0"], [
+        ["0%", "#080a0b"],
+        ["100%", "#302b25"],
+      ]),
+      grottoLinear(h, CHAMBER_ID, "floor", ["0", "0", "0", "1"], [
+        ["0%", "#302d29"],
+        ["50%", "#1d1d1c"],
+        ["100%", "#090c0d"],
+      ]),
+      h(
+        "radialGradient",
+        { id: CHAMBER_ID + "flame-outer", cx: "50%", cy: "65%", r: "55%" },
+        grottoStops(h, [
+          ["0%", "#fff2a6"],
+          ["38%", "#ffad35"],
+          ["72%", "#e85518"],
+          ["100%", "#7f170b", 0],
+        ]),
+      ),
+      grottoLinear(h, CHAMBER_ID, "flame-core", ["0", "0", "0", "1"], [
+        ["0%", "#fffbd1"],
+        ["52%", "#ffd35b"],
+        ["100%", "#ff731e"],
+      ]),
+      h(
+        "radialGradient",
+        { id: CHAMBER_ID + "torchlight", cx: "50%", cy: "45%", r: "55%" },
+        grottoStops(h, [
+          ["0%", "#ffca68", 0.62],
+          ["35%", "#e98535", 0.28],
+          ["72%", "#c34d1e", 0.08],
+          ["100%", "#c34d1e", 0],
+        ]),
+      ),
+      h(
+        "filter",
+        { id: CHAMBER_ID + "rock", x: "-10%", y: "-10%", width: "120%", height: "120%" },
+        h("feTurbulence", { type: "fractalNoise", baseFrequency: "0.018", numOctaves: 4, seed: 21, result: "noise" }),
+        h("feColorMatrix", {
+          in: "noise",
+          type: "matrix",
+          values: "0 0 0 0 0.50 0 0 0 0 0.47 0 0 0 0 0.43 0 0 0 0.18 0",
+          result: "texture",
+        }),
+        h("feBlend", { in: "SourceGraphic", in2: "texture", mode: "soft-light" }),
+      ),
+      h(
+        "filter",
+        { id: CHAMBER_ID + "largeglow", x: "-100%", y: "-100%", width: "300%", height: "300%" },
+        h("feGaussianBlur", { stdDeviation: 28 }),
+      ),
+      h(
+        "filter",
+        { id: CHAMBER_ID + "flameglow", x: "-200%", y: "-200%", width: "500%", height: "500%" },
+        h("feGaussianBlur", { stdDeviation: 7 }),
+      ),
+      chamberTorch(h),
+    ),
+    h("rect", { width: 1200, height: 700, fill: grottoRef(CHAMBER_ID, "dark") }),
+    h("path", {
+      d: "M205 490 L205 195 C210 95 364 33 600 27 C836 33 990 95 995 195 L995 490 Z",
+      fill: grottoRef(CHAMBER_ID, "rear"),
+      filter: grottoRef(CHAMBER_ID, "rock"),
+    }),
+    h("g", { fill: "none", stroke: "#49433b", strokeWidth: 3, opacity: 0.28 }, grottoShapes(h, "path", CHAMBER_BLOCKS.map(function (d) {
+      return { d: d };
+    }))),
+    h("path", {
+      d: "M0 0 H228 C209 83 187 144 190 211 C193 288 217 356 205 433 C196 493 163 544 130 590 L92 700 H0 Z",
+      fill: grottoRef(CHAMBER_ID, "wall-left"),
+      filter: grottoRef(CHAMBER_ID, "rock"),
+    }),
+    h("path", {
+      d: "M1200 0 H972 C991 83 1013 144 1010 211 C1007 288 983 356 995 433 C1004 493 1037 544 1070 590 L1108 700 H1200 Z",
+      fill: grottoRef(CHAMBER_ID, "wall-right"),
+      filter: grottoRef(CHAMBER_ID, "rock"),
+    }),
+    h("path", {
+      d: "M0 0 H1200 V73 C1086 49 996 92 902 74 C804 55 721 11 600 27 C479 11 396 55 298 74 C204 92 114 49 0 73 Z",
+      fill: "#080a0b",
+      filter: grottoRef(CHAMBER_ID, "rock"),
+    }),
+    h("g", { fill: "#101213" }, grottoShapes(h, "path", CHAMBER_STALACTITES.map(function (d) {
+      return { d: d };
+    }))),
+    h("g", null, grottoShapes(h, "ellipse", CHAMBER_POOLS.map(function (pool) {
+      return Object.assign({ fill: grottoRef(CHAMBER_ID, "torchlight"), filter: grottoRef(CHAMBER_ID, "largeglow") }, pool);
+    }))),
+    h("g", null, grottoShapes(h, "use", CHAMBER_TORCHES.map(function (transform) {
+      return { href: "#" + CHAMBER_ID + "torch", transform: transform };
+    }))),
+    h("path", {
+      d: "M0 438 C169 421 326 435 455 452 C515 460 559 464 600 464 C641 464 685 460 745 452 C874 435 1031 421 1200 438 V700 H0 Z",
+      fill: grottoRef(CHAMBER_ID, "floor"),
+      filter: grottoRef(CHAMBER_ID, "rock"),
+    }),
+    h("g", { fill: "none", stroke: "#5a5146", strokeWidth: 2, opacity: 0.25 }, grottoShapes(h, "path", CHAMBER_PERSPECTIVE.map(function (d) {
+      return { d: d };
+    }))),
+    h("g", { fill: "none", stroke: "#080a0b", strokeWidth: 4, strokeLinecap: "round", opacity: 0.58 }, grottoShapes(h, "path", CHAMBER_CRACKS.map(function (d) {
+      return { d: d };
+    }))),
+    h("g", { fill: "#34312d" }, grottoShapes(h, "ellipse", CHAMBER_STONES)),
+    h("g", { fill: "#ffb65a", opacity: 0.08, filter: grottoRef(CHAMBER_ID, "largeglow") }, grottoShapes(h, "ellipse", CHAMBER_GROUND_LIGHT)),
+    h("path", {
+      d: "M0 660 C183 630 324 649 459 674 C515 685 558 689 600 689 C642 689 685 685 741 674 C876 649 1017 630 1200 660 V700 H0 Z",
+      fill: "#040607",
+      opacity: 0.42,
+    }),
+    h("rect", { width: 1200, height: 700, fill: "none", stroke: "#020303", strokeWidth: 64, opacity: 0.62 }),
+  );
+}
+
+// --- Grotto scenes ---------------------------------------------------------
+//
+// One panel with a sticky bar; the scene below it swaps between the hub (rows
+// of chamber doors down the cave walls) and one chamber (model piles on the
+// floor). Both scenes draw a backdrop from the section above, then lay the
+// interactive content over it.
 
 function tokenVaultShell(h, DialogTitle, title, subtitle, panelRef, onBack, onExit, children) {
   return h(
@@ -4670,7 +5285,7 @@ function tokenVaultShell(h, DialogTitle, title, subtitle, panelRef, onBack, onEx
       ref: panelRef,
       tabIndex: -1,
       role: "region",
-      "aria-label": "Kandy token vault",
+      "aria-label": "Kandy Token Grotto",
       className: "kandev-kandy-vault-panel",
     },
     h(
@@ -4683,24 +5298,30 @@ function tokenVaultShell(h, DialogTitle, title, subtitle, panelRef, onBack, onEx
         h(DialogTitle, { className: "kandev-kandy-vault-title" }, title),
         subtitle ? h("div", { className: "kandev-kandy-vault-subtitle" }, subtitle) : null,
       ),
-      tokenVaultAction(h, "Exit vault", onExit),
+      tokenVaultAction(h, "Exit Grotto", onExit),
     ),
     h("div", { className: "kandev-kandy-vault-scroll" }, children),
   );
 }
 
-function tokenVaultDoor(h, room, onOpen) {
+// Chambers hang off the cave walls: even ranks on the left rock face, odd on
+// the right, each one row further back. DOM order stays token order, so the
+// keyboard walks the chambers biggest-first however they are placed.
+function tokenVaultDoor(h, room, onOpen, index) {
   var exact = formatTokenExact(room.tokens);
+  var side = index % 2 === 0 ? "left" : "right";
   return h(
     "button",
     {
       key: room.agentType,
       type: "button",
-      className: "kandev-kandy-vault-door",
+      className: "kandev-kandy-vault-door is-" + side,
+      style: { gridColumn: side === "left" ? 1 : 3, gridRow: Math.floor(index / 2) + 1 },
       "data-vault-agent": room.agentType,
+      "data-vault-side": side,
       "aria-label": room.label + ", " + exact + " tokens, open chamber",
       onClick: function () {
-        onOpen(room.agentType);
+        onOpen(room.agentType, side);
       },
     },
     h(
@@ -4718,8 +5339,12 @@ function tokenVaultDoor(h, room, onOpen) {
       }),
       h("circle", { cx: 56, cy: 50, r: 2.5, fill: "#f6c85f" }),
     ),
-    h("span", { className: "kandev-kandy-vault-door-label" }, room.label),
-    h("span", { className: "kandev-kandy-vault-door-count" }, formatTokenCompact(room.tokens) + " tokens"),
+    h(
+      "span",
+      { className: "kandev-kandy-vault-door-body" },
+      h("span", { className: "kandev-kandy-vault-door-label" }, room.label),
+      h("span", { className: "kandev-kandy-vault-door-count" }, formatTokenCompact(room.tokens) + " tokens"),
+    ),
   );
 }
 
@@ -4736,23 +5361,35 @@ function tokenVaultHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, on
       h("span", null, "Kandy is listening."),
     );
   } else {
+    var pathRows = Math.ceil(model.rooms.length / 2);
+    // One grid, no inner wrapper: the passages share their rows with the cave
+    // floor below them, so Kandy always ends up standing on the ground.
     body = h(
       "div",
-      { className: "kandev-kandy-vault-hub" },
-      h("div", { className: "kandev-kandy-vault-kandy" }, creature),
+      {
+        className: "kandev-kandy-vault-hub",
+        "aria-label": "Agent chambers",
+        // Passage rows first, then one growing row for the cave floor, so
+        // Kandy stands on the ground however many chambers there are.
+        style: { gridTemplateRows: "repeat(" + pathRows + ", auto) 1fr" },
+      },
+      model.rooms.map(function (room, index) {
+        return tokenVaultDoor(h, room, onOpenRoom, index);
+      }),
       h(
         "div",
-        { className: "kandev-kandy-vault-grid", "aria-label": "Agent chambers" },
-        model.rooms.map(function (room) {
-          return tokenVaultDoor(h, room, onOpenRoom);
-        }),
+        {
+          className: "kandev-kandy-vault-kandy",
+          style: { gridColumn: "1 / -1", gridRow: pathRows + 1, alignSelf: "end" },
+        },
+        creature,
       ),
     );
   }
   return tokenVaultShell(
     h,
     DialogTitle,
-    "Token vault",
+    "Token Grotto",
     (model.totalTokens === null ? "Unavailable" : formatTokenExact(model.totalTokens) + " observed tokens") + " · " + statusLine,
     panelRef,
     onBack,
@@ -4760,6 +5397,7 @@ function tokenVaultHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, on
     h(
       "div",
       { className: "kandev-kandy-vault-scene" },
+      grottoBackdrop(h),
       body,
       model.observedSince
         ? h("p", { className: "kandev-kandy-vault-boundary" }, "Observed since " + model.observedSince.slice(0, 10) + ". No backfill.")
@@ -4768,46 +5406,198 @@ function tokenVaultHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, on
   );
 }
 
-function tokenModelPile(h, room, model, maximum, revealedKey, onToggle) {
-  var key = room.agentType + "\u0000" + model.name;
+var CHAMBER_PILE_SPOTS = [
+  { x: 600, y: 652, scale: 1 },
+  { x: 360, y: 636, scale: 0.94 },
+  { x: 840, y: 636, scale: 0.94 },
+  { x: 500, y: 556, scale: 0.78 },
+  { x: 700, y: 556, scale: 0.78 },
+  { x: 300, y: 548, scale: 0.74 },
+  { x: 900, y: 548, scale: 0.74 },
+  { x: 430, y: 496, scale: 0.62 },
+  { x: 770, y: 496, scale: 0.62 },
+  { x: 600, y: 490, scale: 0.6 },
+];
+
+var MERGED_PILE_KEY = "\u0000merged";
+
+// Which models get a standing spot. Ranking alternates between the biggest and
+// the most recently used, so an enormous old model and a small model used
+// minutes ago both make the floor. Whatever is left over is merged into the
+// last spot as a single pile the visitor can open for the full list.
+function tokenPilePlacement(models, spots) {
+  var capacity = spots || CHAMBER_PILE_SPOTS.length;
+  if (!models.length) return [];
+  var bySize = models.slice().sort(function (left, right) {
+    var order = compareTokenVaultDecimals(right.tokens, left.tokens);
+    return order || left.name.localeCompare(right.name);
+  });
+  var byRecency = models.slice().sort(function (left, right) {
+    if (left.lastSeen !== right.lastSeen) return left.lastSeen < right.lastSeen ? 1 : -1;
+    var order = compareTokenVaultDecimals(right.tokens, left.tokens);
+    return order || left.name.localeCompare(right.name);
+  });
+  if (models.length <= capacity) {
+    return bySize.map(function (model) {
+      return { model: model, models: [model], merged: false };
+    });
+  }
+  var chosen = [];
+  var taken = {};
+  var sizeIndex = 0;
+  var recencyIndex = 0;
+  // One short of capacity: the final spot belongs to everything left over.
+  while (chosen.length < capacity - 1) {
+    var pick = null;
+    if (chosen.length % 2 === 0) {
+      while (sizeIndex < bySize.length && taken[bySize[sizeIndex].name]) sizeIndex++;
+      pick = sizeIndex < bySize.length ? bySize[sizeIndex] : null;
+    } else {
+      while (recencyIndex < byRecency.length && taken[byRecency[recencyIndex].name]) recencyIndex++;
+      pick = recencyIndex < byRecency.length ? byRecency[recencyIndex] : null;
+    }
+    if (!pick) break;
+    taken[pick.name] = true;
+    chosen.push(pick);
+  }
+  var rest = bySize.filter(function (model) {
+    return !taken[model.name];
+  });
+  var placed = chosen.map(function (model) {
+    return { model: model, models: [model], merged: false };
+  });
+  if (rest.length) {
+    var total = rest.reduce(function (sum, model) {
+      return sum + tokenCountBigInt(model.tokens);
+    }, BigInt(0));
+    placed.push({
+      model: { name: rest.length + " more models", tokens: total.toString(), lastSeen: "" },
+      models: rest,
+      merged: true,
+    });
+  }
+  return placed;
+}
+
+// One pile standing on one floor spot, drawn in the backdrop's coordinate
+// space so it rests on the painted stone rather than floating in a CSS grid.
+function tokenModelPile(h, room, entry, spot, maximum, revealedKey, onToggle) {
+  var model = entry.model;
+  var key = entry.merged ? MERGED_PILE_KEY : room.agentType + "\u0000" + model.name;
   var exact = formatTokenExact(model.tokens);
   var revealed = revealedKey === key;
-  var scale = tokenPileScale(model.tokens, maximum);
-  var hue = tokenVaultHue(room.agentType, model.name);
+  var fragments = tokenPileFragmentsFor(room.agentType, model.name, model.tokens, maximum);
+  var label = entry.merged
+    ? model.name + ", " + exact + " tokens together, open the list"
+    : model.name + ", " + exact + " tokens in " + room.label + " chamber";
+  var pileHeight = 126 * spot.scale;
   return h(
-    "button",
+    "g",
     {
       key: key,
-      type: "button",
-      className: "kandev-kandy-token-pile" + (revealed ? " is-revealed" : ""),
+      className: "kandev-kandy-token-pile" + (revealed ? " is-revealed" : "") + (entry.merged ? " is-merged" : ""),
+      transform: "translate(" + spot.x + " " + spot.y + ")",
+      role: "button",
+      tabIndex: 0,
       "data-vault-model": model.name,
-      "aria-label": model.name + ", " + exact + " tokens in " + room.label + " chamber",
+      "data-vault-merged": entry.merged ? "true" : undefined,
+      "aria-label": label,
       "aria-pressed": revealed,
       onClick: function () {
         onToggle(key);
       },
+      onKeyDown: function (event) {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        if (event.preventDefault) event.preventDefault();
+        onToggle(key);
+      },
     },
+    // The hit area covers the mound and its labels, so tapping anywhere on the
+    // pile works on a phone.
+    h("rect", {
+      className: "kandev-kandy-token-pile-hit",
+      x: -66 * spot.scale,
+      y: -pileHeight,
+      width: 132 * spot.scale,
+      height: pileHeight + 52,
+      rx: 10,
+    }),
     h(
-      "span",
-      { className: "kandev-kandy-token-pile-floor", "aria-hidden": "true" },
-      h("span", {
-        className: "kandev-kandy-token-pile-mound",
-        style: {
-          width: Math.round(38 + scale * 58) + "%",
-          height: Math.round(24 + scale * 62) + "%",
-          background:
-            "radial-gradient(circle at 30% 22%,hsl(" + hue + " 92% 78%),transparent 12%)," +
-            "repeating-radial-gradient(ellipse at 50% 100%,hsl(" + hue + " 72% 58%) 0 7px,hsl(" + ((hue + 24) % 360) + " 72% 46%) 8px 11px)",
-        },
+      "g",
+      { transform: "scale(" + spot.scale + ") translate(-63 -126)", "aria-hidden": "true" },
+      h("path", { className: "kandev-kandy-token-pile-shadow", d: "M22 119 Q63 108 104 119 Q63 126 22 119 Z" }),
+      fragments.map(function (fragment, index) {
+        var y = 126 - fragment.bottom - fragment.height;
+        return h(
+          "g",
+          {
+            key: "stone" + index,
+            className: "kandev-kandy-token-pile-stone",
+            transform: "translate(" + fragment.left + " " + y + ") rotate(" + fragment.tilt + " " + Math.round(fragment.width / 2) + " " + Math.round(fragment.height / 2) + ")",
+          },
+          h("path", { className: "kandev-kandy-token-pile-stone-fill is-" + fragment.color, d: fragment.path }),
+          fragment.glowPath ? h("path", { className: "kandev-kandy-token-pile-stone-glow", d: fragment.glowPath }) : null,
+        );
       }),
     ),
-    h("span", { className: "kandev-kandy-token-pile-name" }, model.name),
-    h("span", { className: "kandev-kandy-token-pile-compact" }, formatTokenCompact(model.tokens) + " tokens"),
-    h("span", { className: "kandev-kandy-vault-exact" }, exact + " tokens"),
+    h("text", { className: "kandev-kandy-token-pile-name", x: 0, y: 24, "aria-hidden": "true" }, model.name),
+    h(
+      "text",
+      { className: "kandev-kandy-token-pile-compact", x: 0, y: 44, "aria-hidden": "true" },
+      formatTokenCompact(model.tokens) + " tokens",
+    ),
+    h(
+      "text",
+      { className: "kandev-kandy-vault-exact", x: 0, y: -pileHeight - 10, "aria-hidden": "true" },
+      entry.merged ? exact + " tokens · tap for the list" : exact + " tokens",
+    ),
   );
 }
 
-function tokenVaultRoom(h, DialogTitle, vault, agentType, revealedKey, panelRef, onBack, onExit, onToggle, creature) {
+// The chamber floor. Placements come back ranked, so spot order is prominence
+// order: the front of the room first, the back of the room last.
+function tokenPileStage(h, room, placements, revealedKey, onToggle) {
+  var maximum = null;
+  placements.forEach(function (entry) {
+    if (maximum === null || compareTokenVaultDecimals(entry.model.tokens, maximum) > 0) maximum = entry.model.tokens;
+  });
+  return h(
+    "svg",
+    {
+      className: "kandev-kandy-token-stage",
+      viewBox: "0 0 1200 700",
+      preserveAspectRatio: "xMidYMax slice",
+      role: "group",
+      "aria-label": room.label + " model piles",
+    },
+    placements.map(function (entry, index) {
+      return tokenModelPile(h, room, entry, CHAMBER_PILE_SPOTS[index], maximum, revealedKey, onToggle);
+    }),
+  );
+}
+
+// What the merged pile is hiding, listed in full when it is opened.
+function tokenPileManifest(h, entry) {
+  return h(
+    "div",
+    { className: "kandev-kandy-vault-manifest", role: "group", "aria-label": "Models in the merged pile" },
+    h("strong", null, entry.models.length + " models in this pile"),
+    h(
+      "ul",
+      null,
+      entry.models.map(function (model) {
+        return h(
+          "li",
+          { key: model.name },
+          h("span", { className: "kandev-kandy-vault-manifest-name" }, model.name),
+          h("span", null, formatTokenExact(model.tokens)),
+        );
+      }),
+    ),
+  );
+}
+
+function tokenVaultRoom(h, DialogTitle, vault, agentType, revealedKey, panelRef, onBack, onExit, onToggle, creature, side) {
   var room = null;
   for (var i = 0; i < vault.rooms.length; i++) {
     if (vault.rooms[i].agentType === agentType) {
@@ -4816,9 +5606,13 @@ function tokenVaultRoom(h, DialogTitle, vault, agentType, revealedKey, panelRef,
     }
   }
   if (!room) {
-    return tokenVaultShell(h, DialogTitle, "Token vault", "That chamber is no longer available.", panelRef, onBack, onExit, null);
+    return tokenVaultShell(h, DialogTitle, "Token Grotto", "That chamber is no longer available.", panelRef, onBack, onExit, null);
   }
-  var maximum = room.models.length ? room.models[0].tokens : null;
+  var placements = tokenPilePlacement(room.models);
+  var merged = null;
+  placements.forEach(function (entry) {
+    if (entry.merged) merged = entry;
+  });
   return tokenVaultShell(
     h,
     DialogTitle,
@@ -4830,23 +5624,26 @@ function tokenVaultRoom(h, DialogTitle, vault, agentType, revealedKey, panelRef,
     h(
       "div",
       { className: "kandev-kandy-vault-scene kandev-kandy-vault-room-scene" },
-      h("div", { className: "kandev-kandy-vault-kandy" }, creature),
-      h(
-        "div",
-        { className: "kandev-kandy-vault-room" },
-        room.models.length
-          ? h(
-              "div",
-              { className: "kandev-kandy-token-grid", "aria-label": room.label + " model piles" },
-              room.models.map(function (model) {
-                return tokenModelPile(h, room, model, maximum, revealedKey, onToggle);
-              }),
-            )
-          : h("div", { className: "kandev-kandy-vault-empty" }, "No model piles yet."),
-      ),
+      chamberBackdrop(h),
+      placements.length
+        ? tokenPileStage(h, room, placements, revealedKey, onToggle)
+        : h("div", { className: "kandev-kandy-vault-room" }, h("div", { className: "kandev-kandy-vault-empty" }, "No model piles yet.")),
+      merged && revealedKey === MERGED_PILE_KEY ? tokenPileManifest(h, merged) : null,
+      h("div", { className: "kandev-kandy-vault-kandy is-" + (side === "left" ? "left" : "right") }, creature),
     ),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Photo Booth — a dedicated, static SVG artboard. Clipboard copy rasterizes
+// this SVG only: no app DOM, task text, account data, upload, or external service.
+// ---------------------------------------------------------------------------
+
+var PHOTO_VIEWBOX = { width: 800, height: 1000 };
+var PHOTO_EXPORT = { width: 1600, height: 2000, mimeType: "image/png" };
+var PHOTO_HABITATS = ["Verdant", "Aquatic", "Alpine", "Ember"];
+var PHOTO_MOODS = { elated: true, happy: true, content: true, bored: true, sad: true, gloomy: true };
+var PHOTO_TEMPERAMENTS = { beloved: true, content: true, neutral: true, wary: true, fearful: true };
 
 function photoInt(value, fallback) {
   var n = Number(value);
@@ -5249,14 +6046,17 @@ function photoBoothButton(h, onOpen, buttonRef) {
   );
 }
 
+// The Token Grotto entry point (rest of the grotto is its own section above).
+// It lives beside photoBoothButton because the two are the dialog's mutually
+// exclusive doorways and share the entry-button markup and styling.
 function tokenVaultButton(h, onOpen, buttonRef) {
   return h(
     "button",
     {
       type: "button",
       ref: buttonRef,
-      "aria-label": "Show me your token vault",
-      title: "Show me your token vault",
+      "aria-label": "Show me your Token Grotto",
+      title: "Show me your Token Grotto",
       className: "kandev-kandy-control kandev-kandy-vault-entry",
       onClick: onOpen,
       style: {
@@ -5280,7 +6080,7 @@ function tokenVaultButton(h, onOpen, buttonRef) {
       },
     },
     h("span", { "aria-hidden": "true", style: { fontSize: "14px" } }, "▣"),
-    "Vault",
+    "Grotto",
   );
 }
 
@@ -5766,7 +6566,9 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
   // anchor mirroring applies while idle too.
   var mirrored = !!(motion && motion.facing < 0);
   var gaitInfo = gaitFor(data.archetype || 0);
-  var walking = !!(motion && motion.walking) && sleepState === null;
+  // A transit walk is a walk: the gait animates even though the motion
+  // clock is not driving a wander leg.
+  var walking = !!(motion && (motion.walking || motion.transit)) && sleepState === null;
   var crying =
     !!(motion && motion.cry) &&
     sleepState === null &&
@@ -5864,7 +6666,11 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
       h(
         "div",
         { style: { transform: motion.facing < 0 ? "scaleX(-1)" : "none" } },
-        h("div", { className: (walking && gaitInfo.cls) || "" }, inner),
+        h(
+          "div",
+          { className: (walking && gaitInfo.cls) || "" },
+          motion.transit ? h("div", { className: motion.transit }, inner) : inner,
+        ),
       ),
     );
   }
@@ -6157,6 +6963,17 @@ function makeKandyWidget(host) {
     var vaultRevealHook = React.useState(null);
     var vaultRevealKey = vaultRevealHook[0];
     var setVaultRevealKey = vaultRevealHook[1];
+    // Which leg of the grotto walk is running: "depart-surface" and
+    // "depart-grotto" walk Kandy out of frame, "arrive-grotto" and
+    // "arrive-surface" walk it back in. null while it just stands there.
+    var vaultTransitHook = React.useState(null);
+    var vaultTransit = vaultTransitHook[0];
+    var setVaultTransit = vaultTransitHook[1];
+    // The wall the chosen passage sits on. Kandy leaves the hub that way and
+    // walks into the chamber from the same side, then stands there.
+    var vaultSideHook = React.useState(null);
+    var vaultSide = vaultSideHook[0];
+    var setVaultSide = vaultSideHook[1];
     var photoThemeHook = React.useState(function () {
       return currentPhotoTheme();
     });
@@ -6233,7 +7050,7 @@ function makeKandyWidget(host) {
     var vaultEntryRef = React.useRef(null);
     var returnToVaultEntryRef = React.useRef(false);
     var returnToVaultDoorRef = React.useRef(null);
-    var vaultDescentTimerRef = React.useRef(null);
+    var vaultWalkTimerRef = React.useRef(null);
     var celebrationTimerRef = React.useRef(null);
     var petTimerRef = React.useRef(null);
     var bonkTimerRef = React.useRef(null);
@@ -6907,9 +7724,38 @@ function makeKandyWidget(host) {
       persistDialogZoom(null);
     }
 
+    // The walk owns the dialog for about a second; anything that changes the
+    // surface underneath cancels it so no stale walk class lands on the next
+    // panel and no queued swap fires late.
+    function clearVaultWalk() {
+      if (vaultWalkTimerRef.current) clearTimeout(vaultWalkTimerRef.current);
+      vaultWalkTimerRef.current = null;
+      setVaultTransit(null);
+    }
+
+    // Walk Kandy off the current scene, swap the panel while it is gone, then
+    // walk it back in on the other side.
+    function walkBetweenScenes(departPhase, arrivePhase, swap) {
+      clearVaultWalk();
+      if (prefersReducedMotion()) {
+        swap();
+        return;
+      }
+      setVaultTransit(departPhase);
+      vaultWalkTimerRef.current = setTimeout(function () {
+        vaultWalkTimerRef.current = null;
+        if (!mountedRef.current) return;
+        swap();
+        setVaultTransit(arrivePhase);
+        vaultWalkTimerRef.current = setTimeout(function () {
+          vaultWalkTimerRef.current = null;
+          if (mountedRef.current) setVaultTransit(null);
+        }, VAULT_WALK_IN_MS);
+      }, VAULT_WALK_OUT_MS);
+    }
+
     function openPhotoBooth() {
-      if (vaultDescentTimerRef.current) clearTimeout(vaultDescentTimerRef.current);
-      vaultDescentTimerRef.current = null;
+      clearVaultWalk();
       setVaultView(null);
       setVaultRevealKey(null);
       returnToPhotoEntryRef.current = true;
@@ -6932,35 +7778,41 @@ function makeKandyWidget(host) {
       setPhotoOpen(false);
       returnToVaultEntryRef.current = true;
       setVaultRevealKey(null);
-      var phase = tokenVaultInitialPhase(prefersReducedMotion());
-      setVaultView(phase);
-      if (phase === "descending") {
-        if (vaultDescentTimerRef.current) clearTimeout(vaultDescentTimerRef.current);
-        vaultDescentTimerRef.current = setTimeout(function () {
-          vaultDescentTimerRef.current = null;
-          if (mountedRef.current) setVaultView("hub");
-        }, 720);
-      }
+      // The dialog opens first so Kandy has a surface to walk off of. There is
+      // no passage involved on the way down, so no side is remembered.
       setDialogOpen(true);
+      setVaultSide(null);
+      walkBetweenScenes("depart-surface", "arrive-hub", function () {
+        setVaultView("hub");
+      });
     }
 
-    function openTokenRoom(agentType) {
+    function openTokenRoom(agentType, side) {
       setVaultRevealKey(null);
       returnToVaultDoorRef.current = agentType;
-      setVaultView(agentType);
+      setVaultSide(side || "right");
+      walkBetweenScenes("depart-hub", "arrive-room", function () {
+        setVaultView(agentType);
+      });
     }
 
     function backToTokenHub() {
       setVaultRevealKey(null);
-      setVaultView("hub");
+      walkBetweenScenes("depart-room", "arrive-hub", function () {
+        setVaultView("hub");
+      });
     }
 
     function backFromTokenVault() {
-      if (vaultDescentTimerRef.current) clearTimeout(vaultDescentTimerRef.current);
-      vaultDescentTimerRef.current = null;
       setVaultRevealKey(null);
       returnToVaultDoorRef.current = null;
-      setVaultView(null);
+      // Leaving from the hub means leaving by the entrance, so drop the
+      // remembered passage first and let Kandy climb out the way it came in.
+      if (resolvedVaultView === "hub") setVaultSide(null);
+      walkBetweenScenes(resolvedVaultView === "hub" ? "depart-hub" : "depart-room", "arrive-surface", function () {
+        setVaultView(null);
+        setVaultSide(null);
+      });
     }
 
     function toggleVaultCount(key) {
@@ -6989,8 +7841,7 @@ function makeKandyWidget(host) {
     function changeDialogOpen(nextOpen) {
       setDialogOpen(nextOpen);
       if (!nextOpen) {
-        if (vaultDescentTimerRef.current) clearTimeout(vaultDescentTimerRef.current);
-        vaultDescentTimerRef.current = null;
+        clearVaultWalk();
         returnToPhotoEntryRef.current = false;
         clearPreparedPhoto();
         setPhotoOpen(false);
@@ -7036,7 +7887,7 @@ function makeKandyWidget(host) {
         if (sleepyTimerRef.current) clearTimeout(sleepyTimerRef.current);
         if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
         if (greetTimerRef.current) clearTimeout(greetTimerRef.current);
-        if (vaultDescentTimerRef.current) clearTimeout(vaultDescentTimerRef.current);
+        if (vaultWalkTimerRef.current) clearTimeout(vaultWalkTimerRef.current);
         clearHoldTimers(holdRef.current);
         holdRef.current = null;
         if (holdClearTimerRef.current) clearTimeout(holdClearTimerRef.current);
@@ -7063,6 +7914,18 @@ function makeKandyWidget(host) {
 
     var tokenVaultModel = tokenVaultModelFor(data || EGG_PLACEHOLDER);
     var resolvedVaultView = tokenVaultResolvedView(tokenVaultModel, vaultView);
+    // The dialog card walks; the hover card never does.
+    var cardWalk = vaultTransitClass(vaultTransit, "card");
+    var dialogMotion = cardWalk ? Object.assign({}, motionState, { facing: 1, transit: cardWalk }) : motionState;
+
+    // The underground Kandy travels wearing its own gait. Which scene it is
+    // standing in decides which leg of the trip applies to it.
+    function grottoCreature(surface) {
+      var creature = creatureSvg(h, shown, 64);
+      var walk = vaultTransitClass(vaultTransit, surface, vaultSide);
+      if (!walk) return creature;
+      return h("div", { className: walk }, h("div", { className: gaitFor(shown.archetype || 0).cls }, creature));
+    }
 
     React.useEffect(
       function () {
@@ -7291,27 +8154,18 @@ function makeKandyWidget(host) {
                 copyPhoto,
               )
             : resolvedVaultView
-              ? resolvedVaultView === "descending"
-                ? tokenVaultDescent(
-                    h,
-                    DialogTitle,
-                    shown,
-                    vaultPanelRef,
-                    backFromTokenVault,
-                    backFromTokenVault,
-                  )
-                : resolvedVaultView === "hub"
-                  ? tokenVaultHub(
+              ? resolvedVaultView === "hub"
+                ? tokenVaultHub(
                     h,
                     DialogTitle,
                     tokenVaultModel,
-                    creatureSvg(h, shown, 64),
+                    grottoCreature("hub"),
                     vaultPanelRef,
                     openTokenRoom,
                     backFromTokenVault,
                     backFromTokenVault,
                   )
-                  : tokenVaultRoom(
+                : tokenVaultRoom(
                     h,
                     DialogTitle,
                     tokenVaultModel,
@@ -7321,7 +8175,8 @@ function makeKandyWidget(host) {
                     backToTokenHub,
                     backFromTokenVault,
                     toggleVaultCount,
-                    creatureSvg(h, shown, 64),
+                    grottoCreature("room"),
+                    vaultRoomSide(vaultSide),
                   )
               : h(
                 React.Fragment,
@@ -7340,7 +8195,7 @@ function makeKandyWidget(host) {
                   h(
                     "div",
                     { className: "kandev-kandy-dialogzoom", style: { zoom: dialogZoom } },
-                    kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech, motionState),
+                    kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech, dialogMotion),
                   ),
                   h(
                     "div",
@@ -7496,12 +8351,17 @@ window.registerKandevPlugin(PLUGIN_ID, {
     formatTokenExact: formatTokenExact,
     formatTokenCompact: formatTokenCompact,
     tokenPileScale: tokenPileScale,
+    tokenPileFragmentsFor: tokenPileFragmentsFor,
+    tokenPilePlacement: tokenPilePlacement,
+    chamberPileSpots: CHAMBER_PILE_SPOTS,
     tokenVaultHub: tokenVaultHub,
     tokenVaultRoom: tokenVaultRoom,
-    tokenVaultInitialPhase: tokenVaultInitialPhase,
     tokenVaultResolvedView: tokenVaultResolvedView,
+    grottoBackdrop: grottoBackdrop,
+    chamberBackdrop: chamberBackdrop,
+    vaultTransitClass: vaultTransitClass,
+    vaultRoomSide: vaultRoomSide,
     focusVaultDoor: focusVaultDoor,
-    tokenVaultDescent: tokenVaultDescent,
     photoExportPlan: photoExportPlan,
     photoPaletteFor: photoPaletteFor,
     photoPortraitSvg: photoPortraitSvg,

@@ -183,9 +183,9 @@ test("token vault model allowlists and sorts aggregate usage only", () => {
           },
           {
             agent_type: "claude-acp",
-            label: "Claude",
+            label: "Claude Code",
             tokens: "120",
-            models: [{ name: "sonnet", tokens: "120" }],
+            models: [{ name: "sonnet", tokens: "120", last_seen: "2026-07-30T09:00:00Z" }],
           },
         ],
       },
@@ -199,17 +199,17 @@ test("token vault model allowlists and sorts aggregate usage only", () => {
     rooms: [
       {
         agentType: "claude-acp",
-        label: "Claude",
+        label: "Claude Code",
         tokens: "120",
-        models: [{ name: "sonnet", tokens: "120" }],
+        models: [{ name: "sonnet", tokens: "120", lastSeen: "2026-07-30T09:00:00Z" }],
       },
       {
         agentType: "codex-acp",
         label: "Codex",
         tokens: "42",
         models: [
-          { name: "large", tokens: "40" },
-          { name: "small", tokens: "2" },
+          { name: "large", tokens: "40", lastSeen: "" },
+          { name: "small", tokens: "2", lastSeen: "" },
         ],
       },
     ],
@@ -257,7 +257,7 @@ test("token vault hub and chamber render accessible doors and model piles", () =
         rooms: [
           {
             agent_type: "claude-acp",
-            label: "Claude",
+            label: "Claude Code",
             tokens: "9007199254740993",
             models: [{ name: "claude-sonnet-4-5", tokens: "9007199254740993" }],
           },
@@ -284,10 +284,11 @@ test("token vault hub and chamber render accessible doors and model piles", () =
   });
 
   assert.equal(hub.props.role, "region");
-  assert.equal(hub.props["aria-label"], "Kandy token vault");
+  assert.equal(hub.props["aria-label"], "Kandy Token Grotto");
+  assert.ok(findNode(hub, (node) => node.props && node.props["aria-label"] === "Agent chambers"));
   assert.equal(doors.length, 2);
   assert.equal(doors[0].props.key, "claude-acp");
-  assert.match(doors[0].props["aria-label"], /Claude, 9,007,199,254,740,993 tokens, open chamber/);
+  assert.match(doors[0].props["aria-label"], /Claude Code, 9,007,199,254,740,993 tokens, open chamber/);
   doors[1].props.onClick();
   assert.equal(opened, "codex-acp");
   assert.match(textContent(hub), /Some usage is estimated or incomplete/);
@@ -310,13 +311,21 @@ test("token vault hub and chamber render accessible doors and model piles", () =
   );
   const piles = [];
   visit(room, (node) => {
-    if (node.type === "button" && node.props["data-vault-model"]) piles.push(node);
+    if (node.props && node.props["data-vault-model"]) piles.push(node);
   });
 
   assert.equal(piles.length, 2);
   assert.equal(piles[0].props.key, "codex-acp\u0000gpt-5.6-codex");
+  // Piles are floor furniture now, not HTML buttons: they are SVG groups
+  // standing on a spot, still operable by pointer and keyboard.
+  assert.equal(piles[0].type, "g");
+  assert.equal(piles[0].props.role, "button");
+  assert.equal(piles[0].props.tabIndex, 0);
+  assert.match(piles[0].props.transform, /^translate\(\d+ \d+\)$/);
   assert.equal(piles[0].props["aria-pressed"], true);
   assert.equal(piles[1].props["aria-pressed"], false);
+  assert.ok(findNode(room, (node) => node.type === "svg" && node.props.className === "kandev-kandy-token-stage"));
+  assert.ok(findNode(piles[0], (node) => node.type === "path" && /kandev-kandy-token-pile-stone-fill/.test(node.props.className || "")));
   assert.match(piles[0].props["aria-label"], /gpt-5\.6-codex, 100 tokens in Codex chamber/);
   assert.match(textContent(room), /gpt-5\.6-mini-with-a-very-long-model-name/);
   piles[1].props.onClick();
@@ -324,6 +333,290 @@ test("token vault hub and chamber render accessible doors and model piles", () =
   assert.ok(render.tokenPileScale("100", "100") > render.tokenPileScale("20", "100"));
   assert.ok(findNode(room, (node) => node.props && /kandev-kandy-vault-room-scene/.test(node.props.className || "")));
   assert.ok(findNode(room, (node) => node.type === "kandy-in-room"));
+});
+
+test("chambers hang off both cave walls as passages, biggest first", () => {
+  const render = loadBundle().plugin.__render;
+  const model = render.tokenVaultModelFor(
+    sampleKandy({
+      token_vault: {
+        status: "ready",
+        total_tokens: "660",
+        rooms: [
+          { agent_type: "codex-acp", label: "Codex", tokens: "300", models: [] },
+          { agent_type: "claude-acp", label: "Claude Code", tokens: "200", models: [] },
+          { agent_type: "gemini-acp", label: "Gemini", tokens: "100", models: [] },
+          { agent_type: "opencode-acp", label: "OpenCode", tokens: "60", models: [] },
+          { agent_type: "mystery-agent", label: "Mystery agent", tokens: "0", models: [] },
+        ],
+      },
+    }),
+  );
+  const hub = render.tokenVaultHub(jsx, "DialogTitle", model, { type: "kandy" }, { current: null }, () => {}, () => {}, () => {});
+  const doors = [];
+  visit(hub, (node) => {
+    if (node.type === "button" && node.props["data-vault-agent"]) doors.push(node);
+  });
+
+  assert.equal(doors.length, 5);
+  // DOM order stays token order, so the keyboard still walks the chambers
+  // biggest-first however they are placed on the walls.
+  assert.deepEqual(
+    doors.map((door) => door.props["data-vault-agent"]),
+    ["codex-acp", "claude-acp", "gemini-acp", "opencode-acp", "mystery-agent"],
+  );
+  // Sides alternate, and each pair sits one row further into the cave.
+  assert.deepEqual(doors.map((door) => door.props["data-vault-side"]), ["left", "right", "left", "right", "left"]);
+  assert.deepEqual(doors.map((door) => door.props.style.gridColumn), [1, 3, 1, 3, 1]);
+  assert.deepEqual(doors.map((door) => door.props.style.gridRow), [1, 1, 2, 2, 3]);
+  assert.ok(doors.every((door) => /is-(left|right)/.test(door.props.className)));
+
+  // Kandy stands on the cave floor: a full-width row below the last pair of
+  // passages, bottom-aligned so it never floats mid-cave.
+  const hubGrid = findNode(hub, (node) => node.props && /kandev-kandy-vault-hub/.test(node.props.className || ""));
+  assert.equal(hubGrid.props.style.gridTemplateRows, "repeat(3, auto) 1fr");
+  const kandy = findNode(hub, (node) => node.props && node.props.className === "kandev-kandy-vault-kandy");
+  assert.equal(kandy.props.style.gridColumn, "1 / -1");
+  assert.equal(kandy.props.style.gridRow, 4);
+  assert.equal(kandy.props.style.alignSelf, "end");
+
+  // The paths are the hub grid itself — no inner wrapper to break the shared
+  // rows, and no centred door grid left behind.
+  assert.doesNotMatch(bundleSource, /kandev-kandy-vault-grid/);
+});
+
+test("chamber floor spots rank by size and recency, and merge the overflow", () => {
+  const render = loadBundle().plugin.__render;
+  const spots = render.chamberPileSpots;
+
+  assert.equal(spots.length, 10);
+  // Spot order is prominence order: the front of the room is both nearer the
+  // bottom of the art and drawn larger.
+  assert.ok(spots[0].y > spots[spots.length - 1].y);
+  assert.ok(spots[0].scale > spots[spots.length - 1].scale);
+  assert.ok(spots.every((spot) => spot.y >= 460 && spot.y <= 700), "every spot stands on the drawn floor");
+
+  const model = (name, tokens, lastSeen) => ({ name, tokens, lastSeen });
+  // Fewer models than spots: everyone stands on their own, biggest first.
+  const few = render.tokenPilePlacement([
+    model("small", "5", "2026-08-01T10:00:00Z"),
+    model("big", "900", "2026-07-01T10:00:00Z"),
+  ]);
+  assert.deepEqual(few.map((entry) => entry.model.name), ["big", "small"]);
+  assert.ok(few.every((entry) => !entry.merged));
+
+  // More models than spots: nine stand alone, the rest share the last spot.
+  const many = [];
+  for (let i = 0; i < 14; i++) {
+    // Descending size, ascending recency: rank 0 is the biggest and the oldest,
+    // rank 13 is the smallest and the newest.
+    many.push(model("m" + i, String(1000 - i * 10), "2026-07-" + String(10 + i).padStart(2, "0") + "T10:00:00Z"));
+  }
+  const placed = render.tokenPilePlacement(many);
+  assert.equal(placed.length, 10);
+  assert.equal(placed.filter((entry) => entry.merged).length, 1);
+  const merged = placed[placed.length - 1];
+  assert.ok(merged.merged, "the overflow takes the last spot");
+
+  const standing = placed.slice(0, 9).map((entry) => entry.model.name);
+  // The biggest model is there even though it is the oldest...
+  assert.ok(standing.includes("m0"));
+  // ...and the newest model is there even though it is the smallest.
+  assert.ok(standing.includes("m13"));
+  assert.equal(new Set(standing).size, 9, "no model stands on two spots");
+
+  // The merged pile carries the exact sum of what it hides, and its list.
+  assert.equal(merged.models.length, 14 - 9);
+  const hidden = merged.models.reduce((sum, entry) => sum + BigInt(entry.tokens), 0n);
+  assert.equal(merged.model.tokens, hidden.toString());
+  assert.match(merged.model.name, /^5 more models$/);
+  assert.ok(merged.models.every((entry) => !standing.includes(entry.name)), "nothing is counted twice");
+});
+
+test("the merged pile opens a list of the models it hides", () => {
+  const render = loadBundle().plugin.__render;
+  const rooms = [
+    {
+      agent_type: "codex-acp",
+      label: "Codex",
+      tokens: "1000",
+      models: [],
+    },
+  ];
+  for (let i = 0; i < 13; i++) {
+    rooms[0].models.push({ name: "m" + i, tokens: String(500 - i * 10), last_seen: "2026-07-2" + (i % 9) + "T10:00:00Z" });
+  }
+  const model = render.tokenVaultModelFor(sampleKandy({ token_vault: { status: "ready", total_tokens: "1000", rooms } }));
+
+  const closed = render.tokenVaultRoom(jsx, "DialogTitle", model, "codex-acp", null, { current: null }, () => {}, () => {}, () => {}, {
+    type: "kandy",
+  });
+  assert.equal(findNode(closed, (node) => node.props && node.props.className === "kandev-kandy-vault-manifest"), null);
+
+  const piles = [];
+  visit(closed, (node) => {
+    if (node.props && node.props["data-vault-model"]) piles.push(node);
+  });
+  assert.equal(piles.length, 10);
+  const mergedPile = piles[piles.length - 1];
+  assert.equal(mergedPile.props["data-vault-merged"], "true");
+  assert.match(mergedPile.props["aria-label"], /4 more models, [\d,]+ tokens together, open the list/);
+
+  // Clicking it asks for the merged key; keyboard does the same.
+  let toggled = null;
+  const clickable = render.tokenVaultRoom(jsx, "DialogTitle", model, "codex-acp", null, { current: null }, () => {}, () => {}, (key) => {
+    toggled = key;
+  }, { type: "kandy" });
+  const target = [];
+  visit(clickable, (node) => {
+    if (node.props && node.props["data-vault-merged"]) target.push(node);
+  });
+  target[0].props.onClick();
+  assert.equal(toggled, "\u0000merged");
+  toggled = null;
+  target[0].props.onKeyDown({ key: "Enter", preventDefault() {} });
+  assert.equal(toggled, "\u0000merged");
+
+  const opened = render.tokenVaultRoom(jsx, "DialogTitle", model, "codex-acp", "\u0000merged", { current: null }, () => {}, () => {}, () => {}, {
+    type: "kandy",
+  });
+  const manifest = findNode(opened, (node) => node.props && node.props.className === "kandev-kandy-vault-manifest");
+  assert.ok(manifest, "opening the merged pile lists what is in it");
+  const text = textContent(manifest);
+  assert.match(text, /4 models in this pile/);
+  assert.match(text, /m9/);
+  assert.match(text, /m12/);
+});
+
+test("Token Grotto renders deterministic, centered glowstone cairns", () => {
+  const render = loadBundle().plugin.__render;
+  assert.equal(typeof render.tokenPileFragmentsFor, "function");
+
+  const first = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "100", "100");
+  const again = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "100", "100");
+  const smaller = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "20", "100");
+
+  assert.deepEqual(first, again);
+  assert.ok(first.length >= 5);
+  assert.ok(first.every((fragment) => fragment.width > 0 && fragment.height > 0 && fragment.bottom >= 0));
+  assert.ok(first.every((fragment) => Number.isInteger(fragment.layer) && Number.isInteger(fragment.slot)));
+  assert.ok(first.every((fragment) => fragment.variant === "glowstone"));
+  assert.ok(first.every((fragment) => /^(basalt|umber|moss|amethyst)$/.test(fragment.color)));
+  assert.ok(first.every((fragment) => typeof fragment.path === "string" && fragment.path.startsWith("M")));
+  assert.ok(first.length > smaller.length, "more tokens add discrete cairn stones");
+  const span = (fragments) =>
+    Math.max(...fragments.map((fragment) => fragment.left + fragment.width)) - Math.min(...fragments.map((fragment) => fragment.left));
+  const height = (fragments) => Math.max(...fragments.map((fragment) => fragment.bottom + fragment.height));
+  assert.ok(
+    height(first) >= height(smaller) + 14,
+    "more tokens materially raise the cairn through additional courses",
+  );
+  assert.ok(
+    span(first) > span(smaller),
+    "more tokens broaden the footing too, so size reads at a glance",
+  );
+  assert.ok(span(first) <= 126 && span(smaller) > 0);
+  const rows = new Map();
+  first.forEach((fragment) => rows.set(fragment.layer, (rows.get(fragment.layer) || 0) + 1));
+  const rowWidths = [...rows.entries()].sort(([a], [b]) => a - b).map(([, count]) => count);
+  assert.ok(rowWidths.every((count, layer) => layer === 0 || count <= rowWidths[layer - 1]));
+  assert.ok(first.filter((fragment) => fragment.layer === 0).length > first.filter((fragment) => fragment.layer === rowWidths.length - 1).length);
+  const center = (Math.min(...first.map((fragment) => fragment.left)) + Math.max(...first.map((fragment) => fragment.left + fragment.width))) / 2;
+  assert.ok(Math.abs(center - 63) <= 2, "stack remains centered in its fixed visual well");
+  assert.ok(first.every((fragment) => fragment.left >= 0 && fragment.left + fragment.width <= 126 && fragment.bottom + fragment.height <= 126));
+
+  const capstones = first.filter((fragment) => fragment.glowPath);
+  assert.equal(capstones.length, 1, "only the top course catches the light");
+  assert.equal(capstones[0].layer, rowWidths.length - 1);
+  assert.ok(first.every((fragment) => fragment.slot === 0 || fragment.layer === 0), "only the footing course pairs slabs");
+  const courses = (fragments) => new Set(fragments.map((fragment) => fragment.layer)).size;
+  assert.ok(courses(first) > courses(smaller), "token share is read from the number of courses");
+});
+
+test("Token Grotto pile size follows the square root of the chamber share", () => {
+  const render = loadBundle().plugin.__render;
+  const scale = render.tokenPileScale;
+
+  // Piles inside one order of magnitude must stay visibly apart: the shipped
+  // log-of-magnitude curve drew 51M and 12.4M as the same stack.
+  assert.ok(scale("51000000", "51000000") - scale("12400000", "51000000") > 0.35);
+  assert.ok(Math.abs(scale("12400000", "51000000") - (0.16 + 0.84 * Math.sqrt(12.4 / 51))) < 0.02);
+  assert.ok(scale("1", "51000000") >= 0.16, "the smallest pile stays visible and selectable");
+  assert.ok(scale("1", "51000000") <= 0.2, "and stays visibly smaller than its neighbours");
+  assert.ok(scale("51000000", "51000000") <= 1);
+
+  const tall = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "51000000", "51000000");
+  const short = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "12400000", "51000000");
+  const tiny = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "900", "51000000");
+  const height = (fragments) => Math.max(...fragments.map((fragment) => fragment.bottom + fragment.height));
+  const width = (fragments) =>
+    Math.max(...fragments.map((f) => f.left + f.width)) - Math.min(...fragments.map((f) => f.left));
+  assert.ok(height(tall) > height(short) + 25, "a four-times-larger pile stands visibly taller");
+  assert.ok(width(tall) > width(short) + 10, "and sits on a visibly broader footing");
+  // The whole chamber must not collapse into one silhouette: the largest pile
+  // is at least twice the smallest in both directions.
+  assert.ok(height(tall) > height(tiny) * 2);
+  assert.ok(width(tall) > width(tiny) * 1.7);
+  // Everything still fits its 126x126 well.
+  [tall, short, tiny].forEach((pile) => {
+    assert.ok(pile.every((f) => f.left >= 0 && f.left + f.width <= 126 && f.bottom + f.height <= 126));
+  });
+});
+
+test("a passage hands its wall to the chamber, and Kandy stands on that side", () => {
+  const render = loadBundle().plugin.__render;
+  const model = render.tokenVaultModelFor(
+    sampleKandy({
+      token_vault: {
+        status: "ready",
+        total_tokens: "300",
+        rooms: [
+          { agent_type: "codex-acp", label: "Codex", tokens: "200", models: [{ name: "gpt-5.6", tokens: "200" }] },
+          { agent_type: "claude-acp", label: "Claude Code", tokens: "100", models: [{ name: "opus", tokens: "100" }] },
+        ],
+      },
+    }),
+  );
+
+  // The door reports the wall it hangs on when it is opened.
+  const opened = [];
+  const hub = render.tokenVaultHub(jsx, "DialogTitle", model, { type: "kandy" }, { current: null }, (agentType, side) => {
+    opened.push([agentType, side]);
+  }, () => {}, () => {});
+  const doors = [];
+  visit(hub, (node) => {
+    if (node.props && node.props["data-vault-agent"]) doors.push(node);
+  });
+  doors[0].props.onClick();
+  doors[1].props.onClick();
+  assert.deepEqual(opened, [["codex-acp", "left"], ["claude-acp", "right"]]);
+
+  const kandyIn = (side) => {
+    const room = render.tokenVaultRoom(
+      jsx,
+      "DialogTitle",
+      model,
+      "codex-acp",
+      null,
+      { current: null },
+      () => {},
+      () => {},
+      () => {},
+      { type: "kandy" },
+      side,
+    );
+    return findNode(room, (node) => node.props && /kandev-kandy-vault-kandy/.test(node.props.className || ""));
+  };
+  // The renderer is given the side Kandy walked in from, which is already the
+  // mirror of the passage wall.
+  assert.match(kandyIn("left").props.className, /is-left/);
+  assert.match(kandyIn("right").props.className, /is-right/);
+  // A right-hand passage puts it on the chamber's left, and the widget hands
+  // that mirrored side straight to the renderer.
+  assert.equal(render.vaultRoomSide("right"), "left");
+  assert.match(bundleSource, /grottoCreature\("room"\),\n\s*vaultRoomSide\(vaultSide\),/);
+  // An unknown side must still land somewhere definite rather than centred.
+  assert.match(kandyIn(null).props.className, /is-right/);
 });
 
 test("token vault restores focus to the selected chamber door", () => {
@@ -348,29 +641,159 @@ test("token vault restores focus to the selected chamber door", () => {
   assert.match(bundleSource, /\[resolvedVaultView\],/);
 });
 
-test("token vault descent is playful and reduced motion skips it", () => {
+test("chambers stand in their own torch-lit room with an unmarked floor", () => {
+  const render = loadBundle().plugin.__render;
+  const chamber = render.chamberBackdrop(jsx);
+
+  assert.equal(chamber.props.className, "kandev-kandy-vault-backdrop");
+  assert.equal(chamber.props.viewBox, "0 0 1200 700");
+  assert.equal(chamber.props["aria-hidden"], "true");
+  assert.equal(chamber.props.role, undefined);
+
+  const ids = [];
+  const refs = [];
+  const uses = [];
+  visit(chamber, (node) => {
+    if (!node.props) return;
+    if (node.props.id) ids.push(node.props.id);
+    if (node.type === "use" && node.props.href) uses.push(node.props.href);
+    ["fill", "filter", "stroke"].forEach((key) => {
+      const value = node.props[key];
+      if (typeof value === "string" && value.startsWith("url(#")) refs.push(value.slice(5, -1));
+    });
+  });
+  // Its own id space: the chamber and the cave are both "rock" and "floor"
+  // scenes, and one must not capture the other's defs.
+  assert.ok(ids.every((id) => id.startsWith("kandev-kandy-chamber-")), ids.join(","));
+  assert.ok(refs.every((ref) => ids.includes(ref)), refs.join(","));
+  assert.ok(ids.every((id) => !id.startsWith("kandev-kandy-grotto-")));
+
+  // Four wall torches, each an instance of the one defined torch.
+  assert.equal(uses.length, 4);
+  assert.ok(uses.every((href) => href === "#kandev-kandy-chamber-torch"));
+  assert.ok(findNode(chamber, (node) => node.type === "feTurbulence"));
+
+  // The floor stays bare: the model piles are the only thing standing on it,
+  // so no marked spots compete with them or imply empty slots to fill.
+  assert.ok(ids.every((id) => !/spot/i.test(id)), ids.join(","));
+  assert.doesNotMatch(bundleSource, /coinSpot|spotGround|spotShadow/);
+});
+
+test("Kandy walks between the surface and the grotto instead of the panel sliding", () => {
   const { document, plugin } = loadBundle();
   const render = plugin.__render;
-  assert.equal(typeof render.tokenVaultInitialPhase, "function");
-  assert.equal(render.tokenVaultInitialPhase(false), "descending");
-  assert.equal(render.tokenVaultInitialPhase(true), "hub");
-  const descent = render.tokenVaultDescent(
-    jsx,
-    "DialogTitle",
-    sampleKandy(),
-    { current: null },
-    () => {},
-    () => {},
+
+  // No trapdoor, and no panel slide either: the creature carries the change.
+  assert.equal(render.tokenVaultDescent, undefined);
+  assert.equal(render.tokenVaultInitialPhase, undefined);
+  assert.doesNotMatch(bundleSource, /descending|vault-slide/);
+
+  // Walk classes by surface and leg of the trip.
+  assert.equal(render.vaultTransitClass("depart-surface", "card"), "kandev-kandy-walkoff");
+  assert.equal(render.vaultTransitClass("arrive-surface", "card"), "kandev-kandy-walkin-side");
+  // No passage in play means the visitor is leaving the grotto: Kandy climbs
+  // back out through the cave mouth rather than walking off sideways.
+  assert.equal(render.vaultTransitClass("depart-hub", "hub"), "kandev-kandy-walkout-entrance");
+  // Coming down from the surface there is no passage to match: Kandy fades up
+  // at the cave mouth in the centre of the scene rather than walking in from a
+  // corner.
+  assert.equal(render.vaultTransitClass("arrive-hub", "hub", null), "kandev-kandy-walkin-entrance");
+  // Screen direction: Kandy leaves the hub by the passage's own wall and walks
+  // into the chamber from the opposite side, low along the floor.
+  assert.equal(render.vaultRoomSide("left"), "right");
+  assert.equal(render.vaultRoomSide("right"), "left");
+  assert.equal(render.vaultTransitClass("depart-hub", "hub", "left"), "kandev-kandy-walkoff-left");
+  assert.equal(render.vaultTransitClass("depart-hub", "hub", "right"), "kandev-kandy-walkoff");
+  assert.equal(render.vaultTransitClass("arrive-room", "room", "right"), "kandev-kandy-walkin-shore");
+  assert.equal(render.vaultTransitClass("arrive-room", "room", "left"), "kandev-kandy-walkin-shore-right");
+  // It leaves a chamber the same way it came in, and re-enters the hub through
+  // the passage's wall.
+  assert.equal(render.vaultTransitClass("depart-room", "room", "right"), "kandev-kandy-walkoff-left");
+  assert.equal(render.vaultTransitClass("depart-room", "room", "left"), "kandev-kandy-walkoff");
+  assert.equal(render.vaultTransitClass("arrive-hub", "hub", "left"), "kandev-kandy-walkin-shore");
+  assert.equal(render.vaultTransitClass("arrive-hub", "hub", "right"), "kandev-kandy-walkin-shore-right");
+  // A leg only dresses the surface it belongs to, so the creature is never
+  // drawn walking on two scenes at once.
+  assert.equal(render.vaultTransitClass("depart-surface", "hub"), null);
+  assert.equal(render.vaultTransitClass("arrive-hub", "card"), null);
+  assert.equal(render.vaultTransitClass("arrive-room", "hub", "left"), null);
+  assert.equal(render.vaultTransitClass("depart-hub", "room", "left"), null);
+  assert.equal(render.vaultTransitClass(null, "card"), null);
+  assert.equal(render.vaultTransitClass(null, "room", "left"), null);
+
+  // The panel swap happens while Kandy is off frame, between the two legs.
+  assert.match(
+    bundleSource,
+    /function walkBetweenScenes\(departPhase, arrivePhase, swap\) \{[\s\S]*?setVaultTransit\(departPhase\);[\s\S]*?swap\(\);[\s\S]*?setVaultTransit\(arrivePhase\);[\s\S]*?setVaultTransit\(null\);/,
   );
-  assert.equal(descent.props.role, "status");
-  assert.match(descent.props.className, /kandev-kandy-vault-descent/);
-  assert.match(textContent(descent), /Opening token vault/);
-  assert.ok(findNode(descent, (node) => node.props && node.props.className === "kandev-kandy-vault-descending-creature"));
+  assert.match(bundleSource, /VAULT_WALK_OUT_MS\);/);
+  assert.match(bundleSource, /VAULT_WALK_IN_MS\);/);
+  assert.match(bundleSource, /var VAULT_WALK_OUT_MS = 640;/);
+  assert.match(bundleSource, /var VAULT_WALK_IN_MS = 940;/);
+  // Reduced motion swaps the panel with no walk at all.
+  assert.match(bundleSource, /if \(prefersReducedMotion\(\)\) \{\n        swap\(\);\n        return;/);
+  assert.match(bundleSource, /walkBetweenScenes\("depart-surface", "arrive-hub"[\s\S]*?setVaultView\("hub"\)/);
+  assert.match(
+    bundleSource,
+    /if \(resolvedVaultView === "hub"\) setVaultSide\(null\);\n\s*walkBetweenScenes\(resolvedVaultView === "hub" \? "depart-hub" : "depart-room", "arrive-surface"/,
+  );
+  // Opening a chamber walks through the passage that was clicked; Back
+  // retraces it.
+  assert.match(
+    bundleSource,
+    /function openTokenRoom\(agentType, side\)[\s\S]*?setVaultSide\(side \|\| "right"\);[\s\S]*?walkBetweenScenes\("depart-hub", "arrive-room"[\s\S]*?setVaultView\(agentType\)/,
+  );
+  assert.match(
+    bundleSource,
+    /function backToTokenHub\(\)[\s\S]*?walkBetweenScenes\("depart-room", "arrive-hub"[\s\S]*?setVaultView\("hub"\)/,
+  );
+
+  // The walk wrapper rides inside the gait wrapper on both scenes, so the
+  // archetype keeps stepping while it travels.
+  assert.match(bundleSource, /motion\.transit \? h\("div", \{ className: motion\.transit \}, inner\) : inner/);
+  assert.match(
+    bundleSource,
+    /function grottoCreature\(surface\)[\s\S]*?vaultTransitClass\(vaultTransit, surface, vaultSide\)[\s\S]*?gaitFor\(shown\.archetype \|\| 0\)\.cls/,
+  );
+  assert.match(bundleSource, /grottoCreature\("hub"\)/);
+  assert.match(bundleSource, /grottoCreature\("room"\)/);
+  assert.match(bundleSource, /var walking = !!\(motion && \(motion\.walking \|\| motion\.transit\)\)/);
 
   plugin.initialize({ registerComponent() {}, registerWsHandler() {} }, { jsx, ui: {} });
   const css = document.getElementById("kandev-kandy-style").textContent;
-  assert.match(css, /@keyframes kandev-kandy-vault-descend/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[^{]*\{[^}]*\.kandev-kandy-vault-descending-creature/);
+  assert.doesNotMatch(css, /kandev-kandy-vault-descend|kandev-kandy-vault-trapdoor|vault-slide/);
+  assert.match(css, /@keyframes kandev-kandy-walkoff\{0%\{transform:translateX\(0\)[^}]*\}[^@]*100%\{transform:translateX\(190px\);opacity:0\}\}/);
+  // Kandy arrives along the water's edge: from the side and low, never
+  // dropping through the ceiling.
+  assert.match(css, /@keyframes kandev-kandy-walkin-shore\{0%\{transform:translate\(-170px,120px\);opacity:0\}/);
+  assert.doesNotMatch(css, /walkin-below/);
+  assert.match(css, /@keyframes kandev-kandy-walkin-side\{0%\{transform:translateX\(-180px\);opacity:0\}/);
+  assert.match(css, /\.kandev-kandy-walkoff\{animation:kandev-kandy-walkoff \.62s/);
+  assert.match(css, /@keyframes kandev-kandy-walkoff-left\{0%\{transform:translateX\(0\)[^}]*\}[^@]*100%\{transform:translateX\(-190px\);opacity:0\}\}/);
+  // Chamber arrivals come in low, along the floor, from either side.
+  assert.match(css, /@keyframes kandev-kandy-walkin-shore-right\{0%\{transform:translate\(170px,120px\);opacity:0\}/);
+  assert.doesNotMatch(css, /walkin-right/);
+  assert.match(css, /\.kandev-kandy-walkoff-left\{animation:kandev-kandy-walkoff-left \.62s/);
+  assert.match(css, /\.kandev-kandy-walkin-shore-right\{animation:kandev-kandy-walkin-shore-right \.76s/);
+  // Centre of the scene, invisible at first, fading up as it walks down.
+  assert.match(css, /@keyframes kandev-kandy-walkin-entrance\{0%\{transform:translateY\(-85px\);opacity:0\}70%\{opacity:\.9\}100%\{transform:translateY\(0\);opacity:1\}\}/);
+  assert.match(css, /\.kandev-kandy-walkin-entrance\{animation:kandev-kandy-walkin-entrance \.9s ease-out both\}/);
+  // The way out retraces the way in: same half-height offset, upward, fading.
+  assert.match(css, /@keyframes kandev-kandy-walkout-entrance\{0%\{transform:translateY\(0\);opacity:1\}30%\{opacity:\.9\}100%\{transform:translateY\(-85px\);opacity:0\}\}/);
+  assert.match(css, /\.kandev-kandy-walkout-entrance\{animation:kandev-kandy-walkout-entrance \.62s ease-in both\}/);
+  // Kandy ends up standing on the side of the chamber it walked in from.
+  // The pile stage is absolutely positioned, so nothing else grows in the
+  // chamber column: without this the creature row rides at the top of the
+  // scene instead of standing on the floor.
+  assert.match(css, /\.kandev-kandy-vault-room-scene \.kandev-kandy-vault-kandy\{margin-top:auto\}/);
+  assert.match(css, /\.kandev-kandy-vault-kandy\.is-left\{justify-content:flex-start/);
+  assert.match(css, /\.kandev-kandy-vault-kandy\.is-right\{justify-content:flex-end/);
+  assert.match(css, /\.kandev-kandy-walkin-shore\{animation:kandev-kandy-walkin-shore \.76s/);
+  assert.match(css, /\.kandev-kandy-walkin-side\{animation:kandev-kandy-walkin-side \.7s/);
+  assert.match(
+    css,
+    /@media \(prefers-reduced-motion: reduce\)\{\.kandev-kandy-walkoff,\.kandev-kandy-walkoff-left,\.kandev-kandy-walkin-shore,\.kandev-kandy-walkin-shore-right,\.kandev-kandy-walkin-entrance,\.kandev-kandy-walkout-entrance,\.kandev-kandy-walkin-side/,
+  );
 });
 
 test("token vault resolves removed chambers to hub and subscribes to live usage", () => {
@@ -432,12 +855,105 @@ test("token vault CSS uses vertical responsive grids without paging tracks", () 
   assert.match(css, /\.kandev-kandy-vault-panel\{[^}]*max-height:calc\(100vh - 32px\)[^}]*overflow:hidden/);
   assert.match(css, /\.kandev-kandy-vault-bar\{[^}]*position:sticky[^}]*top:0/);
   assert.match(css, /\.kandev-kandy-vault-scroll\{[^}]*overflow-y:auto[^}]*overflow-x:hidden/);
-  assert.match(css, /\.kandev-kandy-vault-grid,.kandev-kandy-token-grid\{[^}]*grid-template-columns:repeat\(auto-fit,minmax\(140px,1fr\)\)/);
-  assert.match(css, /@media \(max-width:480px\)\{\.kandev-kandy-vault-grid,.kandev-kandy-token-grid\{grid-template-columns:1fr\}/);
+  // Chamber piles are placed on the floor art, not laid out in a grid, so
+  // there is no pile grid left to reflow — and still no paging track.
+  assert.doesNotMatch(css, /kandev-kandy-token-grid/);
+  assert.match(css, /\.kandev-kandy-token-stage\{position:absolute;inset:0;z-index:1[^}]*pointer-events:none/);
+  assert.match(css, /\.kandev-kandy-token-pile\{pointer-events:auto/);
+  // Phones have no side walls to hang passages on.
+  assert.match(css, /@media \(max-width:480px\)[^@]*\.kandev-kandy-vault-hub\{grid-template-columns:1fr/);
+  assert.match(css, /@media \(max-width:480px\)[^@]*\.kandev-kandy-vault-hub>\*\{grid-column:1!important/);
   assert.match(css, /\.kandev-kandy-token-pile:hover \.kandev-kandy-vault-exact/);
   assert.match(css, /\.kandev-kandy-token-pile:focus-visible \.kandev-kandy-vault-exact/);
   assert.match(css, /\.kandev-kandy-token-pile\.is-revealed \.kandev-kandy-vault-exact/);
+  assert.match(css, /\.kandev-kandy-token-pile-stone/);
+  assert.doesNotMatch(css, /\.kandev-kandy-token-pile-fragment\.is-chip/);
   assert.doesNotMatch(css, /vault-(?:carousel|pager|track)/);
+
+  // Piles are stone on a cave floor, not tiles: the pile rule carries no
+  // plate, frame, or CSS-drawn mound — only the SVG stones show.
+  const pileRule = css.match(/\.kandev-kandy-token-pile\{([^}]*)\}/)[1];
+  assert.doesNotMatch(pileRule, /background|border|box-shadow|min-height/);
+  assert.doesNotMatch(pileRule, /gradient/);
+  assert.doesNotMatch(pileRule, /border:1px/);
+  assert.doesNotMatch(pileRule, /box-shadow/);
+  // The revealed count keeps a readable bubble of its own now that the tile
+  // behind it is gone.
+  assert.match(css, /\.kandev-kandy-vault-exact\{[^}]*opacity:0;visibility:hidden\}/);
+});
+
+test("the grotto paints an inline cave behind every scene", () => {
+  const { document, plugin } = loadBundle();
+  const render = plugin.__render;
+  plugin.initialize({ registerComponent() {}, registerWsHandler() {} }, { jsx, ui: {} });
+  const css = document.getElementById("kandev-kandy-style").textContent;
+
+  // Underground surfaces carry a local palette, so a dark surface theme cannot
+  // reduce the scene to black-on-black.
+  const panelRule = css.match(/\.kandev-kandy-vault-panel\{([^}]*)\}/)[1];
+  assert.match(panelRule, /--grotto-ink:#f4ede2/);
+  assert.match(panelRule, /--grotto-ink-dim:/);
+  assert.doesNotMatch(panelRule, /background:var\(--background\)/);
+
+  // The backdrop paints the scene; the CSS keeps only a base colour under it
+  // and clips whatever walks out of frame.
+  const sceneRule = css.match(/\.kandev-kandy-vault-scene\{([^}]*)\}/)[1];
+  assert.match(sceneRule, /position:relative/);
+  assert.match(sceneRule, /overflow:hidden/);
+  assert.match(sceneRule, /background:#0d1418/);
+  assert.match(css, /\.kandev-kandy-vault-backdrop\{position:absolute;inset:0;z-index:0/);
+  // The scene stacks top-down and its body stretches, so the creature row can
+  // sit on the cave floor instead of floating in the middle.
+  assert.match(sceneRule, /display:flex;flex-direction:column/);
+  assert.match(css, /\.kandev-kandy-vault-hub\{[^}]*flex:1[^}]*align-content:start/);
+  assert.match(css, /\.kandev-kandy-vault-room\{[^}]*flex:1/);
+  // Content rides above the backdrop.
+  assert.match(css, /\.kandev-kandy-vault-hub\{position:relative;z-index:1/);
+  assert.match(css, /\.kandev-kandy-vault-room\{position:relative;z-index:1/);
+
+  const backdrop = render.grottoBackdrop(jsx);
+  assert.equal(backdrop.type, "svg");
+  assert.equal(backdrop.props.className, "kandev-kandy-vault-backdrop");
+  assert.equal(backdrop.props.viewBox, "0 0 1200 700");
+  assert.equal(backdrop.props.preserveAspectRatio, "xMidYMid slice");
+  // Decorative only: no role, no label, out of the accessibility tree and out
+  // of the tab order.
+  assert.equal(backdrop.props["aria-hidden"], "true");
+  assert.equal(backdrop.props.focusable, "false");
+  assert.equal(backdrop.props.role, undefined);
+
+  // Every id is namespaced and every url(#...) resolves to one of them, so the
+  // host page's own SVG defs can never capture a fill or clip path.
+  const ids = [];
+  const refs = [];
+  visit(backdrop, (node) => {
+    if (!node.props) return;
+    if (node.props.id) ids.push(node.props.id);
+    ["fill", "filter", "stroke", "clipPath"].forEach((key) => {
+      const value = node.props[key];
+      if (typeof value === "string" && value.startsWith("url(#")) refs.push(value.slice(5, -1));
+    });
+  });
+  assert.ok(ids.length >= 11, "gradients, filters, and the opening clip are all declared");
+  assert.ok(ids.every((id) => id.startsWith("kandev-kandy-grotto-")), ids.join(","));
+  assert.ok(refs.length > 0);
+  assert.ok(refs.every((ref) => ids.includes(ref)), refs.join(","));
+
+  // The cave itself: daylight through the opening, water, and rock texture.
+  assert.ok(findNode(backdrop, (node) => node.type === "clipPath"));
+  assert.ok(findNode(backdrop, (node) => node.type === "feTurbulence"));
+  assert.ok(findNode(backdrop, (node) => node.type === "radialGradient"));
+
+  // The hub mounts the cave; chambers get their own torch-lit room.
+  assert.equal(bundleSource.match(/grottoBackdrop\(h\),/g).length, 1);
+  assert.equal(bundleSource.match(/chamberBackdrop\(h\),/g).length, 1);
+
+  // Text and chrome inside the grotto read against rock, not against the
+  // surface theme's foreground.
+  assert.match(css, /\.kandev-kandy-vault-subtitle\{[^}]*color:var\(--grotto-ink-dim\)/);
+  assert.match(css, /\.kandev-kandy-vault-door\{[^}]*color:var\(--grotto-ink\)/);
+  assert.match(css, /\.kandev-kandy-token-pile-compact\{fill:var\(--grotto-ink-dim\)/);
+  assert.match(css, /\.kandev-kandy-vault-empty\{[^}]*color:var\(--grotto-ink-dim\)/);
 });
 
 test("photo export uses fixed high-resolution PNG dimensions and explicit theme palettes", () => {
@@ -918,11 +1434,11 @@ test("widget includes dialog-only Photo Booth and token vault entries", () => {
   );
   const vaultButton = findNode(
     dialog,
-    (node) => node.type === "button" && node.props["aria-label"] === "Show me your token vault",
+    (node) => node.type === "button" && node.props["aria-label"] === "Show me your Token Grotto",
   );
   const tooltipVaultButton = findNode(
     tooltip,
-    (node) => node.type === "button" && node.props["aria-label"] === "Show me your token vault",
+    (node) => node.type === "button" && node.props["aria-label"] === "Show me your Token Grotto",
   );
 
   assert.ok(dialogEntry, "dialog positions Photo Booth at the top right");
