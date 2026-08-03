@@ -51,10 +51,10 @@ func TestTokenVault_ObservedUsageAppearsInKandyWebhook(t *testing.T) {
 		"rooms": []any{
 			map[string]any{
 				"agent_type": "claude-acp",
-				"label":      "Claude",
+				"label":      "Claude Code",
 				"tokens":     "25068",
 				"models": []any{
-					map[string]any{"name": "claude-sonnet-4-5", "tokens": "25068"},
+					map[string]any{"name": "claude-sonnet-4-5", "tokens": "25068", "last_seen": "2026-07-28T12:00:00Z"},
 				},
 			},
 		},
@@ -84,11 +84,11 @@ func TestTokenVault_RejectsUnsafeTokenNumbers(t *testing.T) {
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
 	vault, ok := body["token_vault"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "empty", vault["status"])
+	require.Equal(t, "partial", vault["status"])
 	require.Equal(t, "0", vault["total_tokens"])
 }
 
-func TestTokenVault_DuplicateBodyCountsOnceAcrossRestart(t *testing.T) {
+func TestTokenVault_DuplicateDeliveryIDCountsOnceAcrossRestart(t *testing.T) {
 	host := newFakeHost(nil)
 	ctx := context.Background()
 	p1 := newTestPlugin(t, host)
@@ -107,22 +107,118 @@ func TestTokenVault_DuplicateBodyCountsOnceAcrossRestart(t *testing.T) {
 			"estimated":      false,
 		},
 	}
-	require.NoError(t, p1.OnEvent(ctx, &pluginsdk.Event{
-		EventID: "delivery-original", EventType: "session_prompt_usage.updated.session-private", Payload: payload,
-	}))
+	require.NoError(t, p1.OnEvent(ctx, &pluginsdk.Event{EventID: "delivery-stable", EventType: "session_prompt_usage.updated.session-private", Payload: payload}))
 
-	// A producer republication can receive another delivery ID. The stable
-	// normalized body, not transport identity, is the practical dedupe seam.
+	// Kandev keeps EventID stable across delivery retries.
 	p2 := newTestPlugin(t, host)
-	require.NoError(t, p2.OnEvent(ctx, &pluginsdk.Event{
-		EventID: "delivery-republished", EventType: "session_prompt_usage.updated.session-private", Payload: payload,
-	}))
+	require.NoError(t, p2.OnEvent(ctx, &pluginsdk.Event{EventID: "delivery-stable", EventType: "session_prompt_usage.updated.session-private", Payload: payload}))
 	resp, err := p2.HandleWebhook(ctx, &pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET"})
 	require.NoError(t, err)
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
 	vault := body["token_vault"].(map[string]any)
 	require.Equal(t, "10652", vault["total_tokens"])
+}
+
+func TestTokenVault_IdenticalUsageWithDistinctDeliveryIDsCountsTwice(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	payload := tokenUsageFixture("identical", "codex-acp", "gpt-5.6", 12, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)).Payload
+
+	require.NoError(t, p.OnEvent(ctx, &pluginsdk.Event{EventID: "delivery-one", EventType: "session_prompt_usage.updated.session-identical", Payload: payload}))
+	require.NoError(t, p.OnEvent(ctx, &pluginsdk.Event{EventID: "delivery-two", EventType: "session_prompt_usage.updated.session-identical", Payload: payload}))
+
+	require.Equal(t, "24", fetchKandy(t, p, "").TokenVault.TotalTokens)
+}
+
+func TestTokenVault_UnusableUsageMarksEmptyVaultPartial(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	event := tokenUsageFixture("missing", "codex-acp", "gpt-5.6", 12, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+	delete(event.Payload, "usage")
+
+	require.NoError(t, p.OnEvent(context.Background(), event))
+	vault := fetchKandy(t, p, "").TokenVault
+	require.Equal(t, "partial", vault.Status)
+	require.Equal(t, "0", vault.TotalTokens)
+	require.Empty(t, vault.Rooms)
+	require.Equal(t, "2026-07-28T12:00:00Z", vault.ObservedSince)
+}
+
+func TestTokenVault_OutOfOrderUsagePreservesEarliestObservedTimestamp(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+
+	recent := tokenUsageFixture("recent", "codex-acp", "gpt-5.6", 10, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))
+	earlier := tokenUsageFixture("earlier", "codex-acp", "gpt-5.6", 20, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+	require.NoError(t, p.OnEvent(ctx, recent))
+	require.NoError(t, p.OnEvent(ctx, earlier))
+
+	vault := fetchKandy(t, p, "").TokenVault
+	require.Equal(t, "2026-07-28T12:00:00Z", vault.ObservedSince)
+	require.Equal(t, "30", vault.TotalTokens)
+}
+
+func TestTokenVault_ModelLastSeenTracksNewestObservationOnly(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+
+	first := tokenUsageFixture("first", "codex-acp", "gpt-5.6", 10, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+	newest := tokenUsageFixture("newest", "codex-acp", "gpt-5.6", 10, time.Date(2026, 7, 30, 9, 0, 0, 0, time.UTC))
+	late := tokenUsageFixture("late", "codex-acp", "gpt-5.6", 10, time.Date(2026, 7, 29, 9, 0, 0, 0, time.UTC))
+	other := tokenUsageFixture("other", "codex-acp", "gpt-5.6-mini", 5, time.Date(2026, 7, 31, 8, 0, 0, 0, time.UTC))
+	for _, event := range []*pluginsdk.Event{first, newest, late, other} {
+		require.NoError(t, p.OnEvent(ctx, event))
+	}
+
+	rooms := fetchKandy(t, p, "").TokenVault.Rooms
+	require.Len(t, rooms, 1)
+	models := map[string]tokenVaultModelResponse{}
+	for _, model := range rooms[0].Models {
+		models[model.Name] = model
+	}
+	// A late delivery of an older turn must not drag the stamp backwards.
+	require.Equal(t, "2026-07-30T09:00:00Z", models["gpt-5.6"].LastSeen)
+	require.Equal(t, "30", models["gpt-5.6"].Tokens)
+	// A small but recent model keeps its own, newer stamp.
+	require.Equal(t, "2026-07-31T08:00:00Z", models["gpt-5.6-mini"].LastSeen)
+}
+
+func TestTokenVault_LedgerWithoutLastSeenStaysSealedAndKeepsCounting(t *testing.T) {
+	host := newFakeHost(nil)
+	ctx := context.Background()
+	p1 := newTestPlugin(t, host)
+	require.NoError(t, p1.OnEvent(ctx, tokenUsageFixture("legacy", "codex-acp", "gpt-5.6", 40, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))))
+
+	// Rewrite the ledger the way a build without this field would have left it:
+	// no stamp, and sealed over those bytes. The stamp is omitted when empty,
+	// so such a ledger still verifies here instead of restarting the history.
+	stored := host.state[stateMapKey(stateScope, "", tokenVaultStateKey)]
+	require.NotNil(t, stored)
+	legacy, ok := tokenVaultFromMap(stored)
+	require.True(t, ok)
+	for i := range legacy.Rooms {
+		for j := range legacy.Rooms[i].Models {
+			legacy.Rooms[i].Models[j].LastSeen = ""
+		}
+	}
+	key, _, err := p1.ensureSealKey(ctx, host)
+	require.NoError(t, err)
+	sealTokenVault(legacy, key)
+	host.state[stateMapKey(stateScope, "", tokenVaultStateKey)] = tokenVaultToMap(legacy)
+
+	p2 := newTestPlugin(t, host)
+	vault := fetchKandy(t, p2, "").TokenVault
+	require.Equal(t, "40", vault.TotalTokens, "an unstamped ledger stays valid instead of restarting")
+	require.Empty(t, vault.Rooms[0].Models[0].LastSeen)
+
+	require.NoError(t, p2.OnEvent(ctx, tokenUsageFixture("fresh", "codex-acp", "gpt-5.6", 2, time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC))))
+	vault = fetchKandy(t, p2, "").TokenVault
+	require.Equal(t, "42", vault.TotalTokens)
+	require.Equal(t, "2026-08-01T10:00:00Z", vault.Rooms[0].Models[0].LastSeen, "the next observation stamps it")
 }
 
 func TestTokenVault_ReadFailureDoesNotOverwriteHistory(t *testing.T) {
@@ -291,6 +387,34 @@ func TestTokenVault_UnknownUnicodeAgentTypeGetsReadableRoom(t *testing.T) {
 	require.Equal(t, "modèle-α", state.TokenVault.Rooms[0].Models[0].Name)
 }
 
+func TestTokenVault_UsesProductRoomLabels(t *testing.T) {
+	for _, test := range []struct {
+		agentType string
+		label     string
+	}{
+		{agentType: "claude-acp", label: "Claude Code"},
+		{agentType: "codex-acp", label: "Codex"},
+		{agentType: "opencode-acp", label: "OpenCode"},
+		{agentType: "gemini", label: "Gemini"},
+		{agentType: "gemini-acp", label: "Gemini"},
+		{agentType: "openai-acp", label: "OpenAI"},
+		{agentType: "mystery-agent", label: "Mystery agent"},
+		{agentType: "custom_agent", label: "Custom Agent"},
+	} {
+		t.Run(test.agentType, func(t *testing.T) {
+			host := newFakeHost(nil)
+			p := newTestPlugin(t, host)
+			event := tokenUsageFixture("labels", test.agentType, "model", 1, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+
+			require.NoError(t, p.OnEvent(context.Background(), event))
+			state := fetchKandy(t, p, "")
+			require.Len(t, state.TokenVault.Rooms, 1)
+			require.Equal(t, test.agentType, state.TokenVault.Rooms[0].AgentType)
+			require.Equal(t, test.label, state.TokenVault.Rooms[0].Label)
+		})
+	}
+}
+
 func TestTokenVault_UsageDoesNotMutateCreatureLedger(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
@@ -344,6 +468,21 @@ func TestTokenVault_RetainsEveryAgentAndModelWithExactLifetime(t *testing.T) {
 		require.NotEqual(t, "Other", room.Label)
 		require.Contains(t, modelNames(room), "shared-model", "same model remains distinct inside every agent room")
 	}
+}
+
+func TestTokenVault_RepeatedEventsGrowCountsNotAggregateCardinality(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	base := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	for index := 0; index < 1_000; index++ {
+		require.NoError(t, p.OnEvent(ctx, tokenUsageFixture(fmt.Sprintf("repeat-%04d", index), "codex-acp", "gpt-5.6", 1, base.Add(time.Duration(index)*time.Second))))
+	}
+
+	vault := fetchKandy(t, p, "").TokenVault
+	require.Equal(t, "1000", vault.TotalTokens)
+	require.Len(t, vault.Rooms, 1)
+	require.Len(t, vault.Rooms[0].Models, 1)
 }
 
 func TestTokenVault_RecentBodyHashRingIsBoundedFIFO(t *testing.T) {

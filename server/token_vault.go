@@ -47,6 +47,11 @@ type tokenVaultRoom struct {
 type tokenVaultModel struct {
 	Name   string `json:"name"`
 	Tokens string `json:"tokens"`
+	// LastSeen is the source timestamp of the most recent observation for this
+	// model, kept so the chamber can show recently used models beside the
+	// biggest ones. Omitted when empty, which keeps ledgers written before this
+	// field byte-identical — and therefore still valid under their old seal.
+	LastSeen string `json:"last_seen,omitempty"`
 }
 
 type tokenVaultResponse struct {
@@ -64,8 +69,9 @@ type tokenVaultRoomResponse struct {
 }
 
 type tokenVaultModelResponse struct {
-	Name   string `json:"name"`
-	Tokens string `json:"tokens"`
+	Name     string `json:"name"`
+	Tokens   string `json:"tokens"`
+	LastSeen string `json:"last_seen,omitempty"`
 }
 
 type observedTokenUsage struct {
@@ -73,7 +79,7 @@ type observedTokenUsage struct {
 	Model     string
 	Tokens    *big.Int
 	Timestamp string
-	BodyHash  string
+	DedupKey  string
 	Partial   bool
 }
 
@@ -104,10 +110,6 @@ func isTokenUsageEvent(eventType string) bool {
 }
 
 func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) {
-	usage, ok := normalizeTokenUsage(event)
-	if !ok {
-		return
-	}
 	// Token history follows Kandy lineage. Persist a sealed zero-XP Kandy
 	// before its first usage observation so a process restart cannot mint a
 	// different salt and orphan the separate vault row. This persistence is
@@ -123,8 +125,19 @@ func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) 
 		return
 	}
 	vault := cloneTokenVault(loaded)
+	usage, ok := normalizeTokenUsage(event)
+	if !ok {
+		vault.Partial = true
+		vault.UpdatedAt = p.now().UTC().Format(time.RFC3339)
+		observedAt := tokenUsageTimestamp(event, p.now())
+		if vault.ObservedSince == "" || observedAt < vault.ObservedSince {
+			vault.ObservedSince = observedAt
+		}
+		p.persistTokenVault(ctx, vault)
+		return
+	}
 	for _, digest := range vault.RecentBodyHashes {
-		if digest == usage.BodyHash {
+		if digest == usage.DedupKey {
 			return
 		}
 	}
@@ -132,15 +145,26 @@ func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) 
 	if usage.Partial {
 		vault.Partial = true
 	}
-	vault.RecentBodyHashes = append(vault.RecentBodyHashes, usage.BodyHash)
+	vault.RecentBodyHashes = append(vault.RecentBodyHashes, usage.DedupKey)
 	if len(vault.RecentBodyHashes) > tokenVaultDigestLimit {
 		vault.RecentBodyHashes = append([]string(nil), vault.RecentBodyHashes[len(vault.RecentBodyHashes)-tokenVaultDigestLimit:]...)
 	}
 	vault.UpdatedAt = p.now().UTC().Format(time.RFC3339)
-	if vault.ObservedSince == "" {
+	if vault.ObservedSince == "" || usage.Timestamp < vault.ObservedSince {
 		vault.ObservedSince = usage.Timestamp
 	}
 	p.persistTokenVault(ctx, vault)
+}
+
+func tokenUsageTimestamp(event *pluginsdk.Event, fallback time.Time) string {
+	if event != nil && event.Payload != nil {
+		if timestamp, ok := event.Payload["timestamp"].(string); ok {
+			if parsed, err := time.Parse(time.RFC3339Nano, timestamp); err == nil {
+				return parsed.UTC().Format(time.RFC3339)
+			}
+		}
+	}
+	return fallback.UTC().Format(time.RFC3339)
 }
 
 func (p *plugin) ensureTokenVaultLineage(ctx context.Context) (*ledger, bool) {
@@ -233,12 +257,17 @@ func normalizeTokenUsage(event *pluginsdk.Event) (observedTokenUsage, bool) {
 		return observedTokenUsage{}, false
 	}
 	digest := sha256.Sum256(canonicalJSON)
+	dedupKey := hex.EncodeToString(digest[:])
+	if event.EventID != "" {
+		deliveryDigest := sha256.Sum256([]byte("event-id:\n" + event.EventID))
+		dedupKey = hex.EncodeToString(deliveryDigest[:])
+	}
 	return observedTokenUsage{
 		AgentType: agentType,
 		Model:     model,
 		Tokens:    tokens,
 		Timestamp: parsed.UTC().Format(time.RFC3339),
-		BodyHash:  hex.EncodeToString(digest[:]),
+		DedupKey:  dedupKey,
 		Partial:   usedFallback || estimated,
 	}, true
 }
@@ -298,10 +327,14 @@ func addTokenUsage(vault *tokenVaultLedger, usage observedTokenUsage) {
 	for i := range room.Models {
 		if room.Models[i].Name == usage.Model {
 			room.Models[i].Tokens = addDecimal(room.Models[i].Tokens, usage.Tokens)
+			// Out-of-order deliveries must not move the stamp backwards.
+			if usage.Timestamp > room.Models[i].LastSeen {
+				room.Models[i].LastSeen = usage.Timestamp
+			}
 			return
 		}
 	}
-	room.Models = append(room.Models, tokenVaultModel{Name: usage.Model, Tokens: usage.Tokens.String()})
+	room.Models = append(room.Models, tokenVaultModel{Name: usage.Model, Tokens: usage.Tokens.String(), LastSeen: usage.Timestamp})
 }
 
 func addDecimal(current string, delta *big.Int) string {
@@ -413,6 +446,10 @@ func (p *plugin) presentTokenVault(ctx context.Context, lineage uint32) tokenVau
 		return response
 	}
 	if vault.ObservedSince == "" || vault.TotalTokens == "0" {
+		if vault.Partial {
+			response.Status = "partial"
+			response.ObservedSince = vault.ObservedSince
+		}
 		return response
 	}
 	response.Status = "ready"
@@ -429,7 +466,7 @@ func (p *plugin) presentTokenVault(ctx context.Context, lineage uint32) tokenVau
 			Models:    []tokenVaultModelResponse{},
 		}
 		for _, model := range room.Models {
-			roomResponse.Models = append(roomResponse.Models, tokenVaultModelResponse{Name: model.Name, Tokens: model.Tokens})
+			roomResponse.Models = append(roomResponse.Models, tokenVaultModelResponse{Name: model.Name, Tokens: model.Tokens, LastSeen: model.LastSeen})
 		}
 		sort.Slice(roomResponse.Models, func(i, j int) bool {
 			comparison := compareDecimals(roomResponse.Models[i].Tokens, roomResponse.Models[j].Tokens)
@@ -462,7 +499,7 @@ func compareDecimals(left, right string) int {
 func agentRoomLabel(agentType string) string {
 	switch agentType {
 	case "claude-acp":
-		return "Claude"
+		return "Claude Code"
 	case "codex-acp":
 		return "Codex"
 	case "openai-acp":
