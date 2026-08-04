@@ -2043,7 +2043,35 @@ test("sceneFor without a season stays byte-identical; seasons compose on top", (
   const celestialWinter = render.sceneFor(0, 60, 5150, 13, "winter");
   assert.equal(celestialWinter.props.length, celestialPlain.props.length);
   assert.notEqual(celestialWinter.bg, celestialPlain.bg);
-  assert.ok(celestialWinter.bg.includes("0.05"), "celestial tint is dimmer than the regular wash");
+  // Every celestial tint is its own hand-authored pair, like the day/night dim
+  // tier — pinned per season, since `includes("0.05")` alone would keep passing
+  // if three of the four drifted.
+  const celestialTint = (season) => {
+    const bg = render.sceneFor(0, 60, 5150, 13, season).bg;
+    let depth = 0;
+    for (let i = 0; i < bg.length; i++) {
+      if (bg[i] === "(") depth++;
+      else if (bg[i] === ")") depth--;
+      else if (bg[i] === "," && depth === 0) return bg.slice(0, i);
+    }
+    return bg;
+  };
+  assert.equal(
+    celestialTint("winter"),
+    "linear-gradient(to bottom, rgba(172,206,236,0.05) 0%, rgba(172,206,236,0.03) 100%)",
+  );
+  assert.equal(
+    celestialTint("spring"),
+    "linear-gradient(to bottom, rgba(192,236,192,0.04) 0%, rgba(255,214,230,0.03) 100%)",
+  );
+  assert.equal(
+    celestialTint("summer"),
+    "linear-gradient(to bottom, rgba(255,214,120,0.04) 0%, rgba(255,214,120,0.02) 100%)",
+  );
+  assert.equal(
+    celestialTint("autumn"),
+    "linear-gradient(to bottom, rgba(235,162,82,0.04) 0%, rgba(235,162,82,0.03) 100%)",
+  );
 });
 
 test("speech pool is ~250 disciplined lines across bands and contexts", () => {
