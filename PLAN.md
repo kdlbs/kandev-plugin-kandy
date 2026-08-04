@@ -16,17 +16,10 @@ Factors, awarded in `OnEvent` (subjects verified against
 | `agent.completed` | agent run finished successfully | +20 |
 | `task.state_changed` | payload `new_state == "COMPLETED"` | +150 |
 
-**Token-spend factor: dropped (deliberate).** `session_prompt_usage.updated`
-is published on a per-session-suffixed subject
-(`session_prompt_usage.updated.<sessionId>`, 3 segments) but with
-`event.Type = "session_prompt_usage.updated"` (2 segments). The plugin
-deliverer (`internal/plugins/delivery/deliverer.go` `makeHandler`) re-checks
-the subscription pattern against `event.Type` with segment-count-strict
-`manifest.MatchSubject`, so a 3-segment wildcard pattern that matches the bus
-subject always fails the re-check, and a 2-segment pattern never matches the
-bus subject. Token usage events are therefore undeliverable to plugins today.
-Turn/message weights are raised to compensate. (Turn XP indirectly tracks
-tokens anyway: more work per session = more turns.)
+**Token-spend factor: added in v0.11.0.** `session_prompt_usage.updated.*`
+events deliver to plugins (deliverer re-check issue was fixed in a later
+Kandev version). This feeds the Token Grotto, not the XP meter — tokens
+are observed but never grant XP, so the XP weights above remain unchanged.
 
 Idempotency: kandev retries a delivery (same `EventID`, up to 3x) only when
 `OnEvent` returns an error. `OnEvent` always returns `nil` — including on
@@ -90,15 +83,19 @@ backups, survives upgrades, removed on uninstall:
 ## 4. Manifest
 
 ```yaml
-id: kandev-plugin-kandy | api_version: 1 | version: 0.1.0
+id: kandev-plugin-kandy | api_version: 1 | version: 0.11.0+
 display_name: "Kandy" | categories: ["tools"]
 runtime.type: binary (linux-amd64 for host loop; full package builds all 5)
 capabilities:
   state: true
-  events: [task.state_changed, turn.completed, agent.completed, message.added]
-webhooks: [{ key: kandy, method: GET }]
+  events:
+    - task.state_changed, turn.completed, agent.completed, message.added
+    - session_prompt_usage.updated.*
+webhooks:
+  - { key: kandy, method: GET, description: "Current kandy presentation and Token Grotto ledger" }
+  - { key: pet, method: POST, description: "Pet the kandy (mood + temperament)" }
+  - { key: bonk, method: POST, description: "Bonk the kandy (temperament, mood, refuse pets)" }
 ui.bundle: /ui/bundle.js
-config_schema: { debug: boolean, default false }
 ```
 
 ## 5. Webhook API (`GET .../webhooks/kandy`)
@@ -366,7 +363,7 @@ be reconciled; UI and README describe history as observed, never complete.
 Positive `total_tokens` wins. Missing or zero total falls back to input plus
 output without adding cache or thought categories whose semantics may overlap.
 Estimated/fallback usage and recognized events with malformed, missing, zero,
-or otherwise unusable counts latch the vault partial. Rejected payloads are
+or otherwise unusable counts latch the grotto partial. Rejected payloads are
 never persisted. The event identifies agent adapter and model but carries no
 authoritative provider, so chambers are explicitly adapter/model breakdowns;
 provider breakdown remains unavailable until Kandev adds a typed field.
