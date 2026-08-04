@@ -96,14 +96,25 @@ metadata:
 
 Kandy prefers a positive observed `total_tokens` (which some adapters or
 Kandev may infer). When total is missing or zero, it uses positive input plus
-output only; it never adds cache or thought tokens because provider semantics
-can overlap. Fallback, estimated, malformed, missing, or otherwise unusable
-usage marks the vault partial without storing the rejected payload. Missing
+output only; Kandy itself never adds cache or thought tokens on top of a
+reported total. Fallback, estimated, malformed, missing, or otherwise unusable
+usage marks the grotto partial without storing the rejected payload. Missing
 agent/model names enter explicit Mystery buckets. Chambers identify the agent
 CLI/adapter, not necessarily the model provider, configured profile, person,
 or agent run. Kandev v0.83.0 exposes no authoritative provider field on this
 typed event, so provider breakdown is unavailable. Aliases and renamed models
 remain separate piles.
+
+**Chambers are not directly comparable across agents.** Whether the upstream
+`total_tokens` folds in cache read/write tokens is decided by each agent
+adapter before Kandev ever publishes the event, and it is not uniform: some
+adapters report a `total` that already includes cache tokens, others report
+cache-excluded totals or omit cache fields entirely, and at least one adapter
+has no per-turn usage frame at all and emits an `estimated` cumulative
+occupancy-delta approximation instead. Kandy has no adapter-agnostic signal to
+normalize this, so it stores and displays whatever total each event reports
+verbatim, and the grotto UI calls this out rather than implying the totals
+share a unit.
 
 The task/session/lifecycle IDs and usage categories are never persisted,
 logged, or returned to the browser. Only a SHA-256 delivery-ID digest (or a
@@ -111,13 +122,13 @@ canonical aggregate-body digest when delivery ID is absent) survives for
 practical duplicate suppression. Kandy never reads or stores
 message text, prompts, responses, reasoning, tool calls, files, credentials,
 or provider-reported cost. The top-bar UI listens for session updates only to
-know when to refetch Kandy's own webhook. One Kandy and one vault are shared by
+know when to refetch Kandy's own webhook. One Kandy and one grotto are shared by
 the whole Kandev instance, rather than being tied to a person, task, agent, or
 session.
 
 The plugin stores two instance-scoped aggregate ledgers in Kandev Host state.
 The existing creature ledger keeps XP/activity counts, timestamps, appearance
-seed, and care temperament. The separate `kandy-token-vault` ledger keeps the
+seed, and care temperament. The separate `kandy-token-grotto` ledger keeps the
 Kandy lineage, observation boundary, exact decimal-string lifetime total, one
 counter per distinct agent type/model pair, the source timestamp of each pair's
 most recent observation, a partial-data flag, and the most
@@ -129,7 +140,7 @@ adapter/model pairs, not event count; distinct aggregates have no artificial
 cap because each chamber is part of Kandy's history.
 
 Both ledgers use domain-separated HMAC-SHA256 signatures backed by one key in
-kandev's encrypted secrets vault. Vault corruption restarts only token history;
+kandev's encrypted secrets vault. Grotto corruption restarts only token history;
 it cannot counterfeit or rebirth Kandy. The browser UI uses the local clock
 only for day/night and sleep, and calls only Kandy's Kandev-hosted webhooks; it
 has no external service or analytics integration.

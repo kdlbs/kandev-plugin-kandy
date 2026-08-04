@@ -132,11 +132,11 @@ type kandyResponse struct {
 	Scarred         bool   `json:"scarred"`
 	// Counterfeit is the permanent tamper mark (see seal.go). The UI gets
 	// the boolean only — never the signature or the key.
-	Counterfeit  bool               `json:"counterfeit"`
-	RefusingPets bool               `json:"refusing_pets"`
-	Flavor       string             `json:"flavor"`
-	AliveSince   string             `json:"alive_since"`
-	TokenVault   tokenVaultResponse `json:"token_vault"`
+	Counterfeit  bool                `json:"counterfeit"`
+	RefusingPets bool                `json:"refusing_pets"`
+	Flavor       string              `json:"flavor"`
+	AliveSince   string              `json:"alive_since"`
+	TokenGrotto  tokenGrottoResponse `json:"token_grotto"`
 }
 
 type plugin struct {
@@ -144,9 +144,9 @@ type plugin struct {
 
 	// mu guards cached and sealKey: OnEvent deliveries are sequential per
 	// plugin, but a webhook debug_grant can race an event delivery.
-	mu          sync.Mutex
-	cached      *ledger
-	vaultCached *tokenVaultLedger
+	mu           sync.Mutex
+	cached       *ledger
+	grottoCached *tokenGrottoLedger
 	// sealKey is the decoded ledger HMAC key, cached for the process
 	// lifetime after the first successful vault read (see seal.go).
 	sealKey []byte
@@ -402,7 +402,7 @@ func presentResponse(view kandyResponse) *pluginsdk.WebhookResponse {
 
 func (p *plugin) presentKandy(ctx context.Context, l *ledger, idleOverride *time.Duration) kandyResponse {
 	view := p.presentLedger(l, idleOverride)
-	view.TokenVault = p.presentTokenVault(ctx, l.Salt)
+	view.TokenGrotto = p.presentTokenGrotto(ctx, l.Salt)
 	return view
 }
 

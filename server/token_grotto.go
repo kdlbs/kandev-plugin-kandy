@@ -19,32 +19,32 @@ import (
 )
 
 const (
-	tokenVaultStateKey      = "kandy-token-vault"
-	tokenUsageEventPrefix   = "session_prompt_usage.updated."
-	tokenVaultSchemaVersion = 1
-	tokenVaultDigestLimit   = 512
+	tokenGrottoStateKey      = "kandy-token-grotto"
+	tokenUsageEventPrefix    = "session_prompt_usage.updated."
+	tokenGrottoSchemaVersion = 1
+	tokenGrottoDigestLimit   = 512
 )
 
-type tokenVaultLedger struct {
-	SchemaVersion    int              `json:"schema_version"`
-	Lineage          string           `json:"lineage"`
-	ObservedSince    string           `json:"observed_since"`
-	UpdatedAt        string           `json:"updated_at"`
-	TotalTokens      string           `json:"total_tokens"`
-	Partial          bool             `json:"partial,omitempty"`
-	Rooms            []tokenVaultRoom `json:"rooms"`
-	RecentBodyHashes []string         `json:"recent_body_hashes,omitempty"`
-	SealVersion      int              `json:"seal_version,omitempty"`
-	Sig              string           `json:"sig,omitempty"`
+type tokenGrottoLedger struct {
+	SchemaVersion    int               `json:"schema_version"`
+	Lineage          string            `json:"lineage"`
+	ObservedSince    string            `json:"observed_since"`
+	UpdatedAt        string            `json:"updated_at"`
+	TotalTokens      string            `json:"total_tokens"`
+	Partial          bool              `json:"partial,omitempty"`
+	Rooms            []tokenGrottoRoom `json:"rooms"`
+	RecentBodyHashes []string          `json:"recent_body_hashes,omitempty"`
+	SealVersion      int               `json:"seal_version,omitempty"`
+	Sig              string            `json:"sig,omitempty"`
 }
 
-type tokenVaultRoom struct {
-	AgentType string            `json:"agent_type"`
-	Tokens    string            `json:"tokens"`
-	Models    []tokenVaultModel `json:"models"`
+type tokenGrottoRoom struct {
+	AgentType string             `json:"agent_type"`
+	Tokens    string             `json:"tokens"`
+	Models    []tokenGrottoModel `json:"models"`
 }
 
-type tokenVaultModel struct {
+type tokenGrottoModel struct {
 	Name   string `json:"name"`
 	Tokens string `json:"tokens"`
 	// LastSeen is the source timestamp of the most recent observation for this
@@ -54,21 +54,21 @@ type tokenVaultModel struct {
 	LastSeen string `json:"last_seen,omitempty"`
 }
 
-type tokenVaultResponse struct {
-	Status        string                   `json:"status"`
-	ObservedSince string                   `json:"observed_since,omitempty"`
-	TotalTokens   string                   `json:"total_tokens"`
-	Rooms         []tokenVaultRoomResponse `json:"rooms"`
+type tokenGrottoResponse struct {
+	Status        string                    `json:"status"`
+	ObservedSince string                    `json:"observed_since,omitempty"`
+	TotalTokens   string                    `json:"total_tokens"`
+	Rooms         []tokenGrottoRoomResponse `json:"rooms"`
 }
 
-type tokenVaultRoomResponse struct {
-	AgentType string                    `json:"agent_type"`
-	Label     string                    `json:"label"`
-	Tokens    string                    `json:"tokens"`
-	Models    []tokenVaultModelResponse `json:"models"`
+type tokenGrottoRoomResponse struct {
+	AgentType string                     `json:"agent_type"`
+	Label     string                     `json:"label"`
+	Tokens    string                     `json:"tokens"`
+	Models    []tokenGrottoModelResponse `json:"models"`
 }
 
-type tokenVaultModelResponse struct {
+type tokenGrottoModelResponse struct {
 	Name     string `json:"name"`
 	Tokens   string `json:"tokens"`
 	LastSeen string `json:"last_seen,omitempty"`
@@ -112,48 +112,48 @@ func isTokenUsageEvent(eventType string) bool {
 func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) {
 	// Token history follows Kandy lineage. Persist a sealed zero-XP Kandy
 	// before its first usage observation so a process restart cannot mint a
-	// different salt and orphan the separate vault row. This persistence is
+	// different salt and orphan the separate grotto row. This persistence is
 	// deliberately not a creature mutation: no timestamps or XP bookkeeping
 	// change when token metadata arrives.
-	kandy, persisted := p.ensureTokenVaultLineage(ctx)
+	kandy, persisted := p.ensureTokenGrottoLineage(ctx)
 	if !persisted {
 		return
 	}
 	lineage := strconv.FormatUint(uint64(kandy.Salt), 10)
-	loaded, err := p.loadTokenVault(ctx, lineage)
+	loaded, err := p.loadTokenGrotto(ctx, lineage)
 	if err != nil {
 		return
 	}
-	vault := cloneTokenVault(loaded)
+	grotto := cloneTokenGrotto(loaded)
 	usage, ok := normalizeTokenUsage(event)
 	if !ok {
-		vault.Partial = true
-		vault.UpdatedAt = p.now().UTC().Format(time.RFC3339)
+		grotto.Partial = true
+		grotto.UpdatedAt = p.now().UTC().Format(time.RFC3339)
 		observedAt := tokenUsageTimestamp(event, p.now())
-		if vault.ObservedSince == "" || observedAt < vault.ObservedSince {
-			vault.ObservedSince = observedAt
+		if grotto.ObservedSince == "" || observedAt < grotto.ObservedSince {
+			grotto.ObservedSince = observedAt
 		}
-		p.persistTokenVault(ctx, vault)
+		p.persistTokenGrotto(ctx, grotto)
 		return
 	}
-	for _, digest := range vault.RecentBodyHashes {
+	for _, digest := range grotto.RecentBodyHashes {
 		if digest == usage.DedupKey {
 			return
 		}
 	}
-	addTokenUsage(vault, usage)
+	addTokenUsage(grotto, usage)
 	if usage.Partial {
-		vault.Partial = true
+		grotto.Partial = true
 	}
-	vault.RecentBodyHashes = append(vault.RecentBodyHashes, usage.DedupKey)
-	if len(vault.RecentBodyHashes) > tokenVaultDigestLimit {
-		vault.RecentBodyHashes = append([]string(nil), vault.RecentBodyHashes[len(vault.RecentBodyHashes)-tokenVaultDigestLimit:]...)
+	grotto.RecentBodyHashes = append(grotto.RecentBodyHashes, usage.DedupKey)
+	if len(grotto.RecentBodyHashes) > tokenGrottoDigestLimit {
+		grotto.RecentBodyHashes = append([]string(nil), grotto.RecentBodyHashes[len(grotto.RecentBodyHashes)-tokenGrottoDigestLimit:]...)
 	}
-	vault.UpdatedAt = p.now().UTC().Format(time.RFC3339)
-	if vault.ObservedSince == "" || usage.Timestamp < vault.ObservedSince {
-		vault.ObservedSince = usage.Timestamp
+	grotto.UpdatedAt = p.now().UTC().Format(time.RFC3339)
+	if grotto.ObservedSince == "" || usage.Timestamp < grotto.ObservedSince {
+		grotto.ObservedSince = usage.Timestamp
 	}
-	p.persistTokenVault(ctx, vault)
+	p.persistTokenGrotto(ctx, grotto)
 }
 
 func tokenUsageTimestamp(event *pluginsdk.Event, fallback time.Time) string {
@@ -167,7 +167,7 @@ func tokenUsageTimestamp(event *pluginsdk.Event, fallback time.Time) string {
 	return fallback.UTC().Format(time.RFC3339)
 }
 
-func (p *plugin) ensureTokenVaultLineage(ctx context.Context) (*ledger, bool) {
+func (p *plugin) ensureTokenGrottoLineage(ctx context.Context) (*ledger, bool) {
 	kandy := p.loadLedger(ctx)
 	host := p.Host()
 	if host == nil {
@@ -175,7 +175,7 @@ func (p *plugin) ensureTokenVaultLineage(ctx context.Context) (*ledger, bool) {
 	}
 	stored, found, err := host.GetState(ctx, stateScope, "", stateKey)
 	if err != nil {
-		log.Printf("kandy: checking token vault lineage: %v", err)
+		log.Printf("kandy: checking token grotto lineage: %v", err)
 		return kandy, false
 	}
 	if found && ledgerFromMap(stored).Salt == kandy.Salt {
@@ -183,13 +183,13 @@ func (p *plugin) ensureTokenVaultLineage(ctx context.Context) (*ledger, bool) {
 	}
 	key, _, err := p.ensureSealKey(ctx, host)
 	if err != nil {
-		log.Printf("kandy: seal key unavailable, skipping token vault lineage persist: %v", err)
+		log.Printf("kandy: seal key unavailable, skipping token grotto lineage persist: %v", err)
 		return kandy, false
 	}
 	copy := *kandy
 	sealLedger(&copy, key)
 	if err := host.SetState(ctx, stateScope, "", stateKey, ledgerToMap(&copy)); err != nil {
-		log.Printf("kandy: persisting token vault lineage: %v", err)
+		log.Printf("kandy: persisting token grotto lineage: %v", err)
 		return kandy, false
 	}
 	p.cached = &copy
@@ -228,8 +228,8 @@ func normalizeTokenUsage(event *pluginsdk.Event) (observedTokenUsage, bool) {
 	if err != nil {
 		return observedTokenUsage{}, false
 	}
-	agentType := sanitizeVaultLabel(stringValue(event.Payload["agent_type"]), "mystery-agent", 64)
-	model := sanitizeVaultLabel(stringValue(event.Payload["model"]), "Mystery model", 128)
+	agentType := sanitizeGrottoLabel(stringValue(event.Payload["agent_type"]), "mystery-agent", 64)
+	model := sanitizeGrottoLabel(stringValue(event.Payload["model"]), "Mystery model", 128)
 	estimated, hasEstimate := usageMap["estimated"].(bool)
 	if rawEstimate, present := usageMap["estimated"]; present {
 		if _, ok := rawEstimate.(bool); !ok {
@@ -288,7 +288,7 @@ func stringValue(value any) string {
 	return valueString
 }
 
-func sanitizeVaultLabel(value, fallback string, maxBytes int) string {
+func sanitizeGrottoLabel(value, fallback string, maxBytes int) string {
 	value = strings.TrimSpace(strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return -1
@@ -309,20 +309,20 @@ func sanitizeVaultLabel(value, fallback string, maxBytes int) string {
 	return value
 }
 
-func addTokenUsage(vault *tokenVaultLedger, usage observedTokenUsage) {
-	vault.TotalTokens = addDecimal(vault.TotalTokens, usage.Tokens)
+func addTokenUsage(grotto *tokenGrottoLedger, usage observedTokenUsage) {
+	grotto.TotalTokens = addDecimal(grotto.TotalTokens, usage.Tokens)
 	roomIndex := -1
-	for i := range vault.Rooms {
-		if vault.Rooms[i].AgentType == usage.AgentType {
+	for i := range grotto.Rooms {
+		if grotto.Rooms[i].AgentType == usage.AgentType {
 			roomIndex = i
 			break
 		}
 	}
 	if roomIndex < 0 {
-		vault.Rooms = append(vault.Rooms, tokenVaultRoom{AgentType: usage.AgentType, Tokens: "0", Models: []tokenVaultModel{}})
-		roomIndex = len(vault.Rooms) - 1
+		grotto.Rooms = append(grotto.Rooms, tokenGrottoRoom{AgentType: usage.AgentType, Tokens: "0", Models: []tokenGrottoModel{}})
+		roomIndex = len(grotto.Rooms) - 1
 	}
-	room := &vault.Rooms[roomIndex]
+	room := &grotto.Rooms[roomIndex]
 	room.Tokens = addDecimal(room.Tokens, usage.Tokens)
 	for i := range room.Models {
 		if room.Models[i].Name == usage.Model {
@@ -334,7 +334,7 @@ func addTokenUsage(vault *tokenVaultLedger, usage observedTokenUsage) {
 			return
 		}
 	}
-	room.Models = append(room.Models, tokenVaultModel{Name: usage.Model, Tokens: usage.Tokens.String(), LastSeen: usage.Timestamp})
+	room.Models = append(room.Models, tokenGrottoModel{Name: usage.Model, Tokens: usage.Tokens.String(), LastSeen: usage.Timestamp})
 }
 
 func addDecimal(current string, delta *big.Int) string {
@@ -345,128 +345,128 @@ func addDecimal(current string, delta *big.Int) string {
 	return value.Add(value, delta).String()
 }
 
-func (p *plugin) loadTokenVault(ctx context.Context, lineage string) (*tokenVaultLedger, error) {
-	if p.vaultCached != nil && p.vaultCached.Lineage == lineage {
-		return p.vaultCached, nil
+func (p *plugin) loadTokenGrotto(ctx context.Context, lineage string) (*tokenGrottoLedger, error) {
+	if p.grottoCached != nil && p.grottoCached.Lineage == lineage {
+		return p.grottoCached, nil
 	}
-	fresh := &tokenVaultLedger{
-		SchemaVersion: tokenVaultSchemaVersion,
+	fresh := &tokenGrottoLedger{
+		SchemaVersion: tokenGrottoSchemaVersion,
 		Lineage:       lineage,
 		TotalTokens:   "0",
-		Rooms:         []tokenVaultRoom{},
+		Rooms:         []tokenGrottoRoom{},
 	}
 	host := p.Host()
 	if host == nil {
 		return fresh, nil
 	}
-	value, found, err := host.GetState(ctx, stateScope, "", tokenVaultStateKey)
+	value, found, err := host.GetState(ctx, stateScope, "", tokenGrottoStateKey)
 	if err != nil {
-		log.Printf("kandy: reading token vault state: %v", err)
+		log.Printf("kandy: reading token grotto state: %v", err)
 		return nil, err
 	}
 	if !found {
-		p.vaultCached = fresh
-		return p.vaultCached, nil
+		p.grottoCached = fresh
+		return p.grottoCached, nil
 	}
-	loaded, ok := tokenVaultFromMap(value)
-	if !ok || loaded.SchemaVersion != tokenVaultSchemaVersion || loaded.Lineage != lineage {
-		p.vaultCached = fresh
-		return p.vaultCached, nil
+	loaded, ok := tokenGrottoFromMap(value)
+	if !ok || loaded.SchemaVersion != tokenGrottoSchemaVersion || loaded.Lineage != lineage {
+		p.grottoCached = fresh
+		return p.grottoCached, nil
 	}
 	key, _, err := p.ensureSealKey(ctx, host)
 	if err != nil {
-		log.Printf("kandy: token vault seal key unavailable, serving unverified this round: %v", err)
+		log.Printf("kandy: token grotto seal key unavailable, serving unverified this round: %v", err)
 		return loaded, nil
 	}
-	if !tokenVaultSealValid(loaded, key) {
-		log.Printf("kandy: token vault seal invalid; restarting token history without changing Kandy")
-		p.vaultCached = fresh
-		return p.vaultCached, nil
+	if !tokenGrottoSealValid(loaded, key) {
+		log.Printf("kandy: token grotto seal invalid; restarting token history without changing Kandy")
+		p.grottoCached = fresh
+		return p.grottoCached, nil
 	}
-	p.vaultCached = loaded
-	return p.vaultCached, nil
+	p.grottoCached = loaded
+	return p.grottoCached, nil
 }
 
-func (p *plugin) persistTokenVault(ctx context.Context, vault *tokenVaultLedger) {
+func (p *plugin) persistTokenGrotto(ctx context.Context, grotto *tokenGrottoLedger) {
 	host := p.Host()
 	if host == nil {
-		p.vaultCached = vault
+		p.grottoCached = grotto
 		return
 	}
 	key, _, err := p.ensureSealKey(ctx, host)
 	if err != nil {
-		log.Printf("kandy: token vault seal key unavailable, skipping persist: %v", err)
-		p.vaultCached = nil
+		log.Printf("kandy: token grotto seal key unavailable, skipping persist: %v", err)
+		p.grottoCached = nil
 		return
 	}
-	sealTokenVault(vault, key)
-	if err := host.SetState(ctx, stateScope, "", tokenVaultStateKey, tokenVaultToMap(vault)); err != nil {
-		log.Printf("kandy: persisting token vault state: %v", err)
-		p.vaultCached = nil
+	sealTokenGrotto(grotto, key)
+	if err := host.SetState(ctx, stateScope, "", tokenGrottoStateKey, tokenGrottoToMap(grotto)); err != nil {
+		log.Printf("kandy: persisting token grotto state: %v", err)
+		p.grottoCached = nil
 		return
 	}
-	p.vaultCached = vault
+	p.grottoCached = grotto
 }
 
-func cloneTokenVault(vault *tokenVaultLedger) *tokenVaultLedger {
-	encoded, err := json.Marshal(vault)
+func cloneTokenGrotto(grotto *tokenGrottoLedger) *tokenGrottoLedger {
+	encoded, err := json.Marshal(grotto)
 	if err != nil {
-		return &tokenVaultLedger{}
+		return &tokenGrottoLedger{}
 	}
-	var clone tokenVaultLedger
+	var clone tokenGrottoLedger
 	if err := json.Unmarshal(encoded, &clone); err != nil {
-		return &tokenVaultLedger{}
+		return &tokenGrottoLedger{}
 	}
 	return &clone
 }
 
-func tokenVaultToMap(vault *tokenVaultLedger) map[string]any {
-	encoded, _ := json.Marshal(vault)
+func tokenGrottoToMap(grotto *tokenGrottoLedger) map[string]any {
+	encoded, _ := json.Marshal(grotto)
 	var value map[string]any
 	_ = json.Unmarshal(encoded, &value)
 	return value
 }
 
-func tokenVaultFromMap(value map[string]any) (*tokenVaultLedger, bool) {
+func tokenGrottoFromMap(value map[string]any) (*tokenGrottoLedger, bool) {
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		return nil, false
 	}
-	var vault tokenVaultLedger
-	if err := json.Unmarshal(encoded, &vault); err != nil {
+	var grotto tokenGrottoLedger
+	if err := json.Unmarshal(encoded, &grotto); err != nil {
 		return nil, false
 	}
-	return &vault, true
+	return &grotto, true
 }
 
-func (p *plugin) presentTokenVault(ctx context.Context, lineage uint32) tokenVaultResponse {
-	response := tokenVaultResponse{Status: "empty", TotalTokens: "0", Rooms: []tokenVaultRoomResponse{}}
-	vault, err := p.loadTokenVault(ctx, strconv.FormatUint(uint64(lineage), 10))
+func (p *plugin) presentTokenGrotto(ctx context.Context, lineage uint32) tokenGrottoResponse {
+	response := tokenGrottoResponse{Status: "empty", TotalTokens: "0", Rooms: []tokenGrottoRoomResponse{}}
+	grotto, err := p.loadTokenGrotto(ctx, strconv.FormatUint(uint64(lineage), 10))
 	if err != nil {
 		return response
 	}
-	if vault.ObservedSince == "" || vault.TotalTokens == "0" {
-		if vault.Partial {
+	if grotto.ObservedSince == "" || grotto.TotalTokens == "0" {
+		if grotto.Partial {
 			response.Status = "partial"
-			response.ObservedSince = vault.ObservedSince
+			response.ObservedSince = grotto.ObservedSince
 		}
 		return response
 	}
 	response.Status = "ready"
-	if vault.Partial {
+	if grotto.Partial {
 		response.Status = "partial"
 	}
-	response.ObservedSince = vault.ObservedSince
-	response.TotalTokens = vault.TotalTokens
-	for _, room := range vault.Rooms {
-		roomResponse := tokenVaultRoomResponse{
+	response.ObservedSince = grotto.ObservedSince
+	response.TotalTokens = grotto.TotalTokens
+	for _, room := range grotto.Rooms {
+		roomResponse := tokenGrottoRoomResponse{
 			AgentType: room.AgentType,
 			Label:     agentRoomLabel(room.AgentType),
 			Tokens:    room.Tokens,
-			Models:    []tokenVaultModelResponse{},
+			Models:    []tokenGrottoModelResponse{},
 		}
 		for _, model := range room.Models {
-			roomResponse.Models = append(roomResponse.Models, tokenVaultModelResponse{Name: model.Name, Tokens: model.Tokens, LastSeen: model.LastSeen})
+			roomResponse.Models = append(roomResponse.Models, tokenGrottoModelResponse{Name: model.Name, Tokens: model.Tokens, LastSeen: model.LastSeen})
 		}
 		sort.Slice(roomResponse.Models, func(i, j int) bool {
 			comparison := compareDecimals(roomResponse.Models[i].Tokens, roomResponse.Models[j].Tokens)

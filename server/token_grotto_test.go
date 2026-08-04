@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTokenVault_ObservedUsageAppearsInKandyWebhook(t *testing.T) {
+func TestTokenGrotto_ObservedUsageAppearsInKandyWebhook(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
@@ -58,10 +58,10 @@ func TestTokenVault_ObservedUsageAppearsInKandyWebhook(t *testing.T) {
 				},
 			},
 		},
-	}, body["token_vault"])
+	}, body["token_grotto"])
 }
 
-func TestTokenVault_RejectsUnsafeTokenNumbers(t *testing.T) {
+func TestTokenGrotto_RejectsUnsafeTokenNumbers(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	event := &pluginsdk.Event{
@@ -82,13 +82,13 @@ func TestTokenVault_RejectsUnsafeTokenNumbers(t *testing.T) {
 	require.NoError(t, err)
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
-	vault, ok := body["token_vault"].(map[string]any)
+	grotto, ok := body["token_grotto"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "partial", vault["status"])
-	require.Equal(t, "0", vault["total_tokens"])
+	require.Equal(t, "partial", grotto["status"])
+	require.Equal(t, "0", grotto["total_tokens"])
 }
 
-func TestTokenVault_DuplicateDeliveryIDCountsOnceAcrossRestart(t *testing.T) {
+func TestTokenGrotto_DuplicateDeliveryIDCountsOnceAcrossRestart(t *testing.T) {
 	host := newFakeHost(nil)
 	ctx := context.Background()
 	p1 := newTestPlugin(t, host)
@@ -116,11 +116,11 @@ func TestTokenVault_DuplicateDeliveryIDCountsOnceAcrossRestart(t *testing.T) {
 	require.NoError(t, err)
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
-	vault := body["token_vault"].(map[string]any)
-	require.Equal(t, "10652", vault["total_tokens"])
+	grotto := body["token_grotto"].(map[string]any)
+	require.Equal(t, "10652", grotto["total_tokens"])
 }
 
-func TestTokenVault_IdenticalUsageWithDistinctDeliveryIDsCountsTwice(t *testing.T) {
+func TestTokenGrotto_IdenticalUsageWithDistinctDeliveryIDsCountsTwice(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
@@ -129,24 +129,24 @@ func TestTokenVault_IdenticalUsageWithDistinctDeliveryIDsCountsTwice(t *testing.
 	require.NoError(t, p.OnEvent(ctx, &pluginsdk.Event{EventID: "delivery-one", EventType: "session_prompt_usage.updated.session-identical", Payload: payload}))
 	require.NoError(t, p.OnEvent(ctx, &pluginsdk.Event{EventID: "delivery-two", EventType: "session_prompt_usage.updated.session-identical", Payload: payload}))
 
-	require.Equal(t, "24", fetchKandy(t, p, "").TokenVault.TotalTokens)
+	require.Equal(t, "24", fetchKandy(t, p, "").TokenGrotto.TotalTokens)
 }
 
-func TestTokenVault_UnusableUsageMarksEmptyVaultPartial(t *testing.T) {
+func TestTokenGrotto_UnusableUsageMarksEmptyGrottoPartial(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	event := tokenUsageFixture("missing", "codex-acp", "gpt-5.6", 12, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
 	delete(event.Payload, "usage")
 
 	require.NoError(t, p.OnEvent(context.Background(), event))
-	vault := fetchKandy(t, p, "").TokenVault
-	require.Equal(t, "partial", vault.Status)
-	require.Equal(t, "0", vault.TotalTokens)
-	require.Empty(t, vault.Rooms)
-	require.Equal(t, "2026-07-28T12:00:00Z", vault.ObservedSince)
+	grotto := fetchKandy(t, p, "").TokenGrotto
+	require.Equal(t, "partial", grotto.Status)
+	require.Equal(t, "0", grotto.TotalTokens)
+	require.Empty(t, grotto.Rooms)
+	require.Equal(t, "2026-07-28T12:00:00Z", grotto.ObservedSince)
 }
 
-func TestTokenVault_OutOfOrderUsagePreservesEarliestObservedTimestamp(t *testing.T) {
+func TestTokenGrotto_OutOfOrderUsagePreservesEarliestObservedTimestamp(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
@@ -156,12 +156,12 @@ func TestTokenVault_OutOfOrderUsagePreservesEarliestObservedTimestamp(t *testing
 	require.NoError(t, p.OnEvent(ctx, recent))
 	require.NoError(t, p.OnEvent(ctx, earlier))
 
-	vault := fetchKandy(t, p, "").TokenVault
-	require.Equal(t, "2026-07-28T12:00:00Z", vault.ObservedSince)
-	require.Equal(t, "30", vault.TotalTokens)
+	grotto := fetchKandy(t, p, "").TokenGrotto
+	require.Equal(t, "2026-07-28T12:00:00Z", grotto.ObservedSince)
+	require.Equal(t, "30", grotto.TotalTokens)
 }
 
-func TestTokenVault_ModelLastSeenTracksNewestObservationOnly(t *testing.T) {
+func TestTokenGrotto_ModelLastSeenTracksNewestObservationOnly(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
@@ -174,9 +174,9 @@ func TestTokenVault_ModelLastSeenTracksNewestObservationOnly(t *testing.T) {
 		require.NoError(t, p.OnEvent(ctx, event))
 	}
 
-	rooms := fetchKandy(t, p, "").TokenVault.Rooms
+	rooms := fetchKandy(t, p, "").TokenGrotto.Rooms
 	require.Len(t, rooms, 1)
-	models := map[string]tokenVaultModelResponse{}
+	models := map[string]tokenGrottoModelResponse{}
 	for _, model := range rooms[0].Models {
 		models[model.Name] = model
 	}
@@ -187,7 +187,7 @@ func TestTokenVault_ModelLastSeenTracksNewestObservationOnly(t *testing.T) {
 	require.Equal(t, "2026-07-31T08:00:00Z", models["gpt-5.6-mini"].LastSeen)
 }
 
-func TestTokenVault_LedgerWithoutLastSeenStaysSealedAndKeepsCounting(t *testing.T) {
+func TestTokenGrotto_LedgerWithoutLastSeenStaysSealedAndKeepsCounting(t *testing.T) {
 	host := newFakeHost(nil)
 	ctx := context.Background()
 	p1 := newTestPlugin(t, host)
@@ -196,9 +196,9 @@ func TestTokenVault_LedgerWithoutLastSeenStaysSealedAndKeepsCounting(t *testing.
 	// Rewrite the ledger the way a build without this field would have left it:
 	// no stamp, and sealed over those bytes. The stamp is omitted when empty,
 	// so such a ledger still verifies here instead of restarting the history.
-	stored := host.state[stateMapKey(stateScope, "", tokenVaultStateKey)]
+	stored := host.state[stateMapKey(stateScope, "", tokenGrottoStateKey)]
 	require.NotNil(t, stored)
-	legacy, ok := tokenVaultFromMap(stored)
+	legacy, ok := tokenGrottoFromMap(stored)
 	require.True(t, ok)
 	for i := range legacy.Rooms {
 		for j := range legacy.Rooms[i].Models {
@@ -207,21 +207,21 @@ func TestTokenVault_LedgerWithoutLastSeenStaysSealedAndKeepsCounting(t *testing.
 	}
 	key, _, err := p1.ensureSealKey(ctx, host)
 	require.NoError(t, err)
-	sealTokenVault(legacy, key)
-	host.state[stateMapKey(stateScope, "", tokenVaultStateKey)] = tokenVaultToMap(legacy)
+	sealTokenGrotto(legacy, key)
+	host.state[stateMapKey(stateScope, "", tokenGrottoStateKey)] = tokenGrottoToMap(legacy)
 
 	p2 := newTestPlugin(t, host)
-	vault := fetchKandy(t, p2, "").TokenVault
-	require.Equal(t, "40", vault.TotalTokens, "an unstamped ledger stays valid instead of restarting")
-	require.Empty(t, vault.Rooms[0].Models[0].LastSeen)
+	grotto := fetchKandy(t, p2, "").TokenGrotto
+	require.Equal(t, "40", grotto.TotalTokens, "an unstamped ledger stays valid instead of restarting")
+	require.Empty(t, grotto.Rooms[0].Models[0].LastSeen)
 
 	require.NoError(t, p2.OnEvent(ctx, tokenUsageFixture("fresh", "codex-acp", "gpt-5.6", 2, time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC))))
-	vault = fetchKandy(t, p2, "").TokenVault
-	require.Equal(t, "42", vault.TotalTokens)
-	require.Equal(t, "2026-08-01T10:00:00Z", vault.Rooms[0].Models[0].LastSeen, "the next observation stamps it")
+	grotto = fetchKandy(t, p2, "").TokenGrotto
+	require.Equal(t, "42", grotto.TotalTokens)
+	require.Equal(t, "2026-08-01T10:00:00Z", grotto.Rooms[0].Models[0].LastSeen, "the next observation stamps it")
 }
 
-func TestTokenVault_ReadFailureDoesNotOverwriteHistory(t *testing.T) {
+func TestTokenGrotto_ReadFailureDoesNotOverwriteHistory(t *testing.T) {
 	host := newFakeHost(nil)
 	ctx := context.Background()
 	p1 := newTestPlugin(t, host)
@@ -229,16 +229,16 @@ func TestTokenVault_ReadFailureDoesNotOverwriteHistory(t *testing.T) {
 	retryLater := tokenUsageFixture("retry-later", "codex-acp", "gpt-5.6", 25, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))
 	require.NoError(t, p1.OnEvent(ctx, recorded))
 
-	host.getStateErr[stateMapKey(stateScope, "", tokenVaultStateKey)] = fmt.Errorf("temporary host read failure")
+	host.getStateErr[stateMapKey(stateScope, "", tokenGrottoStateKey)] = fmt.Errorf("temporary host read failure")
 	p2 := newTestPlugin(t, host)
 	require.NoError(t, p2.OnEvent(ctx, retryLater))
-	delete(host.getStateErr, stateMapKey(stateScope, "", tokenVaultStateKey))
+	delete(host.getStateErr, stateMapKey(stateScope, "", tokenGrottoStateKey))
 
 	p3 := newTestPlugin(t, host)
-	require.Equal(t, "100", fetchKandy(t, p3, "").TokenVault.TotalTokens, "failed read must not replace stored lifetime history")
+	require.Equal(t, "100", fetchKandy(t, p3, "").TokenGrotto.TotalTokens, "failed read must not replace stored lifetime history")
 }
 
-func TestTokenVault_WriteRetryHandlesKnownAndAmbiguousFailure(t *testing.T) {
+func TestTokenGrotto_WriteRetryHandlesKnownAndAmbiguousFailure(t *testing.T) {
 	for _, testCase := range []struct {
 		name      string
 		configure func(*fakeHost, string)
@@ -261,33 +261,33 @@ func TestTokenVault_WriteRetryHandlesKnownAndAmbiguousFailure(t *testing.T) {
 			ctx := context.Background()
 			p := newTestPlugin(t, host)
 			event := tokenUsageFixture("write-retry", "claude-acp", "sonnet", 33, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
-			key := stateMapKey(stateScope, "", tokenVaultStateKey)
+			key := stateMapKey(stateScope, "", tokenGrottoStateKey)
 			testCase.configure(host, key)
 			require.NoError(t, p.OnEvent(ctx, event))
 			delete(host.setStateErr, key)
 			delete(host.commitStateErr, key)
 
 			require.NoError(t, p.OnEvent(ctx, event))
-			require.Equal(t, "33", fetchKandy(t, newTestPlugin(t, host), "").TokenVault.TotalTokens)
+			require.Equal(t, "33", fetchKandy(t, newTestPlugin(t, host), "").TokenGrotto.TotalTokens)
 		})
 	}
 }
 
-func TestTokenVault_UnknownSchemaStartsFreshHistory(t *testing.T) {
+func TestTokenGrotto_UnknownSchemaStartsFreshHistory(t *testing.T) {
 	host := newFakeHost(nil)
 	ctx := context.Background()
 	p1 := newTestPlugin(t, host)
 	require.NoError(t, p1.OnEvent(ctx, tokenUsageFixture("old-schema", "codex-acp", "old", 100, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))))
-	host.state[stateMapKey(stateScope, "", tokenVaultStateKey)]["schema_version"] = float64(999)
+	host.state[stateMapKey(stateScope, "", tokenGrottoStateKey)]["schema_version"] = float64(999)
 
 	p2 := newTestPlugin(t, host)
 	require.NoError(t, p2.OnEvent(ctx, tokenUsageFixture("new-schema", "codex-acp", "new", 7, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))))
-	vault := fetchKandy(t, p2, "").TokenVault
-	require.Equal(t, "7", vault.TotalTokens)
-	require.Equal(t, "new", vault.Rooms[0].Models[0].Name)
+	grotto := fetchKandy(t, p2, "").TokenGrotto
+	require.Equal(t, "7", grotto.TotalTokens)
+	require.Equal(t, "new", grotto.Rooms[0].Models[0].Name)
 }
 
-func TestTokenVault_NewKandyLineageStartsFreshHistory(t *testing.T) {
+func TestTokenGrotto_NewKandyLineageStartsFreshHistory(t *testing.T) {
 	host := newFakeHost(nil)
 	ctx := context.Background()
 	p1 := newTestPlugin(t, host)
@@ -297,12 +297,12 @@ func TestTokenVault_NewKandyLineageStartsFreshHistory(t *testing.T) {
 	p2 := newTestPlugin(t, host)
 	p2.saltFunc = func() uint32 { return 99 }
 	require.NoError(t, p2.OnEvent(ctx, tokenUsageFixture("new-lineage", "codex-acp", "new", 9, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))))
-	vault := fetchKandy(t, p2, "").TokenVault
-	require.Equal(t, "9", vault.TotalTokens)
-	require.Equal(t, "new", vault.Rooms[0].Models[0].Name)
+	grotto := fetchKandy(t, p2, "").TokenGrotto
+	require.Equal(t, "9", grotto.TotalTokens)
+	require.Equal(t, "new", grotto.Rooms[0].Models[0].Name)
 }
 
-func TestTokenVault_EstimatedFallbackIsMarkedPartial(t *testing.T) {
+func TestTokenGrotto_EstimatedFallbackIsMarkedPartial(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	event := &pluginsdk.Event{
@@ -328,12 +328,12 @@ func TestTokenVault_EstimatedFallbackIsMarkedPartial(t *testing.T) {
 	require.NoError(t, err)
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(resp.Body, &body))
-	vault := body["token_vault"].(map[string]any)
-	require.Equal(t, "partial", vault["status"])
-	require.Equal(t, "10641", vault["total_tokens"], "cache and thought tokens must not be added twice")
+	grotto := body["token_grotto"].(map[string]any)
+	require.Equal(t, "partial", grotto["status"])
+	require.Equal(t, "10641", grotto["total_tokens"], "cache and thought tokens must not be added twice")
 }
 
-func TestTokenVault_TamperingRestartsOnlyVault(t *testing.T) {
+func TestTokenGrotto_TamperingRestartsOnlyGrotto(t *testing.T) {
 	host := newFakeHost(nil)
 	ctx := context.Background()
 	p1 := newTestPlugin(t, host)
@@ -354,18 +354,18 @@ func TestTokenVault_TamperingRestartsOnlyVault(t *testing.T) {
 	}
 	require.NoError(t, p1.OnEvent(ctx, event))
 
-	stored := host.state[stateMapKey(stateScope, "", tokenVaultStateKey)]
+	stored := host.state[stateMapKey(stateScope, "", tokenGrottoStateKey)]
 	require.NotNil(t, stored)
 	stored["total_tokens"] = "999999"
 
 	p2 := newTestPlugin(t, host)
 	state := fetchKandy(t, p2, "")
-	require.False(t, state.Counterfeit, "vault corruption must not mark or rebirth Kandy")
-	require.Equal(t, "empty", state.TokenVault.Status)
-	require.Equal(t, "0", state.TokenVault.TotalTokens)
+	require.False(t, state.Counterfeit, "grotto corruption must not mark or rebirth Kandy")
+	require.Equal(t, "empty", state.TokenGrotto.Status)
+	require.Equal(t, "0", state.TokenGrotto.TotalTokens)
 }
 
-func TestTokenVault_UnknownUnicodeAgentTypeGetsReadableRoom(t *testing.T) {
+func TestTokenGrotto_UnknownUnicodeAgentTypeGetsReadableRoom(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	event := &pluginsdk.Event{
@@ -381,13 +381,13 @@ func TestTokenVault_UnknownUnicodeAgentTypeGetsReadableRoom(t *testing.T) {
 
 	require.NoError(t, p.OnEvent(context.Background(), event))
 	state := fetchKandy(t, p, "")
-	require.Len(t, state.TokenVault.Rooms, 1)
-	require.Equal(t, "écho-acp", state.TokenVault.Rooms[0].AgentType)
-	require.Equal(t, "Écho Acp", state.TokenVault.Rooms[0].Label)
-	require.Equal(t, "modèle-α", state.TokenVault.Rooms[0].Models[0].Name)
+	require.Len(t, state.TokenGrotto.Rooms, 1)
+	require.Equal(t, "écho-acp", state.TokenGrotto.Rooms[0].AgentType)
+	require.Equal(t, "Écho Acp", state.TokenGrotto.Rooms[0].Label)
+	require.Equal(t, "modèle-α", state.TokenGrotto.Rooms[0].Models[0].Name)
 }
 
-func TestTokenVault_UsesProductRoomLabels(t *testing.T) {
+func TestTokenGrotto_UsesProductRoomLabels(t *testing.T) {
 	for _, test := range []struct {
 		agentType string
 		label     string
@@ -408,14 +408,14 @@ func TestTokenVault_UsesProductRoomLabels(t *testing.T) {
 
 			require.NoError(t, p.OnEvent(context.Background(), event))
 			state := fetchKandy(t, p, "")
-			require.Len(t, state.TokenVault.Rooms, 1)
-			require.Equal(t, test.agentType, state.TokenVault.Rooms[0].AgentType)
-			require.Equal(t, test.label, state.TokenVault.Rooms[0].Label)
+			require.Len(t, state.TokenGrotto.Rooms, 1)
+			require.Equal(t, test.agentType, state.TokenGrotto.Rooms[0].AgentType)
+			require.Equal(t, test.label, state.TokenGrotto.Rooms[0].Label)
 		})
 	}
 }
 
-func TestTokenVault_UsageDoesNotMutateCreatureLedger(t *testing.T) {
+func TestTokenGrotto_UsageDoesNotMutateCreatureLedger(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
@@ -442,7 +442,7 @@ func TestTokenVault_UsageDoesNotMutateCreatureLedger(t *testing.T) {
 	require.Equal(t, before.UpdatedAt, after.UpdatedAt)
 }
 
-func TestTokenVault_RetainsEveryAgentAndModelWithExactLifetime(t *testing.T) {
+func TestTokenGrotto_RetainsEveryAgentAndModelWithExactLifetime(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
@@ -459,18 +459,18 @@ func TestTokenVault_RetainsEveryAgentAndModelWithExactLifetime(t *testing.T) {
 		)))
 	}
 
-	vault := fetchKandy(t, p, "").TokenVault
-	require.Equal(t, "12000000000000040", vault.TotalTokens, "lifetime total stays exact above Number.MAX_SAFE_INTEGER")
-	require.Len(t, vault.Rooms, 3)
-	require.Equal(t, "codex-acp", vault.Rooms[0].AgentType, "largest room sorts first")
-	require.Len(t, vault.Rooms[0].Models, 41, "no first-model cap or Other bucket")
-	for _, room := range vault.Rooms {
+	grotto := fetchKandy(t, p, "").TokenGrotto
+	require.Equal(t, "12000000000000040", grotto.TotalTokens, "lifetime total stays exact above Number.MAX_SAFE_INTEGER")
+	require.Len(t, grotto.Rooms, 3)
+	require.Equal(t, "codex-acp", grotto.Rooms[0].AgentType, "largest room sorts first")
+	require.Len(t, grotto.Rooms[0].Models, 41, "no first-model cap or Other bucket")
+	for _, room := range grotto.Rooms {
 		require.NotEqual(t, "Other", room.Label)
 		require.Contains(t, modelNames(room), "shared-model", "same model remains distinct inside every agent room")
 	}
 }
 
-func TestTokenVault_RepeatedEventsGrowCountsNotAggregateCardinality(t *testing.T) {
+func TestTokenGrotto_RepeatedEventsGrowCountsNotAggregateCardinality(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
@@ -479,19 +479,19 @@ func TestTokenVault_RepeatedEventsGrowCountsNotAggregateCardinality(t *testing.T
 		require.NoError(t, p.OnEvent(ctx, tokenUsageFixture(fmt.Sprintf("repeat-%04d", index), "codex-acp", "gpt-5.6", 1, base.Add(time.Duration(index)*time.Second))))
 	}
 
-	vault := fetchKandy(t, p, "").TokenVault
-	require.Equal(t, "1000", vault.TotalTokens)
-	require.Len(t, vault.Rooms, 1)
-	require.Len(t, vault.Rooms[0].Models, 1)
+	grotto := fetchKandy(t, p, "").TokenGrotto
+	require.Equal(t, "1000", grotto.TotalTokens)
+	require.Len(t, grotto.Rooms, 1)
+	require.Len(t, grotto.Rooms[0].Models, 1)
 }
 
-func TestTokenVault_RecentBodyHashRingIsBoundedFIFO(t *testing.T) {
+func TestTokenGrotto_RecentBodyHashRingIsBoundedFIFO(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
 	base := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	var first, newest *pluginsdk.Event
-	for index := 0; index < tokenVaultDigestLimit+1; index++ {
+	for index := 0; index < tokenGrottoDigestLimit+1; index++ {
 		event := tokenUsageFixture(fmt.Sprintf("ring-%d", index), "codex-acp", "gpt", 1, base.Add(time.Duration(index)*time.Second))
 		if index == 0 {
 			first = event
@@ -499,19 +499,19 @@ func TestTokenVault_RecentBodyHashRingIsBoundedFIFO(t *testing.T) {
 		newest = event
 		require.NoError(t, p.OnEvent(ctx, event))
 	}
-	require.Equal(t, "513", fetchKandy(t, p, "").TokenVault.TotalTokens)
+	require.Equal(t, "513", fetchKandy(t, p, "").TokenGrotto.TotalTokens)
 	require.NoError(t, p.OnEvent(ctx, newest))
-	require.Equal(t, "513", fetchKandy(t, p, "").TokenVault.TotalTokens, "newest digest remains protected")
+	require.Equal(t, "513", fetchKandy(t, p, "").TokenGrotto.TotalTokens, "newest digest remains protected")
 	require.NoError(t, p.OnEvent(ctx, first))
-	require.Equal(t, "514", fetchKandy(t, p, "").TokenVault.TotalTokens, "oldest digest was evicted first")
+	require.Equal(t, "514", fetchKandy(t, p, "").TokenGrotto.TotalTokens, "oldest digest was evicted first")
 
-	stored := host.state[stateMapKey(stateScope, "", tokenVaultStateKey)]
+	stored := host.state[stateMapKey(stateScope, "", tokenGrottoStateKey)]
 	hashes, ok := stored["recent_body_hashes"].([]any)
 	require.True(t, ok)
-	require.Len(t, hashes, tokenVaultDigestLimit)
+	require.Len(t, hashes, tokenGrottoDigestLimit)
 }
 
-func TestTokenVault_PersistsAndExposesOnlyAggregateMetadata(t *testing.T) {
+func TestTokenGrotto_PersistsAndExposesOnlyAggregateMetadata(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
@@ -523,7 +523,7 @@ func TestTokenVault_PersistsAndExposesOnlyAggregateMetadata(t *testing.T) {
 	event.Payload["usage"].(map[string]any)["provider_reported_cost_subcents"] = float64(99_999)
 	require.NoError(t, p.OnEvent(ctx, event))
 
-	storedJSON, err := json.Marshal(host.state[stateMapKey(stateScope, "", tokenVaultStateKey)])
+	storedJSON, err := json.Marshal(host.state[stateMapKey(stateScope, "", tokenGrottoStateKey)])
 	require.NoError(t, err)
 	response, err := p.HandleWebhook(ctx, &pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET"})
 	require.NoError(t, err)
@@ -552,7 +552,7 @@ func tokenUsageFixture(id, agentType, model string, tokens int64, timestamp time
 	}
 }
 
-func modelNames(room tokenVaultRoomResponse) string {
+func modelNames(room tokenGrottoRoomResponse) string {
 	names := make([]string, 0, len(room.Models))
 	for _, model := range room.Models {
 		names = append(names, model.Name)
