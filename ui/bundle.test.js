@@ -1055,18 +1055,28 @@ test("the cave mouth looks out on the lineage's own habitat, at its own hour", (
   const alpineDay = render.grottoOutsideFor(2, 40, 5150, 13);
   assert.notDeepEqual(alpineDay.stops, emberDay.stops);
 
-  // Midday needs no tint at all; every other hour tints the sky behind the
-  // habitat and dims the light the cave gets.
+  // sceneBgStops keeps hex only, so the stops carry the biome's sky but never
+  // the hour's rgba layer — the mouth has to paint that itself, or night
+  // renders as bright as noon.
+  assert.ok(emberDay.stops.every((stop) => /^#[0-9a-f]{6}$/i.test(stop)));
   const tintOf = (tree) => findNode(tree, (node) => node.props && node.props.id === "kandev-kandy-grotto-skytint");
-  assert.equal(tintOf(day), null);
+  const washOf = (tree) => {
+    const opening = findNode(tree, (node) => node.props && node.props.clipPath);
+    return findNode(opening, (node) => node.type === "rect" && node.props && node.props.fill === "#0b1238");
+  };
+  // Midday is the no-overlay case; every other hour tints the sky and dims the
+  // light the cave gets.
+  assert.equal(tintOf(day), null, "day has no tint");
+  assert.equal(washOf(day), null, "day has no wash");
   const night = render.grottoBackdrop(jsx, render.grottoOutsideFor(3, 40, 5150, 1));
-  assert.ok(tintOf(night));
+  assert.ok(tintOf(night), "night tints the sky");
+  assert.ok(washOf(night), "night washes the habitat");
   const glowOpacity = (tree) =>
     findNode(tree, (node) => node.props && node.props.filter === "url(#kandev-kandy-grotto-blurglow)").props.opacity;
   assert.equal(glowOpacity(day), undefined);
-  assert.ok(glowOpacity(night) < 0.5);
+  assert.ok(glowOpacity(night) < 0.5, "night dims the glow");
 
-  // Every id the mouth adds stays namespaced and resolvable, tint included.
+  // Every id the mouth adds stays namespaced and resolvable.
   const ids = [];
   const refs = [];
   visit(night, (node) => {
@@ -1924,6 +1934,59 @@ test("season mapping covers all twelve months (northern-hemisphere)", () => {
   // Out-of-range months wrap instead of crashing.
   assert.equal(render.seasonForMonth(-1), "winter");
   assert.equal(render.seasonForMonth(12), "winter");
+});
+
+test("the day/night overlay is pinned at every hour x maturity, dim tiers included", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  // The celestial (phase 4-5) dawn/dusk tiers are their own hand-authored
+  // alphas, not a scaling of the lit ones — a refactor that derives them
+  // arithmetically drifts here and nowhere else, since every other test that
+  // reaches a dim phase does so at midday, where there is no overlay at all.
+  // The overlay is prepended, so it is everything up to the first top-level
+  // comma — tracked by depth since each gradient carries commas of its own.
+  const bgAt = (level, hour) => {
+    const bg = render.sceneFor(0, level, 5150, hour).bg;
+    let depth = 0;
+    for (let i = 0; i < bg.length; i++) {
+      if (bg[i] === "(") depth++;
+      else if (bg[i] === ")") depth--;
+      else if (bg[i] === "," && depth === 0) return bg.slice(0, i);
+    }
+    return bg;
+  };
+  assert.equal(
+    bgAt(60, 7),
+    "linear-gradient(to bottom, rgba(255,196,110,0.08) 0%, rgba(255,172,118,0.03) 55%, rgba(255,152,92,0.05) 100%)",
+  );
+  assert.equal(
+    bgAt(60, 19),
+    "linear-gradient(to bottom, rgba(255,122,70,0.08) 0%, rgba(226,92,150,0.05) 55%, rgba(122,62,142,0.05) 100%)",
+  );
+  assert.equal(bgAt(60, 1), "linear-gradient(to bottom, rgba(10,16,50,0.22) 0%, rgba(6,10,34,0.2) 100%)");
+  // The lit tiers, for contrast: same hours, a pre-celestial maturity.
+  assert.equal(
+    bgAt(24, 7),
+    "linear-gradient(to bottom, rgba(255,196,110,0.3) 0%, rgba(255,172,118,0.1) 55%, rgba(255,152,92,0.16) 100%)",
+  );
+  assert.equal(
+    bgAt(24, 19),
+    "linear-gradient(to bottom, rgba(255,122,70,0.3) 0%, rgba(226,92,150,0.2) 55%, rgba(122,62,142,0.18) 100%)",
+  );
+  assert.equal(
+    bgAt(24, 1),
+    "linear-gradient(to bottom, rgba(11,16,52,0.62) 0%, rgba(9,13,44,0.5) 55%, rgba(4,8,28,0.6) 100%)",
+  );
+  // Midday prepends nothing at either tier: the bg is the biome's own, whose
+  // first gradient is never the overlay's `linear-gradient(to bottom, rgba(`.
+  assert.equal(render.sceneFor(0, 24, 5150, 13).bg, render.sceneFor(0, 24, 5150).bg);
+  assert.equal(render.sceneFor(0, 60, 5150, 13).bg, render.sceneFor(0, 60, 5150).bg);
+
+  // The wash the grotto shares tracks the same two tiers.
+  assert.equal(render.skyWashFor("night", 2).opacity, 0.3);
+  assert.equal(render.skyWashFor("night", 4).opacity, 0.1);
+  assert.equal(render.skyWashFor("night", 2).fill, "#0b1238");
+  assert.equal(render.skyWashFor("day", 2), null);
 });
 
 test("sceneFor without a season stays byte-identical; seasons compose on top", () => {

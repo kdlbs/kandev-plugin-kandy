@@ -2356,10 +2356,14 @@ function biomeProps(biome, phase, rand, level) {
 // every biome and phase gets tinted without any biome rewrite. Celestial
 // phases (4-5) are already dark/starry, so they only get a subtle shift.
 //
-// Both halves are tables rather than literals because the card is no longer
-// the only surface wearing them: the grotto's cave mouth paints the same hour
-// in SVG. Stops are [offset, "r,g,b", alpha]; the CSS string is generated so
-// the two surfaces cannot drift apart.
+// Both halves are tabled because the card is not the only surface wearing
+// them. The grotto's cave mouth paints the same hour in SVG, and it cannot
+// recover it from the scene: sceneBgStops reads hex colours only, so the base
+// biome gradient survives the trip and this rgba layer does not. Stops are
+// [offset, "r,g,b", alpha]; the CSS string is generated from the same rows the
+// SVG gradient is built from, so the two surfaces cannot drift apart. Every
+// alpha is hand-authored — the dim (celestial, phase 4-5) tier is its own set
+// of values, not a scaling of the lit one.
 var SKY_TINTS = {
   dawn: {
     lit: [["0%", "255,196,110", 0.3], ["55%", "255,172,118", 0.1], ["100%", "255,152,92", 0.16]],
@@ -2381,8 +2385,6 @@ var SKY_WASHES = {
   night: { fill: "#0b1238", lit: 0.3, dim: 0.1 },
 };
 
-// The tint and the wash as data, so surfaces that are not the card can lay the
-// same hour over their own geometry instead of re-deriving its colour.
 function skyTintFor(dayPhase, phase) {
   var tint = SKY_TINTS[dayPhase];
   if (!tint) return null;
@@ -5101,9 +5103,10 @@ function grottoBackdrop(h, outside) {
     h(
       "g",
       { clipPath: grottoRef(GROTTO_ID, "opening") },
+      // The biome's own sky, from the scene's hex stops...
       h("rect", { x: 430, y: 80, width: 370, height: 380, fill: grottoRef(GROTTO_ID, "sky") }),
-      // The hour tints the sky behind the habitat, exactly as it does on the
-      // card, where this layer is the background and the wash below is not.
+      // ...then the hour over it, the rgba layer the stops could not carry.
+      // Together these are the card's two background layers, in SVG.
       viewTint
         ? h("rect", { x: 430, y: 80, width: 370, height: 380, fill: grottoRef(GROTTO_ID, "skytint") })
         : null,
@@ -8580,6 +8583,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     tokenGrottoResolvedView: tokenGrottoResolvedView,
     grottoBackdrop: grottoBackdrop,
     grottoOutsideFor: grottoOutsideFor,
+    skyWashFor: skyWashFor,
     chamberBackdrop: chamberBackdrop,
     grottoTransitClass: grottoTransitClass,
     grottoRoomSide: grottoRoomSide,
