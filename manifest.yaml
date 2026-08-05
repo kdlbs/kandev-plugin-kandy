@@ -1,6 +1,6 @@
 id: "kandev-plugin-kandy"
 api_version: 1
-version: "0.11.0-dev.20"
+version: "0.11.0-dev.32"
 min_kandev_version: "0.83.0"
 display_name: "Kandy"
 description: "A tiny creature that grows as your agents work — it feeds on agent runs, turns, and conversation, and evolves forever in your session top bar."
@@ -21,7 +21,7 @@ runtime:
 # (scope "instance"), fed by typed event-bus signals. The XP recipe remains
 # server-side only — token observations never award XP. `secrets` holds the
 # HMAC integrity key in kandev's encrypted vault; each ledger uses its own
-# signature domain so vault corruption cannot counterfeit the creature. Token
+# signature domain so ledger corruption cannot counterfeit the creature. Token
 # chambers are adapter/model aggregates; this event has no provider field.
 capabilities:
   state: true
