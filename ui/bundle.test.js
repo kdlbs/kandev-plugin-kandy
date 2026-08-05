@@ -325,7 +325,8 @@ test("token grotto hub and chamber render accessible doors and model piles", () 
   assert.equal(piles[0].props["aria-pressed"], true);
   assert.equal(piles[1].props["aria-pressed"], false);
   assert.ok(findNode(room, (node) => node.type === "svg" && node.props.className === "kandev-kandy-token-stage"));
-  assert.ok(findNode(piles[0], (node) => node.type === "path" && /kandev-kandy-token-pile-stone-fill/.test(node.props.className || "")));
+  assert.ok(findNode(piles[0], (node) => node.props && node.props.className === "kandev-kandy-token-pile-hoard"));
+  assert.equal(piles[0].props["data-grotto-tier"], "loose coins", "100 tokens sits in the lowest hoard tier");
   assert.match(piles[0].props["aria-label"], /gpt-5\.6-codex, 100 tokens in Codex chamber/);
   assert.match(textContent(room), /gpt-5\.6-mini-with-a-very-long-model-name/);
   piles[1].props.onClick();
@@ -395,6 +396,15 @@ test("chamber floor spots rank by size and recency, and merge the overflow", () 
   assert.ok(spots[0].y > spots[spots.length - 1].y);
   assert.ok(spots[0].scale > spots[spots.length - 1].scale);
   assert.ok(spots.every((spot) => spot.y >= 460 && spot.y <= 700), "every spot stands on the drawn floor");
+  // The front row no longer crowds the viewBox bottom: the lowest spot's own
+  // labels (drawn +44 below it) and its ground-shadow hit area (drawn +52
+  // below) must stay inside the 700-tall scene.
+  assert.ok(spots[0].y <= 632, "front spot leaves room below for its labels and hit area (<=632 of 700)");
+  // No depth row floats far from its neighbours — the previous bimodal
+  // layout left an ~80px hole between the mid and front clusters.
+  const ys = spots.map((s) => s.y);
+  const gaps = ys.slice(0, -1).map((y, i) => ys[i] - ys[i + 1]);
+  assert.ok(Math.max(...gaps) <= 48, "no gap between adjacent depth rows exceeds 48 viewBox units: " + gaps.join(","));
 
   const model = (name, tokens, lastSeen) => ({ name, tokens, lastSeen });
   // Fewer models than spots: everyone stands on their own, biggest first.
@@ -544,49 +554,38 @@ test("the chamber view discloses partial/estimated status, not just the hub", ()
   assert.doesNotMatch(textContent(readyRoom), /estimated|incomplete/i);
 });
 
-test("Token Grotto renders deterministic, centered glowstone cairns", () => {
+test("Token Grotto hoards escalate up a fixed, capped spectacle ladder", () => {
   const render = loadBundle().plugin.__render;
-  assert.equal(typeof render.tokenPileFragmentsFor, "function");
+  assert.equal(typeof render.hoardTierFor, "function");
+  assert.equal(typeof render.hoardStyleFor, "function");
 
-  const first = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "100", "100");
-  const again = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "100", "100");
-  const smaller = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "20", "100");
+  // The ladder is ordered and its final tier is a true ceiling: nothing past
+  // it, so a trillion-token pile looks identical to a 4-billion-token one —
+  // deliberately, since neither is reachable in practice (see server/level.go
+  // bandMax for the same "design stops mattering past X" precedent).
+  const tiers = render.hoardTiers;
+  assert.ok(tiers.length >= 8);
+  assert.equal(tiers[tiers.length - 1].max, Infinity);
+  tiers.forEach((tier, i) => {
+    if (i > 0) assert.ok(tier.max > tiers[i - 1].max, "each tier ladder step climbs");
+  });
 
-  assert.deepEqual(first, again);
-  assert.ok(first.length >= 5);
-  assert.ok(first.every((fragment) => fragment.width > 0 && fragment.height > 0 && fragment.bottom >= 0));
-  assert.ok(first.every((fragment) => Number.isInteger(fragment.layer) && Number.isInteger(fragment.slot)));
-  assert.ok(first.every((fragment) => fragment.variant === "glowstone"));
-  assert.ok(first.every((fragment) => /^(basalt|umber|moss|amethyst)$/.test(fragment.color)));
-  assert.ok(first.every((fragment) => typeof fragment.path === "string" && fragment.path.startsWith("M")));
-  assert.ok(first.length > smaller.length, "more tokens add discrete cairn stones");
-  const span = (fragments) =>
-    Math.max(...fragments.map((fragment) => fragment.left + fragment.width)) - Math.min(...fragments.map((fragment) => fragment.left));
-  const height = (fragments) => Math.max(...fragments.map((fragment) => fragment.bottom + fragment.height));
-  assert.ok(
-    height(first) >= height(smaller) + 14,
-    "more tokens materially raise the cairn through additional courses",
-  );
-  assert.ok(
-    span(first) > span(smaller),
-    "more tokens broaden the footing too, so size reads at a glance",
-  );
-  assert.ok(span(first) <= 126 && span(smaller) > 0);
-  const rows = new Map();
-  first.forEach((fragment) => rows.set(fragment.layer, (rows.get(fragment.layer) || 0) + 1));
-  const rowWidths = [...rows.entries()].sort(([a], [b]) => a - b).map(([, count]) => count);
-  assert.ok(rowWidths.every((count, layer) => layer === 0 || count <= rowWidths[layer - 1]));
-  assert.ok(first.filter((fragment) => fragment.layer === 0).length > first.filter((fragment) => fragment.layer === rowWidths.length - 1).length);
-  const center = (Math.min(...first.map((fragment) => fragment.left)) + Math.max(...first.map((fragment) => fragment.left + fragment.width))) / 2;
-  assert.ok(Math.abs(center - 63) <= 2, "stack remains centered in its fixed visual well");
-  assert.ok(first.every((fragment) => fragment.left >= 0 && fragment.left + fragment.width <= 126 && fragment.bottom + fragment.height <= 126));
+  assert.equal(render.hoardTierFor("100").tier.name, tiers[0].name);
+  assert.equal(render.hoardTierFor("5000000000").index, tiers.length - 1);
+  assert.equal(render.hoardTierFor("9007199254740993").index, tiers.length - 1, "absurd counts stay pinned to the ceiling tier, not crash or overflow");
+  assert.equal(render.hoardTierFor(null).index, 0, "an unavailable count reads as the bottom tier, never fabricated size");
 
-  const capstones = first.filter((fragment) => fragment.glowPath);
-  assert.equal(capstones.length, 1, "only the top course catches the light");
-  assert.equal(capstones[0].layer, rowWidths.length - 1);
-  assert.ok(first.every((fragment) => fragment.slot === 0 || fragment.layer === 0), "only the footing course pairs slabs");
-  const courses = (fragments) => new Set(fragments.map((fragment) => fragment.layer)).size;
-  assert.ok(courses(first) > courses(smaller), "token share is read from the number of courses");
+  // SPECTACLE is deterministic and depends only on the token count, not on
+  // which model/agent it belongs to.
+  assert.deepEqual(render.hoardTierFor("40000000"), render.hoardTierFor("40000000"));
+
+  // IDENTITY: one style per lineage_seed, stable across calls, and there is
+  // more than one so friends' grottos can actually look different.
+  assert.ok(render.hoardStyles.length >= 4);
+  assert.deepEqual(render.hoardStyleFor(12345), render.hoardStyleFor(12345));
+  const seenStyles = new Set();
+  for (let seed = 1; seed <= 200; seed++) seenStyles.add(render.hoardStyleFor(seed).id);
+  assert.ok(seenStyles.size > 1, "distinct lineages land on more than one style");
 });
 
 test("Token Grotto pile size follows the square root of the chamber share", () => {
@@ -600,23 +599,71 @@ test("Token Grotto pile size follows the square root of the chamber share", () =
   assert.ok(scale("1", "51000000") >= 0.16, "the smallest pile stays visible and selectable");
   assert.ok(scale("1", "51000000") <= 0.2, "and stays visibly smaller than its neighbours");
   assert.ok(scale("51000000", "51000000") <= 1);
+});
 
-  const tall = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "51000000", "51000000");
-  const short = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "12400000", "51000000");
-  const tiny = render.tokenPileFragmentsFor("codex-acp", "gpt-5.6-codex", "900", "51000000");
-  const height = (fragments) => Math.max(...fragments.map((fragment) => fragment.bottom + fragment.height));
-  const width = (fragments) =>
-    Math.max(...fragments.map((f) => f.left + f.width)) - Math.min(...fragments.map((f) => f.left));
-  assert.ok(height(tall) > height(short) + 25, "a four-times-larger pile stands visibly taller");
-  assert.ok(width(tall) > width(short) + 10, "and sits on a visibly broader footing");
-  // The whole chamber must not collapse into one silhouette: the largest pile
-  // is at least twice the smallest in both directions.
-  assert.ok(height(tall) > height(tiny) * 2);
-  assert.ok(width(tall) > width(tiny) * 1.7);
-  // Everything still fits its 126x126 well.
-  [tall, short, tiny].forEach((pile) => {
-    assert.ok(pile.every((f) => f.left >= 0 && f.left + f.width <= 126 && f.bottom + f.height <= 126));
+test("Token Grotto hoard shape and material come from absolute tokens, proportion only sizes it", () => {
+  const render = loadBundle().plugin.__render;
+  const model = render.tokenGrottoModelFor(
+    sampleKandy({
+      lineage_seed: 777,
+      token_grotto: {
+        status: "ready",
+        total_tokens: "250200",
+        rooms: [
+          {
+            agent_type: "claude-acp",
+            label: "Claude Code",
+            tokens: "250200",
+            // A small room where the "biggest" model is still absolutely
+            // modest — proportion alone would draw it as the room's grandest
+            // pile. It must NOT get a chest just for winning a small room:
+            // 250K sits in the "coin mound" tier on the absolute ladder.
+            models: [
+              { name: "dominant-but-modest", tokens: "250000" },
+              { name: "barely-anything", tokens: "200" },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  const room = render.tokenGrottoRoom(jsx, "DialogTitle", model, "claude-acp", null, { current: null }, () => {}, () => {}, () => {}, { type: "kandy" }, "right", 777);
+  const piles = [];
+  visit(room, (node) => {
+    if (node.props && node.props["data-grotto-model"]) piles.push(node);
   });
+  assert.equal(piles.length, 2);
+  const dominant = piles.find((p) => p.props["data-grotto-model"] === "dominant-but-modest");
+  assert.equal(dominant.props["data-grotto-tier"], "coin mound");
+
+  // Same absolute count, wildly different relative position (biggest model
+  // in a whale room vs. a modest one): the tier name must match either way.
+  const whaleRoomModel = render.tokenGrottoModelFor(
+    sampleKandy({
+      token_grotto: {
+        status: "ready",
+        total_tokens: "500000000",
+        rooms: [
+          {
+            agent_type: "claude-acp",
+            label: "Claude Code",
+            tokens: "500000000",
+            models: [
+              { name: "same-as-above", tokens: "250000" },
+              { name: "a-real-whale", tokens: "499750000" },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  const whaleRoom = render.tokenGrottoRoom(jsx, "DialogTitle", whaleRoomModel, "claude-acp", null, { current: null }, () => {}, () => {}, () => {}, { type: "kandy" }, "right", 1);
+  const whalePiles = [];
+  visit(whaleRoom, (node) => {
+    if (node.props && node.props["data-grotto-model"]) whalePiles.push(node);
+  });
+  const sameAsAbove = whalePiles.find((p) => p.props["data-grotto-model"] === "same-as-above");
+  assert.equal(sameAsAbove.props["data-grotto-tier"], "coin mound", "250K reads the same tier whether it's the room's biggest or its smallest");
 });
 
 test("a passage hands its wall to the chamber, and Kandy stands on that side", () => {
@@ -789,12 +836,28 @@ test("Kandy walks between the surface and the grotto instead of the panel slidin
   assert.match(bundleSource, /GROTTO_WALK_IN_MS\);/);
   assert.match(bundleSource, /var GROTTO_WALK_OUT_MS = 640;/);
   assert.match(bundleSource, /var GROTTO_WALK_IN_MS = 940;/);
-  // Reduced motion swaps the panel with no walk at all.
-  assert.match(bundleSource, /if \(prefersReducedMotion\(\)\) \{\n        swap\(\);\n        return;/);
+  // Reduced motion, or Kandy being asleep, swaps the panel with no walk at all.
+  assert.match(bundleSource, /if \(prefersReducedMotion\(\) \|\| kandyAsleep\) \{\n        swap\(\);\n        return;/);
   assert.match(bundleSource, /walkBetweenScenes\("depart-surface", "arrive-hub"[\s\S]*?setGrottoView\("hub"\)/);
+  // From the hub, Exit drops the remembered passage and climbs out through
+  // the cave mouth (entrance) — not a side-walk.
   assert.match(
     bundleSource,
-    /if \(resolvedGrottoView === "hub"\) setGrottoSide\(null\);\n\s*walkBetweenScenes\(resolvedGrottoView === "hub" \? "depart-hub" : "depart-room", "arrive-surface"/,
+    /if \(resolvedGrottoView === "hub"\) \{\n\s*\/\/ Leaving from the hub[\s\S]*?setGrottoSide\(null\);\n\s*walkBetweenScenes\("depart-hub", "arrive-surface"/,
+  );
+  // From a chamber, Exit routes back through the hub's cave mouth rather
+  // than side-walking straight to the surface: Kandy walks out the chamber
+  // door, the hub flashes past with Kandy already climbing out the mouth it
+  // came in by, then it surfaces. The three-step walk (depart-room → hub
+  // flash with depart-hub → arrive-surface) replaces the old single
+  // depart-room, "arrive-surface" leg that skipped the cave mouth.
+  assert.match(
+    bundleSource,
+    /setGrottoTransit\("depart-room"\);[\s\S]*?setGrottoView\("hub"\);[\s\S]*?setGrottoTransit\("depart-hub"\);[\s\S]*?setGrottoTransit\("arrive-surface"\);/,
+  );
+  assert.doesNotMatch(
+    bundleSource,
+    /walkBetweenScenes\(resolvedGrottoView === "hub" \? "depart-hub" : "depart-room", "arrive-surface"/,
   );
   // Opening a chamber walks through the passage that was clicked; Back
   // retraces it.
@@ -863,6 +926,35 @@ test("Kandy walks between the surface and the grotto instead of the panel slidin
     css,
     /@media \(prefers-reduced-motion: reduce\)\{\.kandev-kandy-walkoff,\.kandev-kandy-walkoff-left,\.kandev-kandy-walkin-shore,\.kandev-kandy-walkin-shore-right,\.kandev-kandy-walkin-floor,\.kandev-kandy-walkin-floor-right,\.kandev-kandy-walkin-entrance,\.kandev-kandy-walkout-entrance,\.kandev-kandy-walkin-side/,
   );
+});
+
+test("asleep Kandy stays in bed for the grotto: no walk, no creature underground", () => {
+  // The dialog's own kandyCard already sleeps Kandy correctly (its own
+  // sleepState computation, tested elsewhere via kandyCard's timeOfDay arg).
+  // What's new: the same schedule now also stops the surface-to-grotto walk
+  // and hides Kandy in the hub/room scenes, without blocking entry — the
+  // grotto still opens, chambers still work, only the creature is absent.
+  assert.match(
+    bundleSource,
+    /var kandyAsleep = shown\.level > 1 && isAsleep\(\(shown\.lineage_seed \|\| 1\) >>> 0, timeOfDay\);/,
+  );
+  // The chip's own sleep flag is the same computation, not a second source
+  // of truth that could drift from the grotto's.
+  assert.match(bundleSource, /var chipShown = shown;\n\s*var chipAsleep = kandyAsleep;/);
+  // Asleep, grottoCreature returns null before touching transit/gait at all
+  // — no creature to animate on any of the three scenes (card, hub, room).
+  assert.match(
+    bundleSource,
+    /function grottoCreature\(surface\) \{\n\s*if \(kandyAsleep\) return null;\n\s*var creature = creatureSvg\(h, shown, 64\);/,
+  );
+  // walkBetweenScenes (shared by every leg: surface<->hub<->hub<->room) swaps
+  // the panel instantly when asleep, same as reduced motion — nothing walks
+  // off a scene Kandy was never standing on.
+  assert.match(bundleSource, /if \(prefersReducedMotion\(\) \|\| kandyAsleep\) \{\n\s*swap\(\);\n\s*return;/);
+  // Entry itself stays open: nothing in openTokenGrotto or tokenGrottoButton
+  // checks kandyAsleep before allowing the dialog/hub to open.
+  assert.doesNotMatch(bundleSource, /function openTokenGrotto\(\)[\s\S]{0,200}kandyAsleep/);
+  assert.doesNotMatch(bundleSource, /function tokenGrottoButton[\s\S]{0,400}[Aa]sleep/);
 });
 
 test("token grotto resolves removed chambers to hub and subscribes to live usage", () => {
@@ -935,7 +1027,7 @@ test("token grotto CSS uses vertical responsive grids without paging tracks", ()
   assert.match(css, /\.kandev-kandy-token-pile:hover \.kandev-kandy-grotto-exact/);
   assert.match(css, /\.kandev-kandy-token-pile:focus-visible \.kandev-kandy-grotto-exact/);
   assert.match(css, /\.kandev-kandy-token-pile\.is-revealed \.kandev-kandy-grotto-exact/);
-  assert.match(css, /\.kandev-kandy-token-pile-stone/);
+  assert.match(css, /\.kandev-kandy-token-pile-hoard/);
   assert.doesNotMatch(css, /\.kandev-kandy-token-pile-fragment\.is-chip/);
   assert.doesNotMatch(css, /grotto-(?:carousel|pager|track)/);
 

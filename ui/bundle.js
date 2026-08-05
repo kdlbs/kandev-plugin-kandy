@@ -2686,8 +2686,8 @@ var KANDY_CSS =
   ".kandev-kandy-token-pile-name,.kandev-kandy-token-pile-compact,.kandev-kandy-grotto-exact{text-anchor:middle;paint-order:stroke;stroke:rgba(6,5,4,.72);stroke-width:5;stroke-linejoin:round;font-family:inherit}" +
   ".kandev-kandy-token-pile-name{fill:var(--grotto-ink);font-size:23px;font-weight:750}.kandev-kandy-token-pile-compact{fill:var(--grotto-ink-dim);font-size:19px}" +
   ".kandev-kandy-grotto-exact{fill:#ffe4a8;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;opacity:0;visibility:hidden}" +
-  ".kandev-kandy-token-pile:hover .kandev-kandy-token-pile-stone,.kandev-kandy-token-pile:focus-visible .kandev-kandy-token-pile-stone,.kandev-kandy-token-pile.is-revealed .kandev-kandy-token-pile-stone{filter:drop-shadow(0 2px 3px rgba(0,0,0,.3)) brightness(1.14)}" +
-  ".kandev-kandy-token-pile-shadow{fill:rgba(0,0,0,.24);filter:blur(3px)}.kandev-kandy-token-pile-stone{filter:drop-shadow(0 2px 2px rgba(0,0,0,.28))}.kandev-kandy-token-pile-stone-fill{stroke:rgba(255,255,255,.24);stroke-width:1}.kandev-kandy-token-pile-stone-fill.is-basalt{fill:#59646c}.kandev-kandy-token-pile-stone-fill.is-umber{fill:#956d4e}.kandev-kandy-token-pile-stone-fill.is-moss{fill:#577e6c}.kandev-kandy-token-pile-stone-fill.is-amethyst{fill:#74668c}.kandev-kandy-token-pile-stone-glow{fill:none;stroke:rgba(255,246,202,.6);stroke-width:1.3;stroke-linecap:round;opacity:.85}" +
+  ".kandev-kandy-token-pile:hover .kandev-kandy-token-pile-hoard,.kandev-kandy-token-pile:focus-visible .kandev-kandy-token-pile-hoard,.kandev-kandy-token-pile.is-revealed .kandev-kandy-token-pile-hoard{filter:drop-shadow(0 2px 3px rgba(0,0,0,.3)) brightness(1.14)}" +
+  ".kandev-kandy-token-pile-hoard{filter:drop-shadow(0 2px 2px rgba(0,0,0,.28))}" +
   ".kandev-kandy-token-pile:hover .kandev-kandy-grotto-exact,.kandev-kandy-token-pile:focus-visible .kandev-kandy-grotto-exact,.kandev-kandy-token-pile.is-revealed .kandev-kandy-grotto-exact{opacity:1;visibility:visible}" +
   ".kandev-kandy-grotto-manifest{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:2;box-sizing:border-box;width:min(300px,calc(100% - 24px));max-height:62%;overflow-y:auto;overscroll-behavior:contain;padding:10px 12px;border:1px solid var(--grotto-edge);border-radius:12px;background:rgba(12,10,8,.94);color:var(--grotto-ink);font-size:11px}" +
   ".kandev-kandy-grotto-manifest strong{display:block;margin-bottom:6px;font-size:11px}.kandev-kandy-grotto-manifest ul{margin:0;padding:0;list-style:none}" +
@@ -2916,7 +2916,7 @@ var KANDY_CSS =
   ".kandev-kandy-photo-panel:focus{outline:none}" +
   ".kandev-kandy-photo-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-walkoff,.kandev-kandy-walkoff-left,.kandev-kandy-walkin-shore,.kandev-kandy-walkin-shore-right,.kandev-kandy-walkin-floor,.kandev-kandy-walkin-floor-right,.kandev-kandy-walkin-entrance,.kandev-kandy-walkout-entrance,.kandev-kandy-walkin-side,.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc,.kandev-kandy-sob,.kandev-kandy-tear,.kandev-kandy-puddle,.kandev-kandy-gait-waddle,.kandev-kandy-gait-stride,.kandev-kandy-gait-slither,.kandev-kandy-gait-shuffle,.kandev-kandy-gait-hopskip,.kandev-kandy-gait-glide{animation:none}.kandev-kandy-gait-drift{transform:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-token-pile-stone{animation:none!important;transition:none!important}.kandev-kandy-helpcontent{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-walkoff,.kandev-kandy-walkoff-left,.kandev-kandy-walkin-shore,.kandev-kandy-walkin-shore-right,.kandev-kandy-walkin-floor,.kandev-kandy-walkin-floor-right,.kandev-kandy-walkin-entrance,.kandev-kandy-walkout-entrance,.kandev-kandy-walkin-side,.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc,.kandev-kandy-sob,.kandev-kandy-tear,.kandev-kandy-puddle,.kandev-kandy-gait-waddle,.kandev-kandy-gait-stride,.kandev-kandy-gait-slither,.kandev-kandy-gait-shuffle,.kandev-kandy-gait-hopskip,.kandev-kandy-gait-glide{animation:none}.kandev-kandy-gait-drift{transform:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-token-pile-hoard{animation:none!important;transition:none!important}.kandev-kandy-helpcontent{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -4704,51 +4704,246 @@ function tokenGrottoHash(agentType, model) {
   return hash >>> 0;
 }
 
-function tokenPileFragmentsFor(agentType, model, value, maximum) {
-  var scale = tokenPileScale(value, maximum);
-  var colors = ["basalt", "umber", "moss", "amethyst"];
-  // A cairn grows by stacking narrower courses on a fixed footing, never by
-  // spreading wider, so neighbouring piles stay comparable inside their tiles.
-  var courses = 2 + Math.round(scale * 11);
-  // A bigger hoard is both taller and broader: courses stack higher and the
-  // footing slabs are cut wider, so neighbouring piles read as different sizes
-  // rather than as one cairn drawn twice.
-  var footing = 24 + scale * 34;
-  var fragments = [];
-  var bottom = 4;
-  var index = 0;
-  for (var layer = 0; layer < courses; layer++) {
-    var taper = courses === 1 ? 0 : layer / (courses - 1);
-    var slots = layer === 0 ? 2 : 1;
-    var slabWidth = Math.round(footing * (1 - taper * 0.45));
-    for (var slot = 0; slot < slots; slot++) {
-      var stoneHash = tokenGrottoHash(agentType, model + "\u0000" + index);
-      var width = slots === 2 ? Math.round(slabWidth / 2) - 1 + (stoneHash % 3) : slabWidth - 3 + (stoneHash % 5);
-      var height = Math.max(8, Math.round(11 - taper * 3) + ((stoneHash >>> 4) % 3));
-      var inset = Math.max(2, Math.round(width * 0.14));
-      var top = Math.max(2, Math.round(height * 0.18));
-      fragments.push({
-        width: width,
-        height: height,
-        left: Math.round(63 + (slot - (slots - 1) / 2) * (width + 2) - width / 2),
-        bottom: bottom,
-        tilt: ((stoneHash >>> 8) % 5) - 2,
-        layer: layer,
-        slot: slot,
-        variant: "glowstone",
-        color: colors[(tokenGrottoHash(agentType, model) + layer) % colors.length],
-        path: "M2 " + (height - 3) + " Q1 " + Math.round(height / 2) + " " + inset + " " + top + " Q" + Math.round(width / 2) + " 0 " + (width - inset) + " " + top + " Q" + (width - 1) + " " + Math.round(height / 2) + " " + (width - 3) + " " + (height - 2) + " Q" + Math.round(width / 2) + " " + (height + 1) + " 2 " + (height - 3) + " Z",
-        // Only the capstone catches the light, marking the top of the stack.
-        glowPath:
-          layer === courses - 1
-            ? "M" + inset + " " + top + " Q" + Math.round(width / 2) + " " + Math.max(1, top - 3) + " " + (width - inset) + " " + top
-            : null,
-      });
-      index++;
-    }
-    bottom += Math.max(6, Math.round(9 - taper * 3));
+// --- Grotto hoards: what a model's tokens are made of -----------------------
+//
+// Three independent axes, the same way a creature already varies along more
+// than one dimension (level vs. lineage_seed vs. biome):
+//   PROPORTION — tokenPileScale, relative to the biggest model in THIS room.
+//     Sizes a pile among its neighbours. Unchanged, still self-normalizing.
+//   SPECTACLE — the model's own absolute token count against a fixed ladder
+//     (hoardTierFor). Decides what the pile is MADE OF, so a friend with 10x
+//     more tokens is visibly richer, not just a taller version of the same
+//     pile. The ladder is capped the same way levels are (bandMax in
+//     server/level.go): steps get tight and simply stop past a few billion
+//     tokens, because nobody realistically reaches a trillion — the top tier
+//     repeats forever, exactly like the post-bandMax prestige ladder does.
+//   IDENTITY — lineage_seed picks a palette+motif family (hoardStyleFor), so
+//     two grottos at the identical tier still read as different creatures'
+//     hoards, not a shared asset recolored.
+var HOARD_TIERS = [
+  { max: 30e3, kind: "scatter", name: "loose coins", gems: 0, glow: 0, relics: 0 },
+  { max: 100e3, kind: "scatter", name: "handful", gems: 0, glow: 0, relics: 0 },
+  { max: 320e3, kind: "mound", name: "coin mound", gems: 0, glow: 0.08, relics: 0 },
+  { max: 1e6, kind: "mound", name: "coin hoard", gems: 0, glow: 0.15, relics: 0 },
+  { max: 3.2e6, kind: "chest", name: "small chest", gems: 0, glow: 0.22, relics: 0 },
+  { max: 10e6, kind: "chest", name: "banded chest", gems: 1, glow: 0.32, relics: 0 },
+  { max: 32e6, kind: "chest", name: "gem chest", gems: 3, glow: 0.42, relics: 0 },
+  { max: 100e6, kind: "chest", name: "royal chest", gems: 5, glow: 0.52, relics: 0 },
+  { max: 320e6, kind: "vault", name: "ornate vault", gems: 7, glow: 0.62, relics: 1 },
+  { max: 1e9, kind: "vault", name: "twin hoard", gems: 9, glow: 0.74, relics: 2 },
+  { max: 3.2e9, kind: "dragon", name: "dragon hoard", gems: 12, glow: 0.88, relics: 3 },
+  { max: Infinity, kind: "dragon", name: "mythic hoard", gems: 15, glow: 1, relics: 4 },
+];
+
+function hoardTierFor(tokens) {
+  var decimal = tokenGrottoDecimal(tokens);
+  var n = decimal === null ? 0 : Number(decimal);
+  for (var i = 0; i < HOARD_TIERS.length; i++) {
+    if (n < HOARD_TIERS[i].max) return { tier: HOARD_TIERS[i], index: i };
   }
-  return fragments;
+  return { tier: HOARD_TIERS[HOARD_TIERS.length - 1], index: HOARD_TIERS.length - 1 };
+}
+
+// One palette+motif family per lineage. Coin/gem colors and material lean
+// (gold, silver, gemstone, verdant, void, ember) come along together so a
+// grotto reads as one hoard, not mismatched parts.
+var HOARD_STYLES = [
+  { id: "goldsmith", coin: "#f6c944", coinDark: "#8a5a1c", shine: "#fff6cf", wood: "#6b4326", lid: "#7a4e2c", band: "#3a3a3f", trim: "#e0aa3f", glow: "#ffdb7a", gems: ["#7fd8e0", "#c9a6f0", "#f28ba0"] },
+  { id: "silverwright", coin: "#dfe7ef", coinDark: "#79879a", shine: "#ffffff", wood: "#3f4a63", lid: "#4c5878", band: "#232833", trim: "#b9c6d6", glow: "#cfe2ff", gems: ["#8fd0ff", "#b9a6f0", "#7fe0c0"] },
+  { id: "gemcutter", coin: "#efd9a0", coinDark: "#8b7440", shine: "#fff8e6", wood: "#4b3560", lid: "#5b4174", band: "#2a1e38", trim: "#d9b8ff", glow: "#e6c6ff", gems: ["#ff8fb0", "#8fe0ff", "#c08fff", "#8fffb8", "#ffd98f"] },
+  { id: "relicarium", coin: "#c08a3e", coinDark: "#6b4a1e", shine: "#ecd0a0", wood: "#3f4a33", lid: "#4d5a3d", band: "#2b3325", trim: "#7fbfa0", glow: "#9fd8b0", gems: ["#7fbfa0", "#c9b07f", "#a0c0d0"] },
+  { id: "voidcache", coin: "#a98fe0", coinDark: "#4b3a75", shine: "#e6dcff", wood: "#241f33", lid: "#2f2842", band: "#15121f", trim: "#6fe0d0", glow: "#a98fff", gems: ["#6fe0d0", "#ff8fd0", "#8f9fff"] },
+  { id: "emberforge", coin: "#f09040", coinDark: "#8a3a10", shine: "#ffd8a0", wood: "#3a2420", lid: "#4a2e26", band: "#1e1512", trim: "#ff7040", glow: "#ff9050", gems: ["#ffb060", "#ff6040", "#ffd070"] },
+];
+
+function hoardStyleFor(lineageSeed) {
+  return HOARD_STYLES[tokenGrottoHash("hoardstyle", String(lineageSeed >>> 0)) % HOARD_STYLES.length];
+}
+
+function hoardCoin(h, key, x, y, r, style) {
+  return h(
+    "g",
+    { key: key },
+    h("ellipse", { cx: x, cy: y + r * 0.16, rx: r, ry: r * 0.42, fill: style.coinDark }),
+    h("ellipse", { cx: x, cy: y, rx: r, ry: r * 0.42, fill: style.coin, stroke: style.coinDark, strokeWidth: 0.6 }),
+    h("ellipse", { cx: x, cy: y - r * 0.08, rx: r * 0.42, ry: r * 0.17, fill: style.shine, opacity: 0.7 }),
+  );
+}
+
+function hoardScatter(h, seed, style, size) {
+  var count = 2 + Math.round(size * 5);
+  var coins = [];
+  for (var i = 0; i < count; i++) {
+    var hv = tokenGrottoHash(seed, "s" + i);
+    coins.push(hoardCoin(h, "s" + i, 63 + ((hv % 1000) / 1000 - 0.5) * 62, 116 + ((hv >>> 9) % 8), 9 - (hv % 3), style));
+  }
+  return h("g", null, h("ellipse", { cx: 63, cy: 121, rx: 36, ry: 7, fill: "rgba(0,0,0,.22)" }), coins);
+}
+
+function hoardMound(h, seed, style, size, spreadMul) {
+  var stacks = 3 + Math.round(size * 6);
+  var spread = (28 + size * 44) * (spreadMul || 1);
+  var coins = [];
+  for (var s = 0; s < stacks; s++) {
+    var hb = tokenGrottoHash(seed, "k" + s);
+    var x = 63 + ((hb % 1000) / 1000 - 0.5) * spread * 2;
+    var tall = Math.max(1, Math.round((2 + size * 9) * (0.5 + ((hb >>> 8) % 100) / 200) * (1 - Math.abs(x - 63) / (spread * 2 + 40))));
+    for (var c = 0; c < tall; c++) {
+      var hv = tokenGrottoHash(seed, "k" + s + "c" + c);
+      coins.push({ x: x + ((hv >>> 4) % 5) - 2, y: 122 - c * 3.5, r: 12 - (hv % 3), key: s + "_" + c });
+    }
+  }
+  coins.sort(function (a, b) {
+    return a.y - b.y;
+  });
+  return h(
+    "g",
+    null,
+    h("ellipse", { cx: 63, cy: 121, rx: 24 + spread, ry: 10, fill: "rgba(0,0,0,.26)" }),
+    coins.map(function (c) {
+      return hoardCoin(h, c.key, c.x, c.y, c.r, style);
+    }),
+  );
+}
+
+function hoardGems(h, seed, style, count, w, bodyH) {
+  var gems = [];
+  for (var i = 0; i < count; i++) {
+    var hv = tokenGrottoHash(seed, "g" + i);
+    var gx = 63 + ((hv % 1000) / 1000 - 0.5) * w * 0.86;
+    var gy = 126 - bodyH * (0.25 + ((hv >>> 8) % 100) / 100 * 0.55);
+    var r = 2.6 + (hv % 4);
+    var col = style.gems[(hv >>> 3) % style.gems.length];
+    gems.push(
+      h(
+        "g",
+        { key: "g" + i },
+        h("path", {
+          fill: col,
+          stroke: "#fff",
+          strokeWidth: 0.5,
+          opacity: 0.95,
+          d: "M" + gx + " " + (gy - r) + " L" + (gx + r) + " " + gy + " L" + gx + " " + (gy + r) + " L" + (gx - r) + " " + gy + " Z",
+        }),
+        h("path", { fill: "#fff", opacity: 0.55, d: "M" + gx + " " + (gy - r) + " L" + (gx + r * 0.4) + " " + (gy - r * 0.1) + " L" + gx + " " + gy + " Z" }),
+      ),
+    );
+  }
+  return h("g", null, gems);
+}
+
+// Crown / goblet / amulet — a small deterministic pick per relic slot, only
+// reached at vault tier and up.
+function hoardRelic(h, seed, style, index, x, y) {
+  var kind = tokenGrottoHash(seed, "r" + index) % 3;
+  if (kind === 0) {
+    return h(
+      "g",
+      { key: "r" + index },
+      h("path", {
+        fill: style.trim,
+        stroke: style.coinDark,
+        strokeWidth: 0.7,
+        d: "M" + (x - 11) + " " + y + " L" + (x - 11) + " " + (y - 7) + " L" + (x - 5.5) + " " + (y - 2) + " L" + x + " " + (y - 10) + " L" + (x + 5.5) + " " + (y - 2) + " L" + (x + 11) + " " + (y - 7) + " L" + (x + 11) + " " + y + " Z",
+      }),
+      h("circle", { cx: x, cy: y - 11, r: 2, fill: style.gems[0] }),
+    );
+  }
+  if (kind === 1) {
+    return h(
+      "g",
+      { key: "r" + index },
+      h("path", {
+        fill: style.trim,
+        stroke: style.coinDark,
+        strokeWidth: 0.7,
+        d: "M" + (x - 6) + " " + (y - 14) + " L" + (x + 6) + " " + (y - 14) + " L" + (x + 3) + " " + (y - 5) + " L" + (x - 3) + " " + (y - 5) + " Z",
+      }),
+      h("rect", { x: x - 1.4, y: y - 6, width: 2.8, height: 5, fill: style.trim }),
+      h("ellipse", { cx: x, cy: y, rx: 6, ry: 2.2, fill: style.trim }),
+    );
+  }
+  return h(
+    "g",
+    { key: "r" + index },
+    h("circle", { cx: x, cy: y - 8, r: 5.5, fill: "none", stroke: style.trim, strokeWidth: 2 }),
+    h("circle", { cx: x, cy: y - 8, r: 2.2, fill: style.gems[1 % style.gems.length] }),
+  );
+}
+
+function hoardChest(h, seed, style, tier, size, ornate, wMul) {
+  var w = (62 + size * 58) * (wMul || 1);
+  var bodyH = 28 + size * 28;
+  var x0 = 63 - w / 2;
+  var dome = bodyH * 0.34;
+  var band = ornate ? style.trim : style.band;
+  return h(
+    "g",
+    null,
+    tier.glow > 0.3 ? h("ellipse", { cx: 63, cy: 126 - bodyH * 0.55, rx: w * 0.78, ry: bodyH * 1.05, fill: style.glow, opacity: tier.glow * 0.22 }) : null,
+    h("ellipse", { cx: 63, cy: 121, rx: w * 0.62, ry: 9, fill: "rgba(0,0,0,.3)" }),
+    hoardCoin(h, "spL", 63 - w * 0.46, 120, 8, style),
+    hoardCoin(h, "spR", 63 + w * 0.46, 120, 8, style),
+    h("rect", { x: x0, y: 126 - bodyH, width: w, height: bodyH, rx: 4, fill: style.wood, stroke: "rgba(0,0,0,.4)", strokeWidth: 2 }),
+    h("path", { fill: style.lid, stroke: "rgba(0,0,0,.4)", strokeWidth: 2, d: "M" + x0 + " " + (126 - bodyH) + " Q63 " + (126 - bodyH - dome * 2) + " " + (x0 + w) + " " + (126 - bodyH) + " Z" }),
+    h("rect", { x: x0 + 2, y: 126 - bodyH - 1.6, width: w - 4, height: 3.2, fill: style.glow, opacity: 0.45 + tier.glow * 0.55 }),
+    h("rect", { x: 63 - w * 0.055, y: 126 - bodyH, width: w * 0.11, height: bodyH, fill: band }),
+    h("rect", { x: x0, y: 126 - bodyH * 0.54, width: w, height: bodyH * 0.1, fill: band }),
+    ornate ? h("rect", { x: x0, y: 126 - bodyH * 0.9, width: w, height: bodyH * 0.06, fill: style.trim, opacity: 0.8 }) : null,
+    h("rect", { x: 63 - w * 0.065, y: 126 - bodyH * 0.6, width: w * 0.13, height: bodyH * 0.2, rx: 2, fill: style.trim }),
+    tier.gems > 0 ? hoardGems(h, seed, style, Math.min(tier.gems, 6), w * 0.9, bodyH) : null,
+  );
+}
+
+// The hero chest sits centered and forward; flanking chests (dragon tier)
+// tuck in behind at a smaller scale. Their offsets are DERIVED from that
+// scale, not eyeballed: at scale s a chest's own baseline (y=126) lands at
+// 126*s, so translateY = desiredFloorY - 126*s, and its centre (x=63) lands
+// at 63*s, so translateX = desiredCenterX - 63*s. Guessing these left them
+// floating off the floor during prototyping.
+function hoardFlank(h, node, desiredX, desiredY, scale) {
+  var tx = desiredX - 63 * scale;
+  var ty = desiredY - 126 * scale;
+  return h("g", { transform: "translate(" + tx + " " + ty + ") scale(" + scale + ")" }, node);
+}
+
+function hoardArtFor(h, seed, style, tierInfo, size) {
+  var tier = tierInfo.tier;
+  if (tier.kind === "scatter") return hoardScatter(h, seed, style, size);
+  if (tier.kind === "mound") return hoardMound(h, seed, style, size);
+  if (tier.kind === "chest") return hoardChest(h, seed, style, tier, size, tierInfo.index >= 7, 1);
+  var heroH = 28 + size * 28;
+  if (tier.kind === "vault") {
+    return h(
+      "g",
+      null,
+      hoardMound(h, seed + " bed", style, Math.min(1, size + 0.25), 1.25),
+      hoardChest(h, seed, style, tier, size, true, 0.92),
+      hoardGems(h, seed + " loose", style, Math.max(0, tier.gems - 6), 118, 34),
+      tier.relics >= 1 ? hoardRelic(h, seed, style, 0, 63, 126 - heroH - 14) : null,
+      tier.relics >= 2 ? hoardRelic(h, seed, style, 1, 26, 120) : null,
+    );
+  }
+  // dragon: one glow, a deep coin bed, a hero chest with two smaller chests
+  // flanking it further back, and a relic row on top. The flanking chests
+  // draw with glow disabled — three stacked glow ellipses read as grey mud
+  // rather than three points of light.
+  var flankTier = Object.assign({}, tier, { glow: 0 });
+  var relics = [];
+  for (var i = 0; i < tier.relics; i++) {
+    relics.push(hoardRelic(h, seed, style, i, 63 + (i - (tier.relics - 1) / 2) * 26, 126 - heroH - 22));
+  }
+  return h(
+    "g",
+    null,
+    h("ellipse", { cx: 63, cy: 104, rx: 82, ry: 30, fill: style.glow, opacity: tier.glow * 0.16 }),
+    hoardFlank(h, hoardChest(h, seed + " L", style, flankTier, size, true, 1), 11, 54, 0.46),
+    hoardFlank(h, hoardChest(h, seed + " R", style, flankTier, size, true, 1), 101, 54, 0.46),
+    hoardMound(h, seed + " bed", style, 1, 1.55),
+    hoardChest(h, seed, style, flankTier, size, true, 0.84),
+    hoardGems(h, seed + " loose", style, Math.max(0, tier.gems - 8), 132, 40),
+    relics,
+  );
 }
 
 function tokenGrottoAction(h, label, onClick) {
@@ -5601,17 +5796,23 @@ function tokenGrottoHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, o
   );
 }
 
+// Ten floor spots ranked front-first: index 0 is the room's main stage and
+// index 9 is the back of the room. Y climbs in an even perspective gradient
+// from the front (y=628) up toward the floor line (y≈438) at the back, so no
+// cluster crowds the bottom edge and no row floats far from its neighbours.
+// The frontmost label (+44 below the spot) clears the viewBox bottom (700)
+// with room for the pile's own ground shadow hit area (+52 below).
 var CHAMBER_PILE_SPOTS = [
-  { x: 600, y: 652, scale: 1 },
-  { x: 360, y: 636, scale: 0.94 },
-  { x: 840, y: 636, scale: 0.94 },
-  { x: 500, y: 556, scale: 0.78 },
-  { x: 700, y: 556, scale: 0.78 },
-  { x: 300, y: 548, scale: 0.74 },
-  { x: 900, y: 548, scale: 0.74 },
+  { x: 600, y: 628, scale: 1 },
+  { x: 360, y: 612, scale: 0.94 },
+  { x: 840, y: 612, scale: 0.94 },
+  { x: 500, y: 566, scale: 0.8 },
+  { x: 700, y: 566, scale: 0.8 },
+  { x: 300, y: 530, scale: 0.72 },
+  { x: 900, y: 530, scale: 0.72 },
   { x: 430, y: 496, scale: 0.62 },
   { x: 770, y: 496, scale: 0.62 },
-  { x: 600, y: 490, scale: 0.6 },
+  { x: 600, y: 472, scale: 0.56 },
 ];
 
 var MERGED_PILE_KEY = "\u0000merged";
@@ -5690,12 +5891,21 @@ function tokenPilePlacement(models, spots) {
 
 // One pile standing on one floor spot, drawn in the backdrop's coordinate
 // space so it rests on the painted stone rather than floating in a CSS grid.
-function tokenModelPile(h, room, entry, spot, maximum, revealedKey, onToggle) {
+// One pile standing on one floor spot, drawn in the backdrop's coordinate
+// space so it rests on the painted stone rather than floating in a CSS grid.
+// scale (PROPORTION) is this model's share of the room's biggest pile; tier
+// (SPECTACLE) is this model's own absolute token count against the fixed
+// ladder; style (IDENTITY) is the lineage's own palette, shared by every
+// pile in this grotto. See the "Grotto hoards" block above tokenGrottoAction.
+function tokenModelPile(h, room, entry, spot, maximum, revealedKey, onToggle, lineageSeed) {
   var model = entry.model;
   var key = entry.merged ? MERGED_PILE_KEY : room.agentType + "\u0000" + model.name;
   var exact = formatTokenExact(model.tokens);
   var revealed = revealedKey === key;
-  var fragments = tokenPileFragmentsFor(room.agentType, model.name, model.tokens, maximum);
+  var scale = tokenPileScale(model.tokens, maximum);
+  var tierInfo = hoardTierFor(model.tokens);
+  var style = hoardStyleFor(lineageSeed);
+  var art = hoardArtFor(h, room.agentType + "\u0000" + model.name, style, tierInfo, scale);
   var label = entry.merged
     ? model.name + ", " + exact + " tokens together, open the list"
     : model.name + ", " + exact + " tokens in " + room.label + " chamber";
@@ -5710,6 +5920,7 @@ function tokenModelPile(h, room, entry, spot, maximum, revealedKey, onToggle) {
       tabIndex: 0,
       "data-grotto-model": model.name,
       "data-grotto-merged": entry.merged ? "true" : undefined,
+      "data-grotto-tier": tierInfo.tier.name,
       "aria-label": label,
       "aria-pressed": revealed,
       onClick: function () {
@@ -5733,21 +5944,8 @@ function tokenModelPile(h, room, entry, spot, maximum, revealedKey, onToggle) {
     }),
     h(
       "g",
-      { transform: "scale(" + spot.scale + ") translate(-63 -126)", "aria-hidden": "true" },
-      h("path", { className: "kandev-kandy-token-pile-shadow", d: "M22 119 Q63 108 104 119 Q63 126 22 119 Z" }),
-      fragments.map(function (fragment, index) {
-        var y = 126 - fragment.bottom - fragment.height;
-        return h(
-          "g",
-          {
-            key: "stone" + index,
-            className: "kandev-kandy-token-pile-stone",
-            transform: "translate(" + fragment.left + " " + y + ") rotate(" + fragment.tilt + " " + Math.round(fragment.width / 2) + " " + Math.round(fragment.height / 2) + ")",
-          },
-          h("path", { className: "kandev-kandy-token-pile-stone-fill is-" + fragment.color, d: fragment.path }),
-          fragment.glowPath ? h("path", { className: "kandev-kandy-token-pile-stone-glow", d: fragment.glowPath }) : null,
-        );
-      }),
+      { className: "kandev-kandy-token-pile-hoard", transform: "scale(" + spot.scale + ") translate(-63 -126)", "aria-hidden": "true" },
+      art,
     ),
     h("text", { className: "kandev-kandy-token-pile-name", x: 0, y: 24, "aria-hidden": "true" }, model.name),
     h(
@@ -5765,7 +5963,7 @@ function tokenModelPile(h, room, entry, spot, maximum, revealedKey, onToggle) {
 
 // The chamber floor. Placements come back ranked, so spot order is prominence
 // order: the front of the room first, the back of the room last.
-function tokenPileStage(h, room, placements, revealedKey, onToggle) {
+function tokenPileStage(h, room, placements, revealedKey, onToggle, lineageSeed) {
   var maximum = null;
   placements.forEach(function (entry) {
     if (maximum === null || compareTokenGrottoDecimals(entry.model.tokens, maximum) > 0) maximum = entry.model.tokens;
@@ -5780,7 +5978,7 @@ function tokenPileStage(h, room, placements, revealedKey, onToggle) {
       "aria-label": room.label + " model piles",
     },
     placements.map(function (entry, index) {
-      return tokenModelPile(h, room, entry, CHAMBER_PILE_SPOTS[index], maximum, revealedKey, onToggle);
+      return tokenModelPile(h, room, entry, CHAMBER_PILE_SPOTS[index], maximum, revealedKey, onToggle, lineageSeed);
     }),
   );
 }
@@ -5806,7 +6004,7 @@ function tokenPileManifest(h, entry) {
   );
 }
 
-function tokenGrottoRoom(h, DialogTitle, grotto, agentType, revealedKey, panelRef, onBack, onExit, onToggle, creature, side) {
+function tokenGrottoRoom(h, DialogTitle, grotto, agentType, revealedKey, panelRef, onBack, onExit, onToggle, creature, side, lineageSeed) {
   var room = null;
   for (var i = 0; i < grotto.rooms.length; i++) {
     if (grotto.rooms[i].agentType === agentType) {
@@ -5843,7 +6041,7 @@ function tokenGrottoRoom(h, DialogTitle, grotto, agentType, revealedKey, panelRe
       { className: "kandev-kandy-grotto-scene kandev-kandy-grotto-room-scene" },
       chamberBackdrop(h),
       placements.length
-        ? tokenPileStage(h, room, placements, revealedKey, onToggle)
+        ? tokenPileStage(h, room, placements, revealedKey, onToggle, (lineageSeed || 1) >>> 0)
         : h("div", { className: "kandev-kandy-grotto-room" }, h("div", { className: "kandev-kandy-grotto-empty" }, "No model piles yet.")),
       merged && revealedKey === MERGED_PILE_KEY ? tokenPileManifest(h, merged) : null,
       h("div", { className: "kandev-kandy-grotto-kandy is-" + (side === "left" ? "left" : "right") }, creature),
@@ -7951,10 +8149,11 @@ function makeKandyWidget(host) {
     }
 
     // Walk Kandy off the current scene, swap the panel while it is gone, then
-    // walk it back in on the other side.
+    // walk it back in on the other side. Asleep, there is no Kandy on any of
+    // these scenes to walk — the panel just swaps, same as reduced motion.
     function walkBetweenScenes(departPhase, arrivePhase, swap) {
       clearGrottoWalk();
-      if (prefersReducedMotion()) {
+      if (prefersReducedMotion() || kandyAsleep) {
         swap();
         return;
       }
@@ -8023,13 +8222,53 @@ function makeKandyWidget(host) {
     function backFromTokenGrotto() {
       setGrottoRevealKey(null);
       returnToGrottoDoorRef.current = null;
-      // Leaving from the hub means leaving by the entrance, so drop the
-      // remembered passage first and let Kandy climb out the way it came in.
-      if (resolvedGrottoView === "hub") setGrottoSide(null);
-      walkBetweenScenes(resolvedGrottoView === "hub" ? "depart-hub" : "depart-room", "arrive-surface", function () {
+      if (resolvedGrottoView === "hub") {
+        // Leaving from the hub means leaving by the entrance, so drop the
+        // remembered passage first and let Kandy climb out the way it came in.
+        setGrottoSide(null);
+        walkBetweenScenes("depart-hub", "arrive-surface", function () {
+          setGrottoView(null);
+          setGrottoSide(null);
+        });
+        return;
+      }
+      // Leaving from a chamber routes back through the hub's cave mouth
+      // rather than side-walking straight to the surface: Kandy walks out
+      // the chamber door, the hub flashes past with Kandy already climbing
+      // out the mouth it came in by, and it surfaces beside the cave opening.
+      // This is its own three-step walk (not walkBetweenScenes) because the
+      // hub is only a transit scene here — Kandy walks straight out of it
+      // without an arrive-hub settle that would leave it standing down on
+      // the shore and force a teleport back up to the cave mouth to depart.
+      clearGrottoWalk();
+      if (prefersReducedMotion() || kandyAsleep) {
         setGrottoView(null);
         setGrottoSide(null);
-      });
+        return;
+      }
+      setGrottoTransit("depart-room");
+      grottoWalkTimerRef.current = setTimeout(function () {
+        if (!mountedRef.current) {
+          grottoWalkTimerRef.current = null;
+          return;
+        }
+        setGrottoView("hub");
+        setGrottoSide(null);
+        setGrottoTransit("depart-hub");
+        grottoWalkTimerRef.current = setTimeout(function () {
+          if (!mountedRef.current) {
+            grottoWalkTimerRef.current = null;
+            return;
+          }
+          setGrottoView(null);
+          setGrottoSide(null);
+          setGrottoTransit("arrive-surface");
+          grottoWalkTimerRef.current = setTimeout(function () {
+            grottoWalkTimerRef.current = null;
+            if (mountedRef.current) setGrottoTransit(null);
+          }, GROTTO_WALK_IN_MS);
+        }, GROTTO_WALK_OUT_MS);
+      }, GROTTO_WALK_OUT_MS);
     }
 
     function toggleGrottoCount(key) {
@@ -8136,8 +8375,11 @@ function makeKandyWidget(host) {
     var dialogMotion = cardWalk ? Object.assign({}, motionState, { facing: 1, transit: cardWalk }) : motionState;
 
     // The underground Kandy travels wearing its own gait. Which scene it is
-    // standing in decides which leg of the trip applies to it.
+    // standing in decides which leg of the trip applies to it. Asleep, it
+    // stays in bed — the grotto is still open to visit, just without Kandy
+    // there to greet them.
     function grottoCreature(surface) {
+      if (kandyAsleep) return null;
       var creature = creatureSvg(h, shown, 64);
       var walk = grottoTransitClass(grottoTransit, surface, grottoSide);
       if (!walk) return creature;
@@ -8173,9 +8415,11 @@ function makeKandyWidget(host) {
     if (celebration) shown = Object.assign({}, shown, { face_mood: "elated" });
     // The chip portrait sleeps too: closed eyes on the static icon while
     // the seeded schedule says it's bedtime (celebrations still play their
-    // chip hop over it — no special-casing).
+    // chip hop over it — no special-casing). The same schedule gates the
+    // grotto: Kandy doesn't wake up to walk a visitor down there.
+    var kandyAsleep = shown.level > 1 && isAsleep((shown.lineage_seed || 1) >>> 0, timeOfDay);
     var chipShown = shown;
-    var chipAsleep = shown.level > 1 && isAsleep((shown.lineage_seed || 1) >>> 0, timeOfDay);
+    var chipAsleep = kandyAsleep;
     if (chipAsleep) chipShown = Object.assign({}, shown, { sleep_state: "asleep" });
 
     // The chip is a real button: hover/focus gives the desktop quick-peek
@@ -8401,6 +8645,7 @@ function makeKandyWidget(host) {
                     toggleGrottoCount,
                     grottoCreature("room"),
                     grottoRoomSide(grottoSide),
+                    (shown.lineage_seed || 1) >>> 0,
                   )
               : h(
                 React.Fragment,
@@ -8575,7 +8820,10 @@ window.registerKandevPlugin(PLUGIN_ID, {
     formatTokenExact: formatTokenExact,
     formatTokenCompact: formatTokenCompact,
     tokenPileScale: tokenPileScale,
-    tokenPileFragmentsFor: tokenPileFragmentsFor,
+    hoardTierFor: hoardTierFor,
+    hoardStyleFor: hoardStyleFor,
+    hoardTiers: HOARD_TIERS,
+    hoardStyles: HOARD_STYLES,
     tokenPilePlacement: tokenPilePlacement,
     chamberPileSpots: CHAMBER_PILE_SPOTS,
     tokenGrottoHub: tokenGrottoHub,
