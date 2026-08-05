@@ -3,7 +3,7 @@ module kandev-plugin-kandy
 go 1.26.0
 
 require (
-	github.com/kandev/kandev v0.0.0-00010101000000-000000000000
+	github.com/kdlbs/kandev/pluginsdk v0.1.0
 	github.com/stretchr/testify v1.11.1
 )
 
@@ -26,9 +26,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// The kandev SDK (pkg/pluginsdk) is not published as a standalone module
-// yet — this repo is developed against a local checkout of the kandev
-// monorepo (same convention as kandev-plugin-activity-rings and
-// kandev-plugin-session-cost).
-replace github.com/kandev/kandev => ../kandev/apps/backend

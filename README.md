@@ -57,8 +57,13 @@ what it looks like months from now — is yours to find out. Ship and see.
 ## Install
 
 Build a package (`make package-host` for your platform, `make package` for
-all platforms) and install the tarball via **Settings > Plugins > Install**
-or `POST /api/plugins/install`.
+all platforms) and install the tarball from `dist/` via **Settings > Plugins >
+Install plugin → Upload file**, or:
+
+```sh
+curl -F "package=@dist/kandev-plugin-kandy-0.10.0.tar.gz" \
+  http://localhost:38429/api/plugins/install
+```
 
 ## How it works and what it reads
 
@@ -91,14 +96,46 @@ signals above—not token counts—and adds no model calls or token cost.
 
 ## Development
 
-Developed against a local checkout of the kandev monorepo (see the
-`replace` directive in `go.mod`).
+The plugin pins `github.com/kdlbs/kandev/pluginsdk v0.1.0` and builds from a
+clean checkout with `GOWORK=off`; no Kandev sibling checkout is required.
 
 ```sh
 make test        # Go unit tests + dependency-free UI render/clipboard tests
 make fmt vet     # gofmt + go vet
 make package-host
+make package-pr PR_VERSION=pr-123-456
 ```
+
+The package command reads every platform from `manifest.yaml`, stages only the
+manifest, declared executables, and UI/assets, and lets the SDK packager create
+`checksums.txt`.
+
+## Download a pull request package
+
+To test a proposed change, including a UI-only change:
+
+1. Open a pull request.
+2. Wait for the **Build plugin PR artifact** check.
+3. Open that workflow run and download its artifact.
+4. Unzip the GitHub artifact download.
+5. Extract the contained `.tar.gz`, for example:
+
+   ```sh
+   tar -xzf kandev-plugin-kandy-pr-123-456.tar.gz
+   ```
+
+6. Install the tarball manually in Kandev through **Settings → Plugins →
+   Install plugin → Upload file**, or:
+
+   ```sh
+   curl -F "package=@kandev-plugin-kandy-pr-123-456.tar.gz" \
+     http://localhost:38429/api/plugins/install
+   ```
+
+The GitHub artifact is retained for a short period (currently 7 days). Its
+archived manifest version is `pr-<number>-<run>`, so it is safe to install
+alongside the released version. It is not a release artifact, and the workflow
+never installs it automatically.
 
 ## Automation and releases
 

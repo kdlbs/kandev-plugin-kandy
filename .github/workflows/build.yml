@@ -15,30 +15,23 @@ jobs:
   package:
     name: Build plugin packages
     runs-on: ubuntu-latest
+    env:
+      GOWORK: off
     steps:
-      # The local Kandev SDK replacement expects this sibling layout.
-      - name: Checkout plugin
+      - name: Check out plugin
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
-          path: plugin
-
-      - name: Checkout Kandev SDK
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
-        with:
-          repository: kdlbs/kandev
-          path: kandev
-          sparse-checkout: apps/backend
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: plugin/go.mod
-          cache-dependency-path: plugin/go.sum
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Build host binary
-        working-directory: plugin
         run: make build
 
       - name: Package all supported platforms
-        working-directory: plugin
         run: make package

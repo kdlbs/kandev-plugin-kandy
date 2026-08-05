@@ -1,52 +1,47 @@
-.PHONY: build run test fmt vet package package-host clean
+.PHONY: build run test fmt vet package package-pr package-host package-internal clean
 
-BIN := bin/kandev-plugin-kandy
+PLUGIN_ID := kandev-plugin-kandy
+BIN := bin/$(PLUGIN_ID)
 VERSION := 0.10.0
+DIST := dist
 STAGE := .build/stage
-PKG_OUT := kandev-plugin-kandy-$(VERSION).tar.gz
+SDK_PACK := github.com/kdlbs/kandev/pluginsdk/cmd/plugin-pack
 
 build:
 	mkdir -p bin
-	go build -o $(BIN) ./server/...
+	GOWORK=off go build -o $(BIN) ./server/...
 
 run: build
 	./$(BIN)
 
 test:
-	go test ./server/...
+	GOWORK=off go test ./...
 	node --test ui/bundle.test.js
 
 fmt:
 	gofmt -l .
 
 vet:
-	go vet ./server/...
+	GOWORK=off go vet ./...
 
 package:
-	rm -rf $(STAGE)
-	mkdir -p $(STAGE)/server $(STAGE)/ui
-	cp manifest.yaml $(STAGE)/manifest.yaml
-	cp README.md $(STAGE)/README.md
-	cp ui/bundle.js $(STAGE)/ui/bundle.js
-	GOOS=linux   GOARCH=amd64 go build -o $(STAGE)/server/plugin-linux-amd64       ./server
-	GOOS=linux   GOARCH=arm64 go build -o $(STAGE)/server/plugin-linux-arm64       ./server
-	GOOS=darwin  GOARCH=amd64 go build -o $(STAGE)/server/plugin-darwin-amd64      ./server
-	GOOS=darwin  GOARCH=arm64 go build -o $(STAGE)/server/plugin-darwin-arm64      ./server
-	GOOS=windows GOARCH=amd64 go build -o $(STAGE)/server/plugin-windows-amd64.exe ./server
-	go run github.com/kandev/kandev/cmd/plugin-pack -dir $(STAGE) -out $(PKG_OUT)
-	rm -rf $(STAGE)
-	@echo "Wrote $(PKG_OUT)"
+	$(MAKE) package-internal PACKAGE_VERSION="$(VERSION)"
+
+package-pr:
+	@test -n "$(PR_VERSION)"
+	$(MAKE) package-internal PACKAGE_VERSION="$(PR_VERSION)" PACKAGE_EXTRA="-version $(PR_VERSION)"
 
 package-host:
+	$(MAKE) package-internal PACKAGE_VERSION="$(VERSION)" PACKAGE_MODE=host PACKAGE_EXTRA=-platform-only
+
+package-internal:
+	rm -rf $(STAGE) $(DIST)
+	mkdir -p $(STAGE) $(DIST)
+	GOWORK=off go run ./scripts/stage-plugin-files $(STAGE)
+	GOWORK=off go run ./scripts/build-plugin-binaries $(STAGE) $(or $(PACKAGE_MODE),all)
+	GOWORK=off go run $(SDK_PACK) -dir $(STAGE) -out $(DIST)/$(PLUGIN_ID)-$(PACKAGE_VERSION).tar.gz $(PACKAGE_EXTRA)
 	rm -rf $(STAGE)
-	mkdir -p $(STAGE)/server $(STAGE)/ui
-	cp manifest.yaml $(STAGE)/manifest.yaml
-	cp README.md $(STAGE)/README.md
-	cp ui/bundle.js $(STAGE)/ui/bundle.js
-	go build -o $(STAGE)/server/plugin-$$(go env GOOS)-$$(go env GOARCH)$$(go env GOEXE) ./server
-	go run github.com/kandev/kandev/cmd/plugin-pack -dir $(STAGE) -out $(PKG_OUT) -platform-only
-	rm -rf $(STAGE)
-	@echo "Wrote $(PKG_OUT)"
+	@echo "Wrote $(DIST)/$(PLUGIN_ID)-$(PACKAGE_VERSION).tar.gz"
 
 clean:
-	rm -rf bin $(STAGE) kandev-plugin-kandy-*.tar.gz
+	rm -rf bin $(STAGE) $(DIST)
