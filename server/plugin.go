@@ -98,6 +98,13 @@ type ledger struct {
 	Sealv       int    `json:"sealv,omitempty"`
 	Sig         string `json:"sig,omitempty"`
 	Counterfeit bool   `json:"counterfeit,omitempty"`
+
+	// transient marks a ledger that is NOT the persisted truth: a stand-in
+	// served while the Host broker is still connecting or after a state
+	// read failed. Unexported, so it never reaches JSON, the seal, or
+	// Host state. Mood must not read a transient ledger's timestamps as
+	// real activity — see sinceLastAward.
+	transient bool
 }
 
 // kandyResponse is everything the UI is allowed to know. Archetype,
@@ -171,11 +178,13 @@ func (p *plugin) loadLedger(ctx context.Context) *ledger {
 	if host == nil {
 		// Host broker not connected yet: serve a transient egg but do not
 		// cache it, so the persisted ledger wins once the Host arrives.
+		fresh.transient = true
 		return fresh
 	}
 	value, found, err := host.GetState(ctx, stateScope, "", stateKey)
 	if err != nil {
 		log.Printf("kandy: reading state: %v", err)
+		fresh.transient = true
 		return fresh
 	}
 	if !found {
@@ -450,11 +459,24 @@ func (p *plugin) within(stamp string, window time.Duration) bool {
 	return err == nil && p.now().UTC().Sub(t) < window
 }
 
+// unknownIdle is the idle time reported when the real one cannot be known
+// (a transient stand-in ledger). It lands mid-"content": neutral, and
+// deliberately NOT "elated" — a kandy that has just been served from a
+// stand-in has no idea when it was last fed, and claiming it was fed
+// seconds ago is the more misleading of the two lies.
+const unknownIdle = 24 * time.Hour
+
 // sinceLastAward computes how long ago the kandy was last fed.
-// Migration-safe: pre-0.6 state has no last_award_at, so fall back to
-// updated_at (every award touched it); a fully unknown timestamp counts as
-// "just now" — never as ancient.
+// Migration-safe: pre-0.6 PERSISTED state has no last_award_at, so fall
+// back to updated_at (every award touched it). A transient stand-in is
+// never read this way: its timestamps were minted this instant by
+// loadLedger, so both stamps would say "just now" and the badge would
+// claim elated right after a restart, no matter how long the instance had
+// actually been idle.
 func (p *plugin) sinceLastAward(l *ledger) time.Duration {
+	if l.transient {
+		return unknownIdle
+	}
 	for _, stamp := range []string{l.LastAwardAt, l.UpdatedAt} {
 		if t, err := time.Parse(time.RFC3339, stamp); err == nil {
 			return p.now().UTC().Sub(t)

@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ type fakeHost struct {
 	config       map[string]any
 	state        map[string]map[string]any
 	secrets      map[string]string
+	getStateErr  error
 	getSecretErr error
 	setSecretErr error
 }
@@ -36,6 +38,9 @@ func newFakeHost(config map[string]any) *fakeHost {
 func stateMapKey(scope, scopeID, key string) string { return scope + "|" + scopeID + "|" + key }
 
 func (h *fakeHost) GetState(_ context.Context, scope, scopeID, key string) (map[string]any, bool, error) {
+	if h.getStateErr != nil {
+		return nil, false, h.getStateErr
+	}
 	value, ok := h.state[stateMapKey(scope, scopeID, key)]
 	return value, ok, nil
 }
@@ -407,4 +412,82 @@ func TestStageNameStableAcrossCalls(t *testing.T) {
 	require.Equal(t, first.Level, second.Level)
 	require.Equal(t, first.StageName, second.StageName)
 	require.Equal(t, first.AppearanceSeed, second.AppearanceSeed)
+}
+
+// A stand-in ledger (Host broker still connecting, or a failed state read)
+// must never report "elated". Its timestamps are minted at load time, so
+// reading them as activity made the badge claim "just fed" right after
+// every restart — no matter how long the instance had really been idle.
+func TestMood_TransientLedgerNeverClaimsJustFed(t *testing.T) {
+	// No Host at all: the plugin serves a transient egg.
+	p := newPlugin()
+	p.now = func() time.Time { return time.Date(2026, 8, 5, 7, 16, 0, 0, time.UTC) }
+	p.saltFunc = func() uint32 { return 42 }
+	state := fetchKandy(t, p, "")
+	require.Equal(t, "content", state.Mood, "no Host: neutral, never elated")
+
+	// A state read that errors falls into the same stand-in path.
+	host := newFakeHost(nil)
+	host.getStateErr = errors.New("state store unavailable")
+	p2 := newPlugin()
+	p2.now = func() time.Time { return time.Date(2026, 8, 5, 7, 16, 0, 0, time.UTC) }
+	p2.saltFunc = func() uint32 { return 42 }
+	p2.SetHost(host)
+	require.Equal(t, "content", fetchKandy(t, p2, "").Mood, "read error: neutral, never elated")
+
+	// And a stand-in is never cached: once the real ledger is readable the
+	// persisted truth wins immediately.
+	host.getStateErr = nil
+	host.state[stateMapKey(stateScope, "", stateKey)] = ledgerToMap(&ledger{
+		XP: 32165, Salt: 42,
+		CreatedAt:   "2026-07-29T18:52:27Z",
+		UpdatedAt:   "2026-08-04T20:10:59Z",
+		LastAwardAt: "2026-08-04T20:10:59Z",
+	})
+	require.Equal(t, "content", fetchKandy(t, p2, "").Mood)
+	require.Greater(t, fetchKandy(t, p2, "").Level, 1, "the real ledger replaced the egg")
+}
+
+// The reported regression: agents idle overnight, the instance restarted in
+// the morning, and the badge still read "elated". A PERSISTED ledger must
+// always be read from its own timestamps.
+func TestMood_PersistedLedgerReportsRealIdleAcrossRestart(t *testing.T) {
+	host := newFakeHost(nil)
+	host.state[stateMapKey(stateScope, "", stateKey)] = ledgerToMap(&ledger{
+		XP: 32165, Salt: 42,
+		CreatedAt:   "2026-07-29T18:52:27Z",
+		UpdatedAt:   "2026-08-04T20:10:59Z",
+		LastAwardAt: "2026-08-04T20:10:59Z", // last real award: last night
+	})
+	for _, tc := range []struct {
+		at   time.Time
+		want string
+	}{
+		{time.Date(2026, 8, 4, 20, 15, 0, 0, time.UTC), "elated"}, // 4 min later
+		{time.Date(2026, 8, 5, 7, 16, 0, 0, time.UTC), "content"}, // 11h idle — the bug
+		{time.Date(2026, 8, 8, 9, 0, 0, 0, time.UTC), "bored"},    // ~3 days
+		{time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC), "gloomy"},  // >1 week
+	} {
+		p := newPlugin()
+		p.now = func() time.Time { return tc.at }
+		p.saltFunc = func() uint32 { return 42 }
+		p.SetHost(host)
+		require.Equal(t, tc.want, fetchKandy(t, p, "").Mood, "idle mood at %s", tc.at)
+	}
+}
+
+// Pre-0.6 ledgers (no last_award_at) keep their migration fallback: they
+// are persisted truth, so updated_at still stands in for the award time.
+func TestMood_PreV6LedgerStillFallsBackToUpdatedAt(t *testing.T) {
+	host := newFakeHost(nil)
+	host.state[stateMapKey(stateScope, "", stateKey)] = ledgerToMap(&ledger{
+		XP: 900, Salt: 42,
+		CreatedAt: "2026-07-01T10:00:00Z",
+		UpdatedAt: "2026-08-05T07:10:00Z", // "fed" 6 minutes ago
+	})
+	p := newPlugin()
+	p.now = func() time.Time { return time.Date(2026, 8, 5, 7, 16, 0, 0, time.UTC) }
+	p.saltFunc = func() uint32 { return 42 }
+	p.SetHost(host)
+	require.Equal(t, "elated", fetchKandy(t, p, "").Mood, "pre-0.6 fallback preserved")
 }
