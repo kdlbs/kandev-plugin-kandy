@@ -24,8 +24,10 @@ an egg. It never stops.
   water on it. Neither ever feeds it — only real work does — but it
   remembers how you treat it, and how you treat it shapes how it grows up.
   A row of bond hearts on the card shows how much it trusts you — and a
-  heart can crack in a way that never quite heals. Be kind. Or don't, and
-  live with what you raise.
+  heart can crack in a way that never quite heals. Affection also fades if
+  you stop visiting: a neglected bond drifts back to neutral, though it
+  never sours into distrust. Be kind. Or don't, and live with what you
+  raise.
 - **Day and night**: scenes follow your local clock, and every kandy has its
   own bedtime — at night it sleeps in the top bar, and waking it is on your
   conscience.

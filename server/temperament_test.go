@@ -412,8 +412,8 @@ func TestPassiveHealUpdate_Table(t *testing.T) {
 		wantChanged    bool
 		wantCheckpoint string
 	}{
-		{"positive temperament untouched",
-			ledger{Temperament: 5}, 5, false, ""},
+		{"fond ledger without a checkpoint: stamped now, never retro-faded",
+			ledger{Temperament: 5}, 5, true, ago(0)},
 		{"zero temperament untouched",
 			ledger{Temperament: 0, LastPassiveHealAt: ago(10 * day)},
 			0, false, ago(10 * day)},
@@ -601,4 +601,77 @@ func TestCare_NeverTouchesXPFacts(t *testing.T) {
 		"level/progress_pct/award_seq byte-identical across the care sequence")
 	require.Equal(t, factsBefore, ledgerFacts(),
 		"xp, award_seq and last_award_at untouched in the persisted ledger")
+}
+
+// Affection fades (v0.11.0): the mirror of "time heals". Neglect walks a
+// fond kandy back toward neutral — and stops there. Only a bucket can make
+// it distrust you.
+func TestAffectionFadeUpdate_Table(t *testing.T) {
+	now := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+	const day = 24 * time.Hour
+	ago := func(d time.Duration) string { return now.Add(-d).UTC().Format(time.RFC3339) }
+
+	for _, tc := range []struct {
+		name           string
+		in             ledger
+		wantTemp       float64
+		wantChanged    bool
+		wantCheckpoint string
+	}{
+		{"petted a few hours ago: nothing fades yet",
+			ledger{Temperament: 32, LastPetEffectAt: ago(3 * time.Hour), LastPassiveHealAt: ago(9 * day)},
+			32, false, ago(9 * day)},
+		{"past the grace: fades by the hour",
+			ledger{Temperament: 32, LastPetEffectAt: ago(13 * time.Hour), LastPassiveHealAt: ago(13 * time.Hour)},
+			32 - 13*affectionFadePerHour, true, ago(0)},
+		{"a day of silence costs a full day's fade",
+			ledger{Temperament: 32, LastPetEffectAt: ago(1 * day), LastPassiveHealAt: ago(1 * day)},
+			32 - 24*affectionFadePerHour, true, ago(0)},
+		{"a beloved +30 bond is exactly spent after three days",
+			ledger{Temperament: 30, LastPetEffectAt: ago(3 * day), LastPassiveHealAt: ago(3 * day)},
+			0, true, ago(0)},
+		{"longer neglect still lands on neutral, never below",
+			ledger{Temperament: 32, LastPetEffectAt: ago(9 * day), LastPassiveHealAt: ago(9 * day)},
+			0, true, ago(0)},
+		{"partial hours do not accrue",
+			ledger{Temperament: 20, LastPetEffectAt: ago(90 * time.Minute), LastPassiveHealAt: ago(90 * time.Minute)},
+			20, false, ago(90 * time.Minute)},
+		{"the clock runs from the LAST treat, not the older checkpoint",
+			ledger{Temperament: 20, LastPetEffectAt: ago(24 * time.Hour), LastPassiveHealAt: ago(9 * day)},
+			20 - 24*affectionFadePerHour, true, ago(0)},
+		{"a hurt kandy still heals upward (the other direction is untouched)",
+			ledger{Temperament: -20, LastBonkedAt: ago(9 * day), LastPassiveHealAt: ago(2 * day)},
+			-20 + 2*passiveHealPerDay, true, ago(0)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := tc.in
+			changed := passiveHealUpdate(&l, now)
+			require.Equal(t, tc.wantChanged, changed)
+			require.InDelta(t, tc.wantTemp, l.Temperament, 1e-9)
+			if tc.wantCheckpoint != "" {
+				require.Equal(t, tc.wantCheckpoint, l.LastPassiveHealAt)
+			}
+		})
+	}
+}
+
+// Neglect must never manufacture distrust: from any positive score, any
+// amount of silence lands exactly on neutral and stops.
+func TestAffectionFade_FloorsAtNeutralNeverWary(t *testing.T) {
+	now := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+	const day = 24 * time.Hour
+	for _, start := range []float64{1, 10, 30, 100} {
+		for _, silence := range []time.Duration{5 * day, 30 * day, 365 * day} {
+			l := ledger{
+				Temperament:       start,
+				LastPetEffectAt:   now.Add(-silence).UTC().Format(time.RFC3339),
+				LastPassiveHealAt: now.Add(-silence).UTC().Format(time.RFC3339),
+			}
+			passiveHealUpdate(&l, now)
+			require.GreaterOrEqual(t, l.Temperament, 0.0,
+				"neglect never pushes below neutral (start %v, silence %v)", start, silence)
+			require.NotEqual(t, "wary", temperamentBand(l.Temperament))
+			require.NotEqual(t, "fearful", temperamentBand(l.Temperament))
+		}
+	}
 }
