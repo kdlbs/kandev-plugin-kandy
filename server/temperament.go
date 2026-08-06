@@ -73,12 +73,15 @@ const (
 	// makes one distrust you. Only a bucket can do that, which keeps the
 	// moral logic intact: forgetting to feed it is not cruelty.
 	//
+	// Accrues per HOUR (not per day like healing) so the bond visibly
+	// slips rather than dropping in daily steps.
+	//
 	// Concrete pace: a beloved +30 kandy left alone slips to "content"
-	// (+10) in about five days and to neutral in a week. Holding beloved
-	// costs roughly five treats a day (petTemperamentGain is +1, one
-	// effective pet per five minutes).
-	affectionFadeDelay  = 24 * time.Hour
-	affectionFadePerDay = 5.0
+	// (+10) in two days and to neutral in three. Holding beloved costs
+	// roughly ten treats a day (petTemperamentGain is +1, one effective
+	// pet per five minutes) — affection is meant to be actively kept.
+	affectionFadeDelay   = 12 * time.Hour
+	affectionFadePerHour = 10.0 / 24.0
 
 	// scarThreshold: reaching this depth latches scarred forever.
 	scarThreshold = -60.0
@@ -141,10 +144,10 @@ func passiveHealUpdate(l *ledger, now time.Time) bool {
 //     so neglect can never push a kandy into wary/fearful. Earning distrust
 //     still requires the bucket.
 //   - The clock runs from the last EFFECTIVE treat (last_pet_effect_at) or
-//     the checkpoint, whichever is later, and only after
-//     affectionFadeDelay: a day of not petting costs nothing.
-//   - Same lazy accrual and checkpoint as healing (no background jobs, and
-//     a full day's fade is applied at most once).
+//     the checkpoint, whichever is later, and only once the last treat is
+//     affectionFadeDelay old: a few hours away costs nothing.
+//   - Same lazy accrual and checkpoint as healing (no background jobs), but
+//     in whole HOURS, so a bond slips visibly instead of in daily steps.
 //   - Same migration semantics: a fond ledger first seen without a
 //     checkpoint gets one stamped NOW, so upgrading never retro-fades a
 //     bond that was earned before this rule existed.
@@ -162,16 +165,16 @@ func affectionFadeUpdate(l *ledger, now time.Time) bool {
 			start = pet
 		}
 	}
-	days := int(now.Sub(start) / (24 * time.Hour))
-	if days <= 0 {
+	hours := int(now.Sub(start) / time.Hour)
+	if hours <= 0 {
 		return false
 	}
-	if faded := l.Temperament - affectionFadePerDay*float64(days); faded > 0 {
+	if faded := l.Temperament - affectionFadePerHour*float64(hours); faded > 0 {
 		l.Temperament = faded
 	} else {
 		l.Temperament = 0 // the bond is forgotten, never soured
 	}
-	l.LastPassiveHealAt = start.Add(time.Duration(days) * 24 * time.Hour).Format(time.RFC3339)
+	l.LastPassiveHealAt = start.Add(time.Duration(hours) * time.Hour).Format(time.RFC3339)
 	return true
 }
 
