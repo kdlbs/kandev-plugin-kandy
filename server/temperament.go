@@ -66,6 +66,20 @@ const (
 	passiveHealDelay  = 24 * time.Hour
 	passiveHealPerDay = 4.0
 
+	// Affection fades (v0.11.0): the mirror of "time heals". Once the last
+	// treat is affectionFadeDelay old, a POSITIVE temperament drifts back
+	// down by affectionFadePerDay for every FULL elapsed day — clamped at
+	// 0, never below. Neglect makes a kandy forget the bond; it never
+	// makes one distrust you. Only a bucket can do that, which keeps the
+	// moral logic intact: forgetting to feed it is not cruelty.
+	//
+	// Concrete pace: a beloved +30 kandy left alone slips to "content"
+	// (+10) in about five days and to neutral in a week. Holding beloved
+	// costs roughly five treats a day (petTemperamentGain is +1, one
+	// effective pet per five minutes).
+	affectionFadeDelay  = 24 * time.Hour
+	affectionFadePerDay = 5.0
+
 	// scarThreshold: reaching this depth latches scarred forever.
 	scarThreshold = -60.0
 )
@@ -87,7 +101,10 @@ const (
 //   - The checkpoint advances by exactly the full days consumed, so partial
 //     days keep accruing and healing is never double-applied.
 func passiveHealUpdate(l *ledger, now time.Time) bool {
-	if l.Temperament >= 0 {
+	if l.Temperament > 0 {
+		return affectionFadeUpdate(l, now)
+	}
+	if l.Temperament == 0 {
 		return false
 	}
 	start, err := time.Parse(time.RFC3339, l.LastPassiveHealAt)
@@ -111,6 +128,48 @@ func passiveHealUpdate(l *ledger, now time.Time) bool {
 		l.Temperament = healed
 	} else {
 		l.Temperament = 0 // wounds close; trust is only built by pets
+	}
+	l.LastPassiveHealAt = start.Add(time.Duration(days) * 24 * time.Hour).Format(time.RFC3339)
+	return true
+}
+
+// affectionFadeUpdate applies the "affection fades" rule to a ledger whose
+// temperament is positive, reporting whether anything changed (callers
+// persist only when it did). It deliberately mirrors passiveHealUpdate:
+//
+//   - Only a fond kandy (temperament > 0) fades; the drift stops dead at 0
+//     so neglect can never push a kandy into wary/fearful. Earning distrust
+//     still requires the bucket.
+//   - The clock runs from the last EFFECTIVE treat (last_pet_effect_at) or
+//     the checkpoint, whichever is later, and only after
+//     affectionFadeDelay: a day of not petting costs nothing.
+//   - Same lazy accrual and checkpoint as healing (no background jobs, and
+//     a full day's fade is applied at most once).
+//   - Same migration semantics: a fond ledger first seen without a
+//     checkpoint gets one stamped NOW, so upgrading never retro-fades a
+//     bond that was earned before this rule existed.
+func affectionFadeUpdate(l *ledger, now time.Time) bool {
+	start, err := time.Parse(time.RFC3339, l.LastPassiveHealAt)
+	if err != nil {
+		l.LastPassiveHealAt = now.Format(time.RFC3339)
+		return true
+	}
+	if pet, err := time.Parse(time.RFC3339, l.LastPetEffectAt); err == nil {
+		if now.Sub(pet) < affectionFadeDelay {
+			return false
+		}
+		if pet.After(start) {
+			start = pet
+		}
+	}
+	days := int(now.Sub(start) / (24 * time.Hour))
+	if days <= 0 {
+		return false
+	}
+	if faded := l.Temperament - affectionFadePerDay*float64(days); faded > 0 {
+		l.Temperament = faded
+	} else {
+		l.Temperament = 0 // the bond is forgotten, never soured
 	}
 	l.LastPassiveHealAt = start.Add(time.Duration(days) * 24 * time.Hour).Format(time.RFC3339)
 	return true
