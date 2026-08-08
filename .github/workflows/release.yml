@@ -56,18 +56,19 @@ jobs:
           BUMP: ${{ inputs.bump }}
         run: |
           set -euo pipefail
-          CURRENT_VERSION="$(sed -nE 's/^version: "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' manifest.yaml)"
-          MAKE_VERSION="$(sed -nE 's/^VERSION := ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' Makefile)"
+          CURRENT_VERSION="$(sed -nE 's/^version: "([0-9]+\.[0-9]+\.[0-9]+)(-[0-9A-Za-z.-]+)?"$/\1\2/p' manifest.yaml)"
+          MAKE_VERSION="$(sed -nE 's/^VERSION := ([0-9]+\.[0-9]+\.[0-9]+)(-[0-9A-Za-z.-]+)?$/\1\2/p' Makefile)"
           test -n "$CURRENT_VERSION" || { echo "manifest.yaml has no SemVer version." >&2; exit 1; }
           test "$CURRENT_VERSION" = "$MAKE_VERSION" || {
             echo "manifest.yaml ($CURRENT_VERSION) and Makefile ($MAKE_VERSION) disagree." >&2
             exit 1
           }
+          CURRENT_BASE="${CURRENT_VERSION%%-*}"
 
           LATEST_TAG="$(git tag --list 'v*' | awk '/^v[0-9]+\.[0-9]+\.[0-9]+$/' | sort -V | tail -n 1)"
-          BASELINE="$(CURRENT_VERSION="$CURRENT_VERSION" LATEST_TAG="$LATEST_TAG" python3 - <<'PY'
+          BASELINE="$(CURRENT_BASE="$CURRENT_BASE" LATEST_TAG="$LATEST_TAG" python3 - <<'PY'
           import os
-          current = tuple(map(int, os.environ["CURRENT_VERSION"].split(".")))
+          current = tuple(map(int, os.environ["CURRENT_BASE"].split(".")))
           latest = os.environ["LATEST_TAG"].removeprefix("v")
           tagged = tuple(map(int, latest.split("."))) if latest else (0, 0, 0)
           print(".".join(map(str, max(current, tagged))))
@@ -109,9 +110,9 @@ jobs:
           PREVIOUS_TAG: ${{ steps.version.outputs.previous_tag }}
         run: |
           set -euo pipefail
-          sed -i -E "s/^version: \"[0-9]+\.[0-9]+\.[0-9]+\"$/version: \"$VERSION\"/" manifest.yaml
-          sed -i -E "s/^VERSION := [0-9]+\.[0-9]+\.[0-9]+$/VERSION := $VERSION/" Makefile
-          sed -i -E "s/kandev-plugin-kandy-[0-9]+\.[0-9]+\.[0-9]+\.tar\.gz/kandev-plugin-kandy-$VERSION.tar.gz/" README.md
+          sed -i -E "s/^version: \"[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\"$/version: \"$VERSION\"/" manifest.yaml
+          sed -i -E "s/^VERSION := [0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/VERSION := $VERSION/" Makefile
+          sed -i -E "s/kandev-plugin-kandy-[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\.tar\.gz/kandev-plugin-kandy-$VERSION.tar.gz/" README.md
 
           RANGE="${PREVIOUS_TAG:+$PREVIOUS_TAG..}HEAD"
           CHANGES="$(git log --no-merges --format='- %s (%h)' "$RANGE")"
