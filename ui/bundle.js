@@ -238,6 +238,17 @@ function isAsleep(seed, timeOfDay) {
   return t >= s.bedtime || t < s.wake;
 }
 
+// kandyStationaryFor — the egg-stage extension of "asleep hides the
+// creature and suppresses the grotto walk": an unhatched egg (level <= 1)
+// gets the exact same stationary treatment as a sleeping kandy, since
+// neither one has anywhere to walk to yet. Takes the already-computed
+// asleep flag (isAsleep's result) rather than re-deriving it, so this stays
+// a one-line combination, independently callable and testable without a
+// lineage seed or clock.
+function kandyStationaryFor(asleep, level) {
+  return asleep || !(level > 1);
+}
+
 // currentDayPhase is set by sceneFor around building props so the shared
 // sun helpers can swap themselves out at night without every biome knowing
 // about the clock. Default "day" keeps every legacy call byte-identical.
@@ -2667,7 +2678,7 @@ var KANDY_CSS =
   ".kandev-kandy-grotto-panel:focus{outline:none}.kandev-kandy-grotto-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-3px}" +
   ".kandev-kandy-grotto-bar{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--grotto-edge);background:linear-gradient(180deg,rgba(30,24,19,.96),rgba(22,18,15,.86));backdrop-filter:blur(10px)}" +
   ".kandev-kandy-grotto-heading{min-width:0;text-align:center}.kandev-kandy-grotto-title{display:block;font-size:16px;font-weight:750;line-height:1.2;overflow-wrap:anywhere}.kandev-kandy-grotto-subtitle{margin-top:2px;color:var(--grotto-ink-dim);font-size:10px;line-height:1.35;overflow-wrap:anywhere}" +
-  ".kandev-kandy-grotto-action{min-height:40px;min-width:44px;padding:0 10px;border:1px solid var(--grotto-edge);border-radius:10px;background:rgba(255,255,255,.07);color:inherit;font-size:11px;font-weight:650;cursor:pointer}.kandev-kandy-grotto-action:hover{background:rgba(255,255,255,.13)}.kandev-kandy-grotto-action:focus-visible,.kandev-kandy-grotto-door:focus-visible,.kandev-kandy-token-pile:focus-visible,.kandev-kandy-grotto-entry:focus-visible{outline:2px solid var(--ring);outline-offset:2px}" +
+  ".kandev-kandy-grotto-action{min-height:40px;min-width:44px;padding:0 10px;border:1px solid var(--grotto-edge);border-radius:10px;background:rgba(255,255,255,.07);color:inherit;font-size:11px;font-weight:650;cursor:pointer}.kandev-kandy-grotto-action:hover{background:rgba(255,255,255,.13)}.kandev-kandy-grotto-action:focus-visible,.kandev-kandy-grotto-door:focus-visible,.kandev-kandy-token-pile:focus-visible,.kandev-kandy-grotto-entry:focus-visible,.kandev-kandy-grotto-manifest-open:focus-visible{outline:2px solid var(--ring);outline-offset:2px}" +
   ".kandev-kandy-grotto-scroll{max-height:calc(100vh - 104px);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;touch-action:pan-y}" +
   ".kandev-kandy-grotto-scene{position:relative;isolation:isolate;overflow:hidden;display:flex;flex-direction:column;min-height:340px;padding:18px;box-sizing:border-box;background:#0d1418}" +
   ".kandev-kandy-grotto-backdrop{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;pointer-events:none}" +
@@ -2691,8 +2702,11 @@ var KANDY_CSS =
   ".kandev-kandy-token-pile:hover .kandev-kandy-grotto-exact,.kandev-kandy-token-pile:focus-visible .kandev-kandy-grotto-exact,.kandev-kandy-token-pile.is-revealed .kandev-kandy-grotto-exact{opacity:1;visibility:visible}" +
   ".kandev-kandy-grotto-manifest{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:2;box-sizing:border-box;width:min(300px,calc(100% - 24px));max-height:62%;overflow-y:auto;overscroll-behavior:contain;padding:10px 12px;border:1px solid var(--grotto-edge);border-radius:12px;background:rgba(12,10,8,.94);color:var(--grotto-ink);font-size:11px}" +
   ".kandev-kandy-grotto-manifest strong{display:block;margin-bottom:6px;font-size:11px}.kandev-kandy-grotto-manifest ul{margin:0;padding:0;list-style:none}" +
-  ".kandev-kandy-grotto-manifest li{display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-top:1px solid rgba(255,255,255,.07);font-variant-numeric:tabular-nums}" +
+  ".kandev-kandy-grotto-manifest li{padding:3px 0;border-top:1px solid rgba(255,255,255,.07);font-variant-numeric:tabular-nums}" +
+  ".kandev-kandy-grotto-manifest-open{width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:0;padding:0;border:none;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:6px}" +
+  ".kandev-kandy-grotto-manifest-open:hover{color:#ffe4a8}" +
   ".kandev-kandy-grotto-manifest-name{min-width:0;overflow-wrap:anywhere;text-align:left}" +
+  ".kandev-kandy-grotto-door-overflow.is-revealed{background:linear-gradient(180deg,rgba(255,214,150,.16),rgba(0,0,0,.26))}" +
   ".kandev-kandy-grotto-boundary{margin:16px 0 0;color:var(--grotto-ink-dim);font-size:10px;text-align:center}.kandev-kandy-grotto-empty{min-height:270px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--grotto-ink-dim)}.kandev-kandy-grotto-empty-door{font-size:58px;line-height:1;opacity:.45}" +
   "@media (max-width:480px){.kandev-kandy-grotto-hub{grid-template-columns:1fr;grid-template-rows:auto!important;gap:10px}.kandev-kandy-grotto-hub>*{grid-column:1!important;grid-row:auto!important}.kandev-kandy-grotto-door{margin:0!important;border-radius:14px!important}.kandev-kandy-grotto-door::after{display:none}.kandev-kandy-grotto-scene{padding:12px}.kandev-kandy-grotto-bar{gap:6px;padding:8px}.kandev-kandy-grotto-subtitle{font-size:9px}.kandev-kandy-grotto-action{padding:0 8px}}" +
   // Kandy walks between the surface and the grotto: it strolls out of frame,
@@ -5684,6 +5698,75 @@ function tokenGrottoShell(h, DialogTitle, title, subtitle, panelRef, onBack, onE
   );
 }
 
+// The hub's cave-mouth backdrop is one SVG stretched to the scene's full
+// height; past roughly a screen's worth of door rows the "slice" scaling
+// zooms in far enough that the painted mountains/moon/water fall outside the
+// visible crop and the scene reads as a flat, featureless gradient. Capping
+// door count keeps the scene short enough to stay recognizable — measured
+// against the real 680px dialog width, 11 real doors (scene ~630px tall,
+// backdrop scale ~0.9) stayed fully intact in a browser screenshot, while 30+
+// visibly lost the moon/water/grass. The last slot becomes an overflow door
+// once the cap is exceeded, mirroring CHAMBER_PILE_SPOTS' merge-the-rest
+// pattern below.
+var HUB_DOOR_CAP = 12;
+var HUB_OVERFLOW_KEY = "\u0000hub-overflow";
+
+// Rooms arrive pre-sorted tokens-desc/label-asc (tokenGrottoModelFor), so the
+// first cap-1 are simply the biggest chambers; everything past that merges
+// into one overflow door.
+function hubDoorPlacement(rooms, cap) {
+  if (rooms.length <= cap) {
+    return rooms.map(function (room) {
+      return { room: room, rooms: [room], merged: false };
+    });
+  }
+  var shown = rooms.slice(0, cap - 1);
+  var rest = rooms.slice(cap - 1);
+  var placed = shown.map(function (room) {
+    return { room: room, rooms: [room], merged: false };
+  });
+  // tokenCountBigInt(room.tokens) is null for an unavailable count (the
+  // webhook body is untrusted input); BigInt(0) + null throws, so an
+  // unavailable count in the overflow set must not join the arithmetic.
+  var total = rest.reduce(function (sum, room) {
+    var count = tokenCountBigInt(room.tokens);
+    return count === null ? sum : sum + count;
+  }, BigInt(0));
+  var anyUnavailable = rest.some(function (room) {
+    return tokenCountBigInt(room.tokens) === null;
+  });
+  placed.push({
+    room: {
+      agentType: HUB_OVERFLOW_KEY,
+      label: rest.length + " more chambers",
+      tokens: anyUnavailable ? null : total.toString(),
+      models: [],
+    },
+    rooms: rest,
+    merged: true,
+  });
+  return placed;
+}
+
+// A live usage refresh can change the ranking while a visitor is inside a
+// chamber. Resolve the selected room against the hub's current placement so
+// Back focuses its real door when visible, or the overflow door when the room
+// has moved behind the cap.
+function hubDoorFocusKey(rooms, agentType) {
+  var placements = hubDoorPlacement(rooms, HUB_DOOR_CAP);
+  for (var i = 0; i < placements.length; i++) {
+    var entry = placements[i];
+    if (entry.merged) {
+      for (var j = 0; j < entry.rooms.length; j++) {
+        if (entry.rooms[j].agentType === agentType) return HUB_OVERFLOW_KEY;
+      }
+    } else if (entry.room.agentType === agentType) {
+      return agentType;
+    }
+  }
+  return null;
+}
+
 // Chambers hang off the cave walls: even ranks on the left rock face, odd on
 // the right, each one row further back. DOM order stays token order, so the
 // keyboard walks the chambers biggest-first however they are placed.
@@ -5728,7 +5811,87 @@ function tokenGrottoDoor(h, room, onOpen, index) {
   );
 }
 
-function tokenGrottoHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, onBack, onExit, outside) {
+// The cap's last door: it doesn't lead anywhere itself — it toggles a list of
+// every remaining chamber (kandev-kandy-grotto-manifest, the same popover the
+// chamber scene already uses for its own "N more models" overflow pile), so
+// visiting one of those chambers is still a single tap/click/Enter away.
+function tokenGrottoOverflowDoor(h, entry, index, revealed, onToggle) {
+  var room = entry.room;
+  var exact = formatTokenExact(room.tokens);
+  var side = index % 2 === 0 ? "left" : "right";
+  var label = room.label + (room.tokens === null ? "" : ", " + exact + " tokens") + ", open the list";
+  return h(
+    "button",
+    {
+      key: HUB_OVERFLOW_KEY,
+      type: "button",
+      className: "kandev-kandy-grotto-door kandev-kandy-grotto-door-overflow is-" + side + (revealed ? " is-revealed" : ""),
+      style: { gridColumn: side === "left" ? 1 : 3, gridRow: Math.floor(index / 2) + 1 },
+      "data-grotto-overflow": "true",
+      // Shares the door lookup focusGrottoDoor already does by agentType; the
+      // return focus is resolved against the current hub placement on Back.
+      "data-grotto-agent": HUB_OVERFLOW_KEY,
+      "aria-label": label,
+      "aria-pressed": revealed,
+      onClick: function () {
+        onToggle(HUB_OVERFLOW_KEY);
+      },
+    },
+    h(
+      "svg",
+      { viewBox: "0 0 88 88", "aria-hidden": "true", className: "kandev-kandy-grotto-door-art" },
+      h("circle", { cx: 44, cy: 44, r: 34, fill: "color-mix(in oklch,var(--muted) 82%,#65472f)" }),
+      h("circle", { cx: 30, cy: 44, r: 4.5, fill: "#f6c85f" }),
+      h("circle", { cx: 44, cy: 44, r: 4.5, fill: "#f6c85f" }),
+      h("circle", { cx: 58, cy: 44, r: 4.5, fill: "#f6c85f" }),
+    ),
+    h(
+      "span",
+      { className: "kandev-kandy-grotto-door-body" },
+      h("span", { className: "kandev-kandy-grotto-door-label" }, room.label),
+      room.tokens !== null
+        ? h("span", { className: "kandev-kandy-grotto-door-count" }, formatTokenCompact(room.tokens) + " tokens")
+        : null,
+    ),
+  );
+}
+
+// The overflow door's own list: real navigation, not a read-only tally, so
+// unlike tokenPileManifest each row is a button that opens straight into that
+// chamber.
+function hubOverflowManifest(h, entry, onOpen) {
+  return h(
+    "div",
+    { className: "kandev-kandy-grotto-manifest", role: "group", "aria-label": "Remaining chambers" },
+    h("strong", null, entry.rooms.length + " more chambers"),
+    h(
+      "ul",
+      null,
+      entry.rooms.map(function (room, index) {
+        var exact = formatTokenExact(room.tokens);
+        return h(
+          "li",
+          { key: room.agentType },
+          h(
+            "button",
+            {
+              type: "button",
+              className: "kandev-kandy-grotto-manifest-open",
+              "aria-label": room.label + ", " + exact + " tokens, open chamber",
+              onClick: function () {
+                onOpen(room.agentType, index % 2 === 0 ? "left" : "right");
+              },
+            },
+            h("span", { className: "kandev-kandy-grotto-manifest-name" }, room.label),
+            h("span", null, exact),
+          ),
+        );
+      }),
+    ),
+  );
+}
+
+function tokenGrottoHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, onBack, onExit, outside, revealedKey, onToggle) {
   var statusLine = model.status === "partial" ? "Some usage is estimated or incomplete." : "Tokens Kandy caught while listening.";
   var body;
   if (!model.rooms.length) {
@@ -5741,7 +5904,12 @@ function tokenGrottoHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, o
       h("span", null, "Kandy is listening."),
     );
   } else {
-    var pathRows = Math.ceil(model.rooms.length / 2);
+    var placements = hubDoorPlacement(model.rooms, HUB_DOOR_CAP);
+    var overflowEntry = null;
+    placements.forEach(function (entry) {
+      if (entry.merged) overflowEntry = entry;
+    });
+    var pathRows = Math.ceil(placements.length / 2);
     // One grid, no inner wrapper: the passages share their rows with the cave
     // floor below them, so Kandy always ends up standing on the ground.
     body = h(
@@ -5753,8 +5921,10 @@ function tokenGrottoHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, o
         // Kandy stands on the ground however many chambers there are.
         style: { gridTemplateRows: "repeat(" + pathRows + ", auto) 1fr" },
       },
-      model.rooms.map(function (room, index) {
-        return tokenGrottoDoor(h, room, onOpenRoom, index);
+      placements.map(function (entry, index) {
+        return entry.merged
+          ? tokenGrottoOverflowDoor(h, entry, index, revealedKey === HUB_OVERFLOW_KEY, onToggle)
+          : tokenGrottoDoor(h, entry.room, onOpenRoom, index);
       }),
       h(
         "div",
@@ -5764,6 +5934,7 @@ function tokenGrottoHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, o
         },
         creature,
       ),
+      overflowEntry && revealedKey === HUB_OVERFLOW_KEY ? hubOverflowManifest(h, overflowEntry, onOpenRoom) : null,
     );
   }
   return tokenGrottoShell(
@@ -8149,11 +8320,11 @@ function makeKandyWidget(host) {
     }
 
     // Walk Kandy off the current scene, swap the panel while it is gone, then
-    // walk it back in on the other side. Asleep, there is no Kandy on any of
-    // these scenes to walk — the panel just swaps, same as reduced motion.
+    // walk it back in on the other side. Asleep or still an egg, Kandy stays
+    // stationary — the panel just swaps, same as reduced motion.
     function walkBetweenScenes(departPhase, arrivePhase, swap) {
       clearGrottoWalk();
-      if (prefersReducedMotion() || kandyAsleep) {
+      if (prefersReducedMotion() || kandyStationary) {
         swap();
         return;
       }
@@ -8205,6 +8376,9 @@ function makeKandyWidget(host) {
 
     function openTokenRoom(agentType, side) {
       setGrottoRevealKey(null);
+      // The room may move between the visible and overflow placements while
+      // it is open; keep its identity and resolve the actual focus target when
+      // the hub is rendered again.
       returnToGrottoDoorRef.current = agentType;
       setGrottoSide(side || "right");
       walkBetweenScenes("depart-hub", "arrive-room", function () {
@@ -8241,7 +8415,7 @@ function makeKandyWidget(host) {
       // without an arrive-hub settle that would leave it standing down on
       // the shore and force a teleport back up to the cave mouth to depart.
       clearGrottoWalk();
-      if (prefersReducedMotion() || kandyAsleep) {
+      if (prefersReducedMotion() || kandyStationary) {
         setGrottoView(null);
         setGrottoSide(null);
         return;
@@ -8375,11 +8549,11 @@ function makeKandyWidget(host) {
     var dialogMotion = cardWalk ? Object.assign({}, motionState, { facing: 1, transit: cardWalk }) : motionState;
 
     // The underground Kandy travels wearing its own gait. Which scene it is
-    // standing in decides which leg of the trip applies to it. Asleep, it
-    // stays in bed — the grotto is still open to visit, just without Kandy
-    // there to greet them.
+    // standing in decides which leg of the trip applies to it. Asleep or still
+    // an egg, it stays outside — the grotto is still open to visit, just
+    // without Kandy there to greet them.
     function grottoCreature(surface) {
-      if (kandyAsleep) return null;
+      if (kandyStationary) return null;
       var creature = creatureSvg(h, shown, 64);
       var walk = grottoTransitClass(grottoTransit, surface, grottoSide);
       if (!walk) return creature;
@@ -8389,8 +8563,9 @@ function makeKandyWidget(host) {
     React.useEffect(
       function () {
         if (resolvedGrottoView === "hub" && returnToGrottoDoorRef.current) {
-          var restoredDoor = focusGrottoDoor(grottoPanelRef.current, returnToGrottoDoorRef.current);
+          var focusKey = hubDoorFocusKey(tokenGrottoModel.rooms, returnToGrottoDoorRef.current);
           returnToGrottoDoorRef.current = null;
+          var restoredDoor = focusKey ? focusGrottoDoor(grottoPanelRef.current, focusKey) : false;
           if (restoredDoor) {
             return;
           }
@@ -8418,6 +8593,7 @@ function makeKandyWidget(host) {
     // chip hop over it — no special-casing). The same schedule gates the
     // grotto: Kandy doesn't wake up to walk a visitor down there.
     var kandyAsleep = shown.level > 1 && isAsleep((shown.lineage_seed || 1) >>> 0, timeOfDay);
+    var kandyStationary = kandyStationaryFor(kandyAsleep, shown.level);
     var chipShown = shown;
     var chipAsleep = kandyAsleep;
     if (chipAsleep) chipShown = Object.assign({}, shown, { sleep_state: "asleep" });
@@ -8632,6 +8808,8 @@ function makeKandyWidget(host) {
                       timeOfDay,
                       currentSeason(),
                     ),
+                    grottoRevealKey,
+                    toggleGrottoCount,
                   )
                 : tokenGrottoRoom(
                     h,
@@ -8789,6 +8967,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     dayPhaseFor: dayPhaseFor,
     sleepScheduleFor: sleepScheduleFor,
     isAsleep: isAsleep,
+    kandyStationaryFor: kandyStationaryFor,
     seasonForMonth: seasonForMonth,
     seasonOverlayFor: seasonOverlayFor,
     speechLines: SPEECH,
@@ -8826,6 +9005,9 @@ window.registerKandevPlugin(PLUGIN_ID, {
     hoardStyles: HOARD_STYLES,
     tokenPilePlacement: tokenPilePlacement,
     chamberPileSpots: CHAMBER_PILE_SPOTS,
+    hubDoorPlacement: hubDoorPlacement,
+    hubDoorFocusKey: hubDoorFocusKey,
+    hubDoorCap: HUB_DOOR_CAP,
     tokenGrottoHub: tokenGrottoHub,
     tokenGrottoRoom: tokenGrottoRoom,
     tokenGrottoResolvedView: tokenGrottoResolvedView,

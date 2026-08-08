@@ -87,8 +87,8 @@ Kandev also sends the typed per-session
 metadata:
 
 - source timestamp;
-- delivery ID, or task/session/lifecycle agent IDs when no delivery ID exists,
-  transiently and only to construct a duplicate-suppression key;
+- task/session/lifecycle agent IDs, transiently and only to construct a
+  duplicate-suppression key;
 - agent type (the CLI/adapter slug, such as `claude-acp` or `codex-acp`);
 - observed model name; and
 - input, output, cache-read, cache-write, thought, and total token integers,
@@ -117,9 +117,10 @@ verbatim, and the grotto UI calls this out rather than implying the totals
 share a unit.
 
 The task/session/lifecycle IDs and usage categories are never persisted,
-logged, or returned to the browser. Only a SHA-256 delivery-ID digest (or a
-canonical aggregate-body digest when delivery ID is absent) survives for
-practical duplicate suppression. Kandy never reads or stores
+logged, or returned to the browser. Only a SHA-256 digest of the typed,
+normalized aggregate body survives for practical duplicate suppression;
+delivery EventID and OccurredAt are excluded, so transport retries with the
+same body hash identically. Kandy never reads or stores
 message text, prompts, responses, reasoning, tool calls, files, credentials,
 or provider-reported cost. The top-bar UI listens for session updates only to
 know when to refetch Kandy's own webhook. One Kandy and one grotto are shared by
@@ -157,10 +158,10 @@ observation began. There is no supported usage reader or cursor for backfill
 or reconciliation in Kandev v0.83.0, so the first iteration is deliberately
 best effort. Events can be missed while the plugin is disabled, restarting,
 overloaded, or when an agent reports no usable usage. Missing or unusable usage
-marks the history partial. Delivery retries are suppressed by stable Kandev
-event ID within the most recent 512 keys, including across plugin restarts;
-distinct delivery IDs count as distinct observations even when their aggregate
-usage bodies match. A replay older than that rolling window can count again.
+marks the history partial. Delivery retries with the same normalized body are
+suppressed within the most recent 512 keys, including across plugin restarts;
+changed delivery IDs do not turn an identical body into a second observation.
+A replay older than that rolling window can count again.
 The grotto says “observed” and never claims complete billing or lifetime history
 before its displayed start date.
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -109,7 +110,7 @@ func TestTokenGrotto_DuplicateDeliveryIDCountsOnceAcrossRestart(t *testing.T) {
 	}
 	require.NoError(t, p1.OnEvent(ctx, &pluginsdk.Event{EventID: "delivery-stable", EventType: "session_prompt_usage.updated.session-private", Payload: payload}))
 
-	// Kandev keeps EventID stable across delivery retries.
+	// Delivery identity is irrelevant when the normalized usage body matches.
 	p2 := newTestPlugin(t, host)
 	require.NoError(t, p2.OnEvent(ctx, &pluginsdk.Event{EventID: "delivery-stable", EventType: "session_prompt_usage.updated.session-private", Payload: payload}))
 	resp, err := p2.HandleWebhook(ctx, &pluginsdk.WebhookRequest{WebhookKey: webhookKeyKandy, Method: "GET"})
@@ -120,7 +121,7 @@ func TestTokenGrotto_DuplicateDeliveryIDCountsOnceAcrossRestart(t *testing.T) {
 	require.Equal(t, "10652", grotto["total_tokens"])
 }
 
-func TestTokenGrotto_IdenticalUsageWithDistinctDeliveryIDsCountsTwice(t *testing.T) {
+func TestTokenGrotto_IdenticalUsageWithDistinctDeliveryIDsDedupsByCanonicalBody(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
@@ -129,7 +130,7 @@ func TestTokenGrotto_IdenticalUsageWithDistinctDeliveryIDsCountsTwice(t *testing
 	require.NoError(t, p.OnEvent(ctx, &pluginsdk.Event{EventID: "delivery-one", EventType: "session_prompt_usage.updated.session-identical", Payload: payload}))
 	require.NoError(t, p.OnEvent(ctx, &pluginsdk.Event{EventID: "delivery-two", EventType: "session_prompt_usage.updated.session-identical", Payload: payload}))
 
-	require.Equal(t, "24", fetchKandy(t, p, "").TokenGrotto.TotalTokens)
+	require.Equal(t, "12", fetchKandy(t, p, "").TokenGrotto.TotalTokens, "transport identity is excluded from the canonical body hash")
 }
 
 func TestTokenGrotto_UnusableUsageMarksEmptyGrottoPartial(t *testing.T) {
@@ -534,6 +535,163 @@ func TestTokenGrotto_PersistsAndExposesOnlyAggregateMetadata(t *testing.T) {
 		require.NotContains(t, string(storedJSON), forbidden)
 		require.NotContains(t, string(response.Body), forbidden)
 	}
+}
+
+func TestTokenGrotto_MysteryFallbackAndOversizedLabelTruncation(t *testing.T) {
+	longAgentType := strings.Repeat("a", 70) // exceeds the 64-byte agent_type cap
+	longModel := strings.Repeat("m", 140)    // exceeds the 128-byte model cap
+	for _, test := range []struct {
+		id            string
+		agentType     any // nil omits the field entirely; a string (even "") sets it
+		model         any
+		wantAgentType string
+		wantModel     string
+	}{
+		{id: "missing-agent-type", agentType: nil, model: "gpt-5.6", wantAgentType: "mystery-agent", wantModel: "gpt-5.6"},
+		{id: "blank-agent-type", agentType: "", model: "gpt-5.6", wantAgentType: "mystery-agent", wantModel: "gpt-5.6"},
+		{id: "missing-model", agentType: "codex-acp", model: nil, wantAgentType: "codex-acp", wantModel: "Mystery model"},
+		{id: "blank-model", agentType: "codex-acp", model: "", wantAgentType: "codex-acp", wantModel: "Mystery model"},
+		{id: "agent-type-exceeds-64-bytes", agentType: longAgentType, model: "gpt-5.6", wantAgentType: longAgentType[:64], wantModel: "gpt-5.6"},
+		{id: "model-exceeds-128-bytes", agentType: "codex-acp", model: longModel, wantAgentType: "codex-acp", wantModel: longModel[:128]},
+	} {
+		t.Run(test.id, func(t *testing.T) {
+			host := newFakeHost(nil)
+			p := newTestPlugin(t, host)
+			payload := map[string]any{
+				"timestamp": "2026-07-28T12:00:00Z",
+				"usage":     map[string]any{"total_tokens": float64(5)},
+			}
+			if test.agentType != nil {
+				payload["agent_type"] = test.agentType
+			}
+			if test.model != nil {
+				payload["model"] = test.model
+			}
+			event := &pluginsdk.Event{
+				EventID:   "delivery-" + test.id,
+				EventType: "session_prompt_usage.updated.session-" + test.id,
+				Payload:   payload,
+			}
+
+			require.NoError(t, p.OnEvent(context.Background(), event))
+			state := fetchKandy(t, p, "")
+			require.Len(t, state.TokenGrotto.Rooms, 1)
+			require.Equal(t, test.wantAgentType, state.TokenGrotto.Rooms[0].AgentType)
+			require.Len(t, state.TokenGrotto.Rooms[0].Models, 1)
+			require.Equal(t, test.wantModel, state.TokenGrotto.Rooms[0].Models[0].Name)
+		})
+	}
+}
+
+func TestTokenGrotto_DistinctAgentTypesSharingALabelStaySeparateRooms(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+
+	require.NoError(t, p.OnEvent(ctx, tokenUsageFixture("gemini-bare", "gemini", "gemini-2.5-pro", 10, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))))
+	require.NoError(t, p.OnEvent(ctx, tokenUsageFixture("gemini-acp", "gemini-acp", "gemini-2.5-pro", 25, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))))
+
+	grotto := fetchKandy(t, p, "").TokenGrotto
+	require.Len(t, grotto.Rooms, 2, `"gemini" and "gemini-acp" share the Gemini label but must not merge into one room`)
+	rooms := map[string]tokenGrottoRoomResponse{}
+	for _, room := range grotto.Rooms {
+		rooms[room.AgentType] = room
+	}
+	require.Equal(t, "Gemini", rooms["gemini"].Label)
+	require.Equal(t, "10", rooms["gemini"].Tokens)
+	require.Equal(t, "Gemini", rooms["gemini-acp"].Label)
+	require.Equal(t, "25", rooms["gemini-acp"].Tokens)
+	require.Equal(t, "35", grotto.TotalTokens, "independent rooms must still contribute to one shared lifetime total")
+}
+
+func TestTokenGrotto_RejectsWholeEventWhenAnyUsageFieldIsMalformed(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		field string
+		value any
+	}{
+		{name: "negative number", field: "input_tokens", value: float64(-5)},
+		{name: "NaN", field: "output_tokens", value: math.NaN()},
+		{name: "infinity", field: "cached_read_tokens", value: math.Inf(1)},
+		{name: "fractional value", field: "cached_write_tokens", value: float64(1.5)},
+		{name: "wrong JSON type", field: "thought_tokens", value: "12"},
+		{name: "non-bool estimated", field: "estimated", value: "true"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			host := newFakeHost(nil)
+			p := newTestPlugin(t, host)
+			usage := map[string]any{
+				"input_tokens":        float64(1),
+				"output_tokens":       float64(2),
+				"cached_read_tokens":  float64(3),
+				"cached_write_tokens": float64(4),
+				"thought_tokens":      float64(5),
+				"total_tokens":        float64(999), // valid: proves a bad OTHER field still rejects the event
+				"estimated":           false,
+			}
+			usage[test.field] = test.value
+			event := &pluginsdk.Event{
+				EventID:   "delivery-malformed-" + test.field,
+				EventType: "session_prompt_usage.updated.session-malformed",
+				Payload: map[string]any{
+					"agent_type": "codex-acp",
+					"model":      "gpt-5.6",
+					"timestamp":  "2026-07-28T12:00:00Z",
+					"usage":      usage,
+				},
+			}
+
+			require.NoError(t, p.OnEvent(context.Background(), event))
+			grotto := fetchKandy(t, p, "").TokenGrotto
+			require.Equal(t, "partial", grotto.Status, "a malformed %s must reject the whole event, not just ignore that field", test.field)
+			require.Equal(t, "0", grotto.TotalTokens)
+			require.Empty(t, grotto.Rooms)
+		})
+	}
+}
+
+func TestTokenGrotto_EmptyEventIDDedupsIdenticalBodyByCanonicalHash(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	payload := tokenUsageFixture("no-id", "codex-acp", "gpt-5.6", 18, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)).Payload
+
+	require.NoError(t, p.OnEvent(ctx, &pluginsdk.Event{EventID: "", EventType: "session_prompt_usage.updated.session-no-id", Payload: payload}))
+	require.NoError(t, p.OnEvent(ctx, &pluginsdk.Event{EventID: "", EventType: "session_prompt_usage.updated.session-no-id", Payload: payload}))
+
+	require.Equal(t, "18", fetchKandy(t, p, "").TokenGrotto.TotalTokens, "identical bodies without a delivery ID fall back to the canonical-body hash and dedup")
+}
+
+func TestTokenGrotto_EmptyEventIDWithDifferingBodyCountsTwice(t *testing.T) {
+	host := newFakeHost(nil)
+	p := newTestPlugin(t, host)
+	ctx := context.Background()
+	first := tokenUsageFixture("no-id-a", "codex-acp", "gpt-5.6", 18, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+	second := tokenUsageFixture("no-id-b", "codex-acp", "gpt-5.6", 7, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))
+	first.EventID = ""
+	second.EventID = ""
+
+	require.NoError(t, p.OnEvent(ctx, first))
+	require.NoError(t, p.OnEvent(ctx, second))
+
+	require.Equal(t, "25", fetchKandy(t, p, "").TokenGrotto.TotalTokens, "distinct bodies without a delivery ID are not deduped against each other")
+}
+
+func TestTokenGrotto_StructurallyInvalidStateStartsFreshHistory(t *testing.T) {
+	host := newFakeHost(nil)
+	ctx := context.Background()
+	p1 := newTestPlugin(t, host)
+	require.NoError(t, p1.OnEvent(ctx, tokenUsageFixture("shape-old", "codex-acp", "old", 100, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))))
+	// Corrupt the stored shape itself — rooms should be an array — rather than
+	// just a value mismatch, so tokenGrottoFromMap's unmarshal fails and must
+	// be handled gracefully instead of panicking.
+	host.state[stateMapKey(stateScope, "", tokenGrottoStateKey)]["rooms"] = "not-an-array"
+
+	p2 := newTestPlugin(t, host)
+	require.NoError(t, p2.OnEvent(ctx, tokenUsageFixture("shape-new", "codex-acp", "new", 7, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))))
+	grotto := fetchKandy(t, p2, "").TokenGrotto
+	require.Equal(t, "7", grotto.TotalTokens, "structurally invalid stored state resets to a fresh grotto instead of panicking")
+	require.Equal(t, "new", grotto.Rooms[0].Models[0].Name)
 }
 
 func tokenUsageFixture(id, agentType, model string, tokens int64, timestamp time.Time) *pluginsdk.Event {

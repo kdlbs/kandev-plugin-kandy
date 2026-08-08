@@ -386,6 +386,22 @@ test("chambers hang off both cave walls as passages, biggest first", () => {
   assert.doesNotMatch(bundleSource, /kandev-kandy-grotto-grid/);
 });
 
+test("the hub renders its empty state instead of a door grid when there are no chambers yet", () => {
+  const render = loadBundle().plugin.__render;
+  const model = render.tokenGrottoModelFor(sampleKandy());
+  assert.equal(model.rooms.length, 0, "sampleKandy carries no token_grotto rooms");
+  const hub = render.tokenGrottoHub(jsx, "DialogTitle", model, { type: "kandy" }, { current: null }, () => {}, () => {}, () => {});
+
+  const empty = findNode(hub, (node) => node.props && node.props.className === "kandev-kandy-grotto-empty");
+  assert.ok(empty, "renders the empty-state block instead of a door grid");
+  assert.match(textContent(hub), /No chambers yet\./);
+  assert.match(textContent(hub), /Kandy is listening\./);
+  // Kandy still stands in the empty cave to greet the visitor.
+  assert.ok(findNode(empty, (node) => node.type === "kandy"), "the creature renders inside the empty state");
+  // Nothing to open: nothing wired up as a door.
+  assert.equal(findNode(hub, (node) => node.props && node.props["data-grotto-agent"]), null);
+});
+
 test("chamber floor spots rank by size and recency, and merge the overflow", () => {
   const render = loadBundle().plugin.__render;
   const spots = render.chamberPileSpots;
@@ -527,6 +543,158 @@ test("overflow placement never crashes on an unavailable count and never drops a
   assert.ok(allNames.includes("constructor"));
 });
 
+// ---------------------------------------------------------------------------
+// Hub doors (HUB_DOOR_CAP) — the hub-level sibling of CHAMBER_PILE_SPOTS'
+// merge-the-rest pattern above: past 12 chambers, the last door becomes an
+// overflow door instead of a spot on the wall.
+// ---------------------------------------------------------------------------
+
+test("hub doors show every chamber at or under the cap, and merge the rest past it", () => {
+  const render = loadBundle().plugin.__render;
+  assert.equal(render.hubDoorCap, 12);
+  const room = (i, tokens) => ({ agentType: "agent-" + i, label: "Agent " + i, tokens: String(tokens), models: [] });
+
+  // At the cap: every room gets a real door, nothing merges.
+  const atCap = [];
+  for (let i = 0; i < render.hubDoorCap; i++) atCap.push(room(i, 1000 - i));
+  const placedAtCap = render.hubDoorPlacement(atCap, render.hubDoorCap);
+  assert.equal(placedAtCap.length, render.hubDoorCap);
+  assert.ok(placedAtCap.every((entry) => !entry.merged));
+  assert.deepEqual(placedAtCap.map((entry) => entry.room.agentType), atCap.map((r) => r.agentType));
+
+  // Past the cap: the first 11 keep real doors, the rest merge into one
+  // overflow entry.
+  const overCap = [];
+  for (let i = 0; i < render.hubDoorCap + 3; i++) overCap.push(room(i, 1000 - i));
+  const placedOverCap = render.hubDoorPlacement(overCap, render.hubDoorCap);
+  assert.equal(placedOverCap.length, render.hubDoorCap);
+  assert.equal(placedOverCap.filter((entry) => entry.merged).length, 1);
+  assert.ok(placedOverCap.slice(0, render.hubDoorCap - 1).every((entry) => !entry.merged));
+  const merged = placedOverCap[placedOverCap.length - 1];
+  assert.ok(merged.merged, "the overflow takes the last door");
+  assert.equal(merged.rooms.length, overCap.length - (render.hubDoorCap - 1));
+  assert.match(merged.room.label, /^4 more chambers$/);
+
+  // The merged door carries the exact BigInt sum of the chambers it hides,
+  // and nothing is placed twice.
+  const hidden = merged.rooms.reduce((sum, r) => sum + BigInt(r.tokens), 0n);
+  assert.equal(merged.room.tokens, hidden.toString());
+  const allAgentTypes = placedOverCap.flatMap((entry) => entry.rooms.map((r) => r.agentType));
+  assert.equal(new Set(allAgentTypes).size, overCap.length, "every chamber is placed exactly once");
+});
+
+test("the hub overflow door's total is poisoned to null by any unavailable room in the merge, not fabricated", () => {
+  const render = loadBundle().plugin.__render;
+  const rooms = [];
+  for (let i = 0; i < render.hubDoorCap + 2; i++) {
+    rooms.push({ agentType: "agent-" + i, label: "Agent " + i, tokens: String(5000 - i), models: [] });
+  }
+  // The last room (inside the overflow set, past cap-1) has an unavailable
+  // token count. Summing the merged door's total must not throw
+  // BigInt(0) + null.
+  rooms[rooms.length - 1] = Object.assign({}, rooms[rooms.length - 1], { tokens: null });
+  const placed = render.hubDoorPlacement(rooms, render.hubDoorCap);
+  const merged = placed[placed.length - 1];
+  assert.ok(merged.merged);
+  assert.equal(merged.room.tokens, null, "an unavailable count in the overflow poisons the merged total rather than fabricating one");
+  assert.equal(render.formatTokenExact(merged.room.tokens), "Unavailable");
+});
+
+test("the hub overflow door opens a list of the chambers it hides, and each row opens straight into one", () => {
+  const render = loadBundle().plugin.__render;
+  const rooms = [];
+  for (let i = 0; i < 15; i++) {
+    rooms.push({ agent_type: "agent-" + i, label: "Agent " + i, tokens: String(1000 - i * 10), models: [] });
+  }
+  const model = render.tokenGrottoModelFor(sampleKandy({ token_grotto: { status: "ready", total_tokens: "10000", rooms } }));
+
+  const closed = render.tokenGrottoHub(jsx, "DialogTitle", model, { type: "kandy" }, { current: null }, () => {}, () => {}, () => {});
+  assert.equal(findNode(closed, (node) => node.props && node.props.className === "kandev-kandy-grotto-manifest"), null);
+  const doors = [];
+  visit(closed, (node) => {
+    if (node.type === "button" && node.props["data-grotto-agent"]) doors.push(node);
+  });
+  assert.equal(doors.length, render.hubDoorCap);
+  const overflowDoor = doors[doors.length - 1];
+  assert.equal(overflowDoor.props["data-grotto-agent"], "\u0000hub-overflow");
+  assert.equal(overflowDoor.props["aria-pressed"], false);
+  assert.match(overflowDoor.props["aria-label"], /^4 more chambers, [\d,]+ tokens, open the list$/);
+
+  // Clicking the overflow door asks the hub to toggle its own key, exactly
+  // like a merged token pile does for its own list.
+  let toggled = null;
+  const clickable = render.tokenGrottoHub(jsx, "DialogTitle", model, { type: "kandy" }, { current: null }, () => {}, () => {}, () => {}, undefined, null, (key) => {
+    toggled = key;
+  });
+  const clickableDoors = [];
+  visit(clickable, (node) => {
+    if (node.type === "button" && node.props["data-grotto-agent"]) clickableDoors.push(node);
+  });
+  clickableDoors[clickableDoors.length - 1].props.onClick();
+  assert.equal(toggled, "\u0000hub-overflow");
+
+  // Opened: the door reads pressed and its list appears with the hidden chambers.
+  let openedRoom = null;
+  let openedSide = null;
+  const opened = render.tokenGrottoHub(
+    jsx,
+    "DialogTitle",
+    model,
+    { type: "kandy" },
+    { current: null },
+    (agentType, side) => {
+      openedRoom = agentType;
+      openedSide = side;
+    },
+    () => {},
+    () => {},
+    undefined,
+    "\u0000hub-overflow",
+    () => {},
+  );
+  const openDoors = [];
+  visit(opened, (node) => {
+    if (node.type === "button" && node.props["data-grotto-agent"]) openDoors.push(node);
+  });
+  assert.equal(openDoors[openDoors.length - 1].props["aria-pressed"], true);
+  const manifest = findNode(opened, (node) => node.props && node.props.className === "kandev-kandy-grotto-manifest");
+  assert.ok(manifest, "opening the overflow door lists the chambers it hides");
+  const text = textContent(manifest);
+  assert.match(text, /4 more chambers/);
+  assert.match(text, /Agent 11/);
+  assert.match(text, /Agent 14/);
+
+  // Each row is real navigation, unlike the read-only tokenPileManifest: it
+  // opens straight into that chamber. The room identity is retained and the
+  // actual Back-focus door is resolved from the current hub placement later.
+  const rows = [];
+  visit(manifest, (node) => {
+    if (node.type === "button" && node.props.className === "kandev-kandy-grotto-manifest-open") rows.push(node);
+  });
+  assert.equal(rows.length, 4);
+  rows[0].props.onClick();
+  assert.equal(openedRoom, "agent-11");
+  assert.equal(openedSide, "left");
+});
+
+test("hub Back-focus resolves a chamber against its latest visible or overflow placement", () => {
+  const render = loadBundle().plugin.__render;
+  const rooms = [];
+  for (let i = 0; i < 15; i++) {
+    rooms.push({ agentType: "agent-" + i, label: "Agent " + i, tokens: String(1000 - i), models: [] });
+  }
+  assert.equal(render.hubDoorFocusKey(rooms, "agent-14"), "\u0000hub-overflow", "initially hidden room focuses the overflow door");
+
+  // A live refresh can promote the selected room above the cap.
+  const promoted = rooms.map((room) => (room.agentType === "agent-14" ? Object.assign({}, room, { tokens: "9000" }) : room));
+  promoted.sort((left, right) => Number(right.tokens) - Number(left.tokens));
+  assert.equal(render.hubDoorFocusKey(promoted, "agent-14"), "agent-14", "promoted room focuses its real door");
+
+  // If it disappears while the chamber is open, the caller can fall back to
+  // the panel itself rather than focusing a stale or nonexistent door.
+  assert.equal(render.hubDoorFocusKey(promoted.slice(1), "agent-14"), null);
+});
+
 test("the chamber view discloses partial/estimated status, not just the hub", () => {
   const render = loadBundle().plugin.__render;
   const rooms = [
@@ -666,6 +834,45 @@ test("Token Grotto hoard shape and material come from absolute tokens, proportio
   assert.equal(sameAsAbove.props["data-grotto-tier"], "coin mound", "250K reads the same tier whether it's the room's biggest or its smallest");
 });
 
+test("the same model name in two different rooms renders two independent piles, not one merged total", () => {
+  const render = loadBundle().plugin.__render;
+  // Pile keys are scoped by agentType joined with model.name on a NUL
+  // separator (see MERGED_PILE_KEY's own sentinel style), so a model name
+  // reused across rooms (a very ordinary thing — two agents both running a
+  // model called e.g. "gpt-5") must never merge or collide.
+  const model = render.tokenGrottoModelFor(
+    sampleKandy({
+      token_grotto: {
+        status: "ready",
+        total_tokens: "300",
+        rooms: [
+          { agent_type: "codex-acp", label: "Codex", tokens: "200", models: [{ name: "shared-model", tokens: "200" }] },
+          { agent_type: "claude-acp", label: "Claude Code", tokens: "100", models: [{ name: "shared-model", tokens: "100" }] },
+        ],
+      },
+    }),
+  );
+  const pilesIn = (agentType) => {
+    const room = render.tokenGrottoRoom(jsx, "DialogTitle", model, agentType, null, { current: null }, () => {}, () => {}, () => {}, {
+      type: "kandy",
+    });
+    const piles = [];
+    visit(room, (node) => {
+      if (node.props && node.props["data-grotto-model"]) piles.push(node);
+    });
+    return piles;
+  };
+
+  const codexPiles = pilesIn("codex-acp");
+  const claudePiles = pilesIn("claude-acp");
+  assert.equal(codexPiles.length, 1);
+  assert.equal(claudePiles.length, 1);
+  assert.equal(codexPiles[0].props.key, "codex-acp\u0000shared-model");
+  assert.equal(claudePiles[0].props.key, "claude-acp\u0000shared-model");
+  assert.match(codexPiles[0].props["aria-label"], /shared-model, 200 tokens in Codex chamber/);
+  assert.match(claudePiles[0].props["aria-label"], /shared-model, 100 tokens in Claude Code chamber/);
+});
+
 test("a passage hands its wall to the chamber, and Kandy stands on that side", () => {
   const render = loadBundle().plugin.__render;
   const model = render.tokenGrottoModelFor(
@@ -742,6 +949,220 @@ test("token grotto restores focus to the selected chamber door", () => {
     /function backFromTokenGrotto\(\)[\s\S]*?returnToGrottoDoorRef\.current = null;[\s\S]*?setGrottoView\(null\)/,
   );
   assert.match(bundleSource, /\[resolvedGrottoView\],/);
+});
+
+// makeRerenderableWidget — a small, self-contained React double that (unlike
+// every other host mock in this file) actually persists useState/useRef
+// across repeated calls to the returned KandyWidget function: useRef cells
+// and useState cells are memoized by call order (exactly like real hook
+// identity across renders) and setState really mutates its cell. This is
+// the only way to drive openTokenGrotto/openTokenRoom/backToTokenHub/
+// backFromTokenGrotto (plain closures, not exported pure functions) through
+// a real multi-step visit and observe their effect on the focus-restore
+// refs, instead of only pinning the source text with a regex.
+function makeRerenderableWidget() {
+  const refCells = [];
+  const stateCells = [];
+  let refCursor = 0;
+  let stateCursor = 0;
+  let Widget = null;
+  const React = {
+    Fragment: "Fragment",
+    useEffect(effect) {
+      effect();
+    },
+    useRef(initial) {
+      const i = refCursor++;
+      if (refCells.length <= i) refCells.push({ current: initial });
+      return refCells[i];
+    },
+    useState(initial) {
+      const i = stateCursor++;
+      if (stateCells.length <= i) stateCells.push(typeof initial === "function" ? initial() : initial);
+      return [
+        stateCells[i],
+        (next) => {
+          stateCells[i] = typeof next === "function" ? next(stateCells[i]) : next;
+        },
+      ];
+    },
+  };
+  return {
+    React,
+    registerComponent(slot, component) {
+      Widget = component;
+    },
+    render() {
+      refCursor = 0;
+      stateCursor = 0;
+      return Widget();
+    },
+  };
+}
+
+test("Back-focus follows the selected room's current hub placement", async () => {
+  const host = makeRerenderableWidget();
+  const rooms = [];
+  for (let i = 0; i < 13; i++) {
+    rooms.push({ agent_type: "agent-" + i, label: "Agent " + i, tokens: String(1000 - i), models: [] });
+  }
+  // level: 1 keeps Kandy deterministically stationary (an egg never walks),
+  // so every grotto transition below completes synchronously — no fake
+  // timers to run, and no dependence on the wall-clock sleep schedule.
+  const kandyData = sampleKandy({ level: 1, token_grotto: { status: "ready", total_tokens: "10000", rooms } });
+
+  const runtime = loadBundle();
+  runtime.plugin.initialize(
+    { registerComponent: host.registerComponent, registerWsHandler() {} },
+    {
+      React: host.React,
+      api: {
+        fetch() {
+          return Promise.resolve({ json: () => Promise.resolve(kandyData) });
+        },
+      },
+      jsx,
+      ui: {
+        Dialog: "Dialog",
+        DialogContent: "DialogContent",
+        DialogTitle: "DialogTitle",
+        Tooltip: "Tooltip",
+        TooltipContent: "TooltipContent",
+        TooltipTrigger: "TooltipTrigger",
+      },
+    },
+  );
+
+  host.render(); // mount: kicks off the fetch
+  for (let i = 0; i < 10; i++) await Promise.resolve(); // let the fetch chain settle
+  let tree = host.render(); // now reflects the fetched data
+
+  const render = runtime.plugin.__render;
+  const model = render.tokenGrottoModelFor(kandyData);
+  const placements = render.hubDoorPlacement(model.rooms, render.hubDoorCap);
+  const doorAgentTypes = placements.map((entry) => (entry.merged ? "\u0000hub-overflow" : entry.room.agentType));
+
+  const dialog = findNode(tree, (n) => n.type === "DialogContent");
+  const entryButton = findNode(
+    dialog,
+    (n) => n.type === "button" && n.props["aria-label"] === "Show me your Token Grotto",
+  );
+  assert.ok(entryButton, "the entry button is in the tree");
+  entryButton.props.onClick();
+  tree = host.render(); // hub view
+
+  const panelSection = findNode(tree, (n) => n.props && n.props["aria-label"] === "Kandy Token Grotto");
+  assert.ok(panelSection, "the hub panel renders");
+  const focusedDoors = [];
+  // Stands in for the real DOM: focusGrottoDoor queries the panel for every
+  // rendered door and focuses the one whose data-grotto-agent matches.
+  panelSection.props.ref.current = {
+    querySelectorAll() {
+      return doorAgentTypes.map((agentType) => ({
+        dataset: { grottoAgent: agentType },
+        focus() {
+          focusedDoors.push(agentType);
+        },
+      }));
+    },
+  };
+
+  // --- A normal door: opening a real chamber remembers that chamber's own door. ---
+  const doors = [];
+  visit(tree, (n) => {
+    if (n.type === "button" && n.props["data-grotto-agent"]) doors.push(n);
+  });
+  const normalDoor = doors.find((d) => d.props["data-grotto-agent"] === "agent-0");
+  assert.ok(normalDoor, "a real door renders for agent-0");
+  normalDoor.props.onClick();
+  tree = host.render(); // room view (agent-0)
+  let backButton = findNode(tree, (n) => n.type === "button" && n.props["aria-label"] === "Back");
+  assert.ok(backButton, "the room exposes a Back action");
+  backButton.props.onClick();
+  host.render(); // hub view again — the focus-restore effect runs here
+
+  assert.deepEqual(focusedDoors, ["agent-0"], "Back from a normal chamber focuses that chamber's own door");
+
+  // --- The overflow list: opening a merged chamber remembers the overflow
+  // door instead, since that room has no door of its own in the hub grid. ---
+  focusedDoors.length = 0;
+  tree = host.render(); // fresh hub tree
+  const overflowDoor = findNode(
+    tree,
+    (n) => n.type === "button" && n.props["data-grotto-agent"] === "\u0000hub-overflow",
+  );
+  assert.ok(overflowDoor, "the overflow door renders");
+  overflowDoor.props.onClick();
+  tree = host.render(); // hub view, manifest now open
+  const manifest = findNode(tree, (n) => n.props && n.props.className === "kandev-kandy-grotto-manifest");
+  assert.ok(manifest, "the overflow list opens");
+  const row = findNode(
+    manifest,
+    (n) => n.type === "button" && n.props.className === "kandev-kandy-grotto-manifest-open",
+  );
+  assert.ok(row, "the manifest lists an openable chamber");
+  row.props.onClick();
+  tree = host.render(); // room view (a merged chamber, e.g. agent-11)
+  backButton = findNode(tree, (n) => n.type === "button" && n.props["aria-label"] === "Back");
+  assert.ok(backButton, "the merged chamber also exposes Back");
+  backButton.props.onClick();
+  host.render(); // hub view again
+
+  assert.deepEqual(
+    focusedDoors,
+    ["\u0000hub-overflow"],
+    "Back from an overflow chamber focuses the overflow door itself, not a door that doesn't exist for that room",
+  );
+});
+
+test("exiting the grotto (not just going back to the hub) returns focus to the grotto entry button", () => {
+  const host = makeRerenderableWidget();
+  const runtime = loadBundle();
+  runtime.plugin.initialize(
+    { registerComponent: host.registerComponent, registerWsHandler() {} },
+    {
+      React: host.React,
+      api: {
+        fetch() {
+          return Promise.resolve({ json: () => Promise.resolve(sampleKandy()) });
+        },
+      },
+      jsx,
+      ui: {
+        Dialog: "Dialog",
+        DialogContent: "DialogContent",
+        DialogTitle: "DialogTitle",
+        Tooltip: "Tooltip",
+        TooltipContent: "TooltipContent",
+        TooltipTrigger: "TooltipTrigger",
+      },
+    },
+  );
+
+  let tree = host.render(); // mount (data hasn't resolved: still the egg placeholder, stationary)
+  const dialog = findNode(tree, (n) => n.type === "DialogContent");
+  const entryButton = findNode(
+    dialog,
+    (n) => n.type === "button" && n.props["aria-label"] === "Show me your Token Grotto",
+  );
+  assert.ok(entryButton, "the entry button is in the tree");
+  let focusCount = 0;
+  entryButton.props.ref.current = {
+    focus() {
+      focusCount++;
+    },
+  };
+
+  entryButton.props.onClick(); // openTokenGrotto: arms returnToGrottoEntryRef, walks to the hub
+  tree = host.render(); // hub view
+  assert.equal(focusCount, 0, "focus doesn't move yet — the visitor is still down in the grotto");
+
+  const exitButton = findNode(tree, (n) => n.type === "button" && n.props["aria-label"] === "Exit Grotto");
+  assert.ok(exitButton, "the hub exposes an Exit Grotto action");
+  exitButton.props.onClick(); // backFromTokenGrotto: walks back out to the surface
+  host.render(); // surface view again — the focus-restore effect runs here
+
+  assert.equal(focusCount, 1, "exiting the grotto returns focus to the grotto entry button");
 });
 
 test("chambers stand in their own torch-lit room with an unmarked floor", () => {
@@ -836,8 +1257,8 @@ test("Kandy walks between the surface and the grotto instead of the panel slidin
   assert.match(bundleSource, /GROTTO_WALK_IN_MS\);/);
   assert.match(bundleSource, /var GROTTO_WALK_OUT_MS = 640;/);
   assert.match(bundleSource, /var GROTTO_WALK_IN_MS = 940;/);
-  // Reduced motion, or Kandy being asleep, swaps the panel with no walk at all.
-  assert.match(bundleSource, /if \(prefersReducedMotion\(\) \|\| kandyAsleep\) \{\n        swap\(\);\n        return;/);
+  // Reduced motion, sleep, or the egg stage swaps the panel with no walk at all.
+  assert.match(bundleSource, /if \(prefersReducedMotion\(\) \|\| kandyStationary\) \{\n        swap\(\);\n        return;/);
   assert.match(bundleSource, /walkBetweenScenes\("depart-surface", "arrive-hub"[\s\S]*?setGrottoView\("hub"\)/);
   // From the hub, Exit drops the remembered passage and climbs out through
   // the cave mouth (entrance) — not a side-walk.
@@ -928,33 +1349,51 @@ test("Kandy walks between the surface and the grotto instead of the panel slidin
   );
 });
 
-test("asleep Kandy stays in bed for the grotto: no walk, no creature underground", () => {
+test("asleep or egg Kandy stays outside the grotto: no walk, no underground creature", () => {
   // The dialog's own kandyCard already sleeps Kandy correctly (its own
   // sleepState computation, tested elsewhere via kandyCard's timeOfDay arg).
   // What's new: the same schedule now also stops the surface-to-grotto walk
-  // and hides Kandy in the hub/room scenes, without blocking entry — the
-  // grotto still opens, chambers still work, only the creature is absent.
+  // and hides stationary Kandy in the hub/room scenes, without blocking
+  // entry — the grotto still opens and chambers still work.
   assert.match(
     bundleSource,
     /var kandyAsleep = shown\.level > 1 && isAsleep\(\(shown\.lineage_seed \|\| 1\) >>> 0, timeOfDay\);/,
   );
+  // Eggs use the same stationary grotto behavior as sleeping Kandy, while
+  // entry itself remains available to the visitor. The boolean itself is a
+  // separately-tested pure function (see kandyStationaryFor below); this
+  // just pins that the call site still feeds it the right variable names.
+  assert.match(bundleSource, /var kandyStationary = kandyStationaryFor\(kandyAsleep, shown\.level\);/);
   // The chip's own sleep flag is the same computation, not a second source
   // of truth that could drift from the grotto's.
   assert.match(bundleSource, /var chipShown = shown;\n\s*var chipAsleep = kandyAsleep;/);
-  // Asleep, grottoCreature returns null before touching transit/gait at all
-  // — no creature to animate on any of the three scenes (card, hub, room).
+  // Asleep or egg, grottoCreature returns null before touching transit/gait at
+  // all — no stationary creature appears on any underground scene.
   assert.match(
     bundleSource,
-    /function grottoCreature\(surface\) \{\n\s*if \(kandyAsleep\) return null;\n\s*var creature = creatureSvg\(h, shown, 64\);/,
+    /function grottoCreature\(surface\) \{\n\s*if \(kandyStationary\) return null;\n\s*var creature = creatureSvg\(h, shown, 64\);/,
   );
   // walkBetweenScenes (shared by every leg: surface<->hub<->hub<->room) swaps
   // the panel instantly when asleep, same as reduced motion — nothing walks
   // off a scene Kandy was never standing on.
-  assert.match(bundleSource, /if \(prefersReducedMotion\(\) \|\| kandyAsleep\) \{\n\s*swap\(\);\n\s*return;/);
+  assert.match(bundleSource, /if \(prefersReducedMotion\(\) \|\| kandyStationary\) \{\n\s*swap\(\);\n\s*return;/);
   // Entry itself stays open: nothing in openTokenGrotto or tokenGrottoButton
   // checks kandyAsleep before allowing the dialog/hub to open.
   assert.doesNotMatch(bundleSource, /function openTokenGrotto\(\)[\s\S]{0,200}kandyAsleep/);
   assert.doesNotMatch(bundleSource, /function tokenGrottoButton[\s\S]{0,400}[Aa]sleep/);
+});
+
+test("kandyStationaryFor keeps Kandy still while asleep or still an egg, and only then", () => {
+  const render = loadBundle().plugin.__render;
+  // The egg case: wide awake (never asked to sleep) but level 1 — there is
+  // no walk to do yet.
+  assert.equal(render.kandyStationaryFor(false, 1), true, "an awake egg is still stationary");
+  // Hatched and awake: free to walk the grotto.
+  assert.equal(render.kandyStationaryFor(false, 2), false, "hatched and awake walks");
+  // The pre-existing sleep case, past hatching: stationary again.
+  assert.equal(render.kandyStationaryFor(true, 2), true, "asleep past hatching is stationary");
+  // Asleep AND still an egg: still just stationary, no double-negative surprises.
+  assert.equal(render.kandyStationaryFor(true, 1), true);
 });
 
 test("token grotto resolves removed chambers to hub and subscribes to live usage", () => {

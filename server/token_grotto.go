@@ -258,10 +258,6 @@ func normalizeTokenUsage(event *pluginsdk.Event) (observedTokenUsage, bool) {
 	}
 	digest := sha256.Sum256(canonicalJSON)
 	dedupKey := hex.EncodeToString(digest[:])
-	if event.EventID != "" {
-		deliveryDigest := sha256.Sum256([]byte("event-id:\n" + event.EventID))
-		dedupKey = hex.EncodeToString(deliveryDigest[:])
-	}
 	return observedTokenUsage{
 		AgentType: agentType,
 		Model:     model,
