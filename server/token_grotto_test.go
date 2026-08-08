@@ -239,6 +239,26 @@ func TestTokenGrotto_ReadFailureDoesNotOverwriteHistory(t *testing.T) {
 	require.Equal(t, "100", fetchKandy(t, p3, "").TokenGrotto.TotalTokens, "failed read must not replace stored lifetime history")
 }
 
+func TestTokenGrotto_RecoveredLineageReadDoesNotResetHistory(t *testing.T) {
+	host := newFakeHost(nil)
+	ctx := context.Background()
+	p1 := newTestPlugin(t, host)
+	recorded := tokenUsageFixture("recorded", "codex-acp", "gpt-5.6", 100, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))
+	retryLater := tokenUsageFixture("retry-later", "codex-acp", "gpt-5.6", 25, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))
+	require.NoError(t, p1.OnEvent(ctx, recorded))
+
+	// The first lineage read fails, while the follow-up read inside the
+	// lineage check succeeds. The temporary ledger from the first read must
+	// not replace the persisted Kandy salt and orphan the grotto history.
+	key := stateMapKey(stateScope, "", stateKey)
+	host.getStateErrOnce[key] = fmt.Errorf("temporary host read failure")
+	p2 := newTestPlugin(t, host)
+	require.NoError(t, p2.OnEvent(ctx, retryLater))
+
+	p3 := newTestPlugin(t, host)
+	require.Equal(t, "100", fetchKandy(t, p3, "").TokenGrotto.TotalTokens, "a recovered lineage read must not replace stored lifetime history")
+}
+
 func TestTokenGrotto_WriteRetryHandlesKnownAndAmbiguousFailure(t *testing.T) {
 	for _, testCase := range []struct {
 		name      string

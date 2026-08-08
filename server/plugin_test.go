@@ -19,24 +19,26 @@ import (
 // vault outage for the seal decision-table tests.
 type fakeHost struct {
 	pluginsdk.UnimplementedHostData
-	config         map[string]any
-	state          map[string]map[string]any
-	secrets        map[string]string
-	getStateErr    map[string]error
-	setStateErr    map[string]error
-	commitStateErr map[string]error
-	getSecretErr   error
-	setSecretErr   error
+	config          map[string]any
+	state           map[string]map[string]any
+	secrets         map[string]string
+	getStateErr     map[string]error
+	getStateErrOnce map[string]error
+	setStateErr     map[string]error
+	commitStateErr  map[string]error
+	getSecretErr    error
+	setSecretErr    error
 }
 
 func newFakeHost(config map[string]any) *fakeHost {
 	return &fakeHost{
-		config:         config,
-		state:          map[string]map[string]any{},
-		secrets:        map[string]string{},
-		getStateErr:    map[string]error{},
-		setStateErr:    map[string]error{},
-		commitStateErr: map[string]error{},
+		config:          config,
+		state:           map[string]map[string]any{},
+		secrets:         map[string]string{},
+		getStateErr:     map[string]error{},
+		getStateErrOnce: map[string]error{},
+		setStateErr:     map[string]error{},
+		commitStateErr:  map[string]error{},
 	}
 }
 
@@ -44,6 +46,10 @@ func stateMapKey(scope, scopeID, key string) string { return scope + "|" + scope
 
 func (h *fakeHost) GetState(_ context.Context, scope, scopeID, key string) (map[string]any, bool, error) {
 	mapKey := stateMapKey(scope, scopeID, key)
+	if err := h.getStateErrOnce[mapKey]; err != nil {
+		delete(h.getStateErrOnce, mapKey)
+		return nil, false, err
+	}
 	if err := h.getStateErr[mapKey]; err != nil {
 		return nil, false, err
 	}

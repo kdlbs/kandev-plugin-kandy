@@ -512,6 +512,12 @@ test("the merged pile opens a list of the models it hides", () => {
   assert.match(text, /4 models in this pile/);
   assert.match(text, /m9/);
   assert.match(text, /m12/);
+  const modelRow = findNode(manifest, (node) => node.props && node.props.className === "kandev-kandy-grotto-manifest-row");
+  assert.ok(modelRow, "model rows keep the name and exact count visually distinct");
+  const separator = findNode(modelRow, (node) => node.props && node.props.className === "kandev-kandy-grotto-manifest-separator");
+  assert.ok(separator);
+  assert.equal(textContent(separator), "·");
+  assert.ok(findNode(modelRow, (node) => node.props && node.props.className === "kandev-kandy-grotto-manifest-count"));
 });
 
 test("overflow placement never crashes on an unavailable count and never drops a prototype-named model", () => {
@@ -672,6 +678,8 @@ test("the hub overflow door opens a list of the chambers it hides, and each row 
     if (node.type === "button" && node.props.className === "kandev-kandy-grotto-manifest-open") rows.push(node);
   });
   assert.equal(rows.length, 4);
+  assert.ok(findNode(rows[0], (node) => node.props && node.props.className === "kandev-kandy-grotto-manifest-separator"));
+  assert.ok(findNode(rows[0], (node) => node.props && node.props.className === "kandev-kandy-grotto-manifest-count"));
   rows[0].props.onClick();
   assert.equal(openedRoom, "agent-11");
   assert.equal(openedSide, "left");
@@ -1467,6 +1475,8 @@ test("token grotto CSS uses vertical responsive grids without paging tracks", ()
   assert.match(css, /\.kandev-kandy-token-pile:focus-visible \.kandev-kandy-grotto-exact/);
   assert.match(css, /\.kandev-kandy-token-pile\.is-revealed \.kandev-kandy-grotto-exact/);
   assert.match(css, /\.kandev-kandy-token-pile-hoard/);
+  assert.match(css, /\.kandev-kandy-grotto-manifest-row\{display:flex;align-items:baseline;gap:7px\}/);
+  assert.match(css, /\.kandev-kandy-grotto-manifest-count\{[^}]*white-space:nowrap/);
   assert.doesNotMatch(css, /\.kandev-kandy-token-pile-fragment\.is-chip/);
   assert.doesNotMatch(css, /grotto-(?:carousel|pager|track)/);
 

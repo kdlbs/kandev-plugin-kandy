@@ -169,6 +169,11 @@ func tokenUsageTimestamp(event *pluginsdk.Event, fallback time.Time) string {
 
 func (p *plugin) ensureTokenGrottoLineage(ctx context.Context) (*ledger, bool) {
 	kandy := p.loadLedger(ctx)
+	if kandy == nil || kandy.transient {
+		// A failed Host read yields a temporary ledger that must never become
+		// the persisted lineage if a later read happens to succeed.
+		return kandy, false
+	}
 	host := p.Host()
 	if host == nil {
 		return kandy, false

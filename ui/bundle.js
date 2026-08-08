@@ -2703,7 +2703,8 @@ var KANDY_CSS =
   ".kandev-kandy-grotto-manifest{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:2;box-sizing:border-box;width:min(300px,calc(100% - 24px));max-height:62%;overflow-y:auto;overscroll-behavior:contain;padding:10px 12px;border:1px solid var(--grotto-edge);border-radius:12px;background:rgba(12,10,8,.94);color:var(--grotto-ink);font-size:11px}" +
   ".kandev-kandy-grotto-manifest strong{display:block;margin-bottom:6px;font-size:11px}.kandev-kandy-grotto-manifest ul{margin:0;padding:0;list-style:none}" +
   ".kandev-kandy-grotto-manifest li{padding:3px 0;border-top:1px solid rgba(255,255,255,.07);font-variant-numeric:tabular-nums}" +
-  ".kandev-kandy-grotto-manifest-open{width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:0;padding:0;border:none;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:6px}" +
+  ".kandev-kandy-grotto-manifest-row{display:flex;align-items:baseline;gap:7px}.kandev-kandy-grotto-manifest-separator{flex:0 0 auto;color:var(--grotto-ink-dim)}.kandev-kandy-grotto-manifest-count{flex:0 0 auto;margin-left:auto;white-space:nowrap;text-align:right}" +
+  ".kandev-kandy-grotto-manifest-open{width:100%;display:flex;justify-content:flex-start;align-items:baseline;gap:7px;margin:0;padding:0;border:none;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:6px}" +
   ".kandev-kandy-grotto-manifest-open:hover{color:#ffe4a8}" +
   ".kandev-kandy-grotto-manifest-name{min-width:0;overflow-wrap:anywhere;text-align:left}" +
   ".kandev-kandy-grotto-door-overflow.is-revealed{background:linear-gradient(180deg,rgba(255,214,150,.16),rgba(0,0,0,.26))}" +
@@ -5883,7 +5884,8 @@ function hubOverflowManifest(h, entry, onOpen) {
               },
             },
             h("span", { className: "kandev-kandy-grotto-manifest-name" }, room.label),
-            h("span", null, exact),
+            h("span", { className: "kandev-kandy-grotto-manifest-separator", "aria-hidden": "true" }, "·"),
+            h("span", { className: "kandev-kandy-grotto-manifest-count" }, exact),
           ),
         );
       }),
@@ -6166,9 +6168,10 @@ function tokenPileManifest(h, entry) {
       entry.models.map(function (model) {
         return h(
           "li",
-          { key: model.name },
+          { key: model.name, className: "kandev-kandy-grotto-manifest-row" },
           h("span", { className: "kandev-kandy-grotto-manifest-name" }, model.name),
-          h("span", null, formatTokenExact(model.tokens)),
+          h("span", { className: "kandev-kandy-grotto-manifest-separator", "aria-hidden": "true" }, "·"),
+          h("span", { className: "kandev-kandy-grotto-manifest-count" }, formatTokenExact(model.tokens)),
         );
       }),
     ),
