@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0] - 2026-08-08
+
+### Changed
+
+- Fix release workflow prerelease parsing (#16) (b9bf87b)
+- feat(grotto): add observed token history (#15) (88dfba5)
+
+
 ## [0.11.0] - 2026-08-02
 
 ### Added
