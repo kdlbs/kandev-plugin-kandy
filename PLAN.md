@@ -353,17 +353,21 @@ is intentionally uncapped because every genuinely used adapter/model chamber
 belongs to Kandy's history; repeated events only update existing counters, so
 storage growth follows distinct adapter/model pairs rather than workload size.
 
-Kandev's stable delivery `EventID` is hashed for practical idempotency. The
-most recent 512 keys survive restarts and cover normal retries, including
-ambiguous Host-state writes. Distinct event IDs remain distinct even when
-their aggregate usage bodies match. Without an authoritative usage reader or
-cursor, a replay older than the window can count again and missed events cannot
-be reconciled; UI and README describe history as observed, never complete.
+Kandy hashes a typed canonical normalized usage body for practical idempotency;
+delivery `EventID` and `OccurredAt` are deliberately excluded. The most recent
+512 body hashes survive restarts and cover normal retries, including ambiguous
+Host-state writes. Identical aggregate bodies therefore deduplicate even when
+transport delivery IDs differ. Without an authoritative usage reader or cursor,
+a replay older than the window can count again and missed events cannot be
+reconciled; UI and README describe history as observed, never complete.
 
 Positive `total_tokens` wins. Missing or zero total falls back to input plus
 output without adding cache or thought categories whose semantics may overlap.
 Estimated/fallback usage and recognized events with malformed, missing, zero,
 or otherwise unusable counts latch the grotto partial. Rejected payloads are
-never persisted. The event identifies agent adapter and model but carries no
-authoritative provider, so chambers are explicitly adapter/model breakdowns;
-provider breakdown remains unavailable until Kandev adds a typed field.
+never persisted and cannot start the observation boundary. The event identifies
+agent adapter and model but carries no authoritative provider, so chambers are
+explicitly adapter/model breakdowns; provider breakdown remains unavailable
+until Kandev adds a typed field. A monotonic per-model recency ordinal may be
+stored for the fixed floor presentation; it is aggregate UI metadata, not a
+timestamp or per-event history.

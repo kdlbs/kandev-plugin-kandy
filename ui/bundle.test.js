@@ -185,7 +185,7 @@ test("token grotto model allowlists and sorts aggregate usage only", () => {
             agent_type: "claude-acp",
             label: "Claude Code",
             tokens: "120",
-            models: [{ name: "sonnet", tokens: "120", last_seen: "2026-07-30T09:00:00Z" }],
+            models: [{ name: "sonnet", tokens: "120", recent_rank: "3" }],
           },
         ],
       },
@@ -201,15 +201,15 @@ test("token grotto model allowlists and sorts aggregate usage only", () => {
         agentType: "claude-acp",
         label: "Claude Code",
         tokens: "120",
-        models: [{ name: "sonnet", tokens: "120", lastSeen: "2026-07-30T09:00:00Z" }],
+        models: [{ name: "sonnet", tokens: "120", recentRank: "3" }],
       },
       {
         agentType: "codex-acp",
         label: "Codex",
         tokens: "42",
         models: [
-          { name: "large", tokens: "40", lastSeen: "" },
-          { name: "small", tokens: "2", lastSeen: "" },
+          { name: "large", tokens: "40", recentRank: "" },
+          { name: "small", tokens: "2", recentRank: "" },
         ],
       },
     ],
@@ -329,9 +329,16 @@ test("token grotto hub and chamber render accessible doors and model piles", () 
   assert.equal(piles[0].props["data-grotto-tier"], "loose coins", "100 tokens sits in the lowest hoard tier");
   assert.match(piles[0].props["aria-label"], /gpt-5\.6-codex, 100 tokens in Codex chamber/);
   assert.match(textContent(room), /gpt-5\.6-mini-with-a-very-long-model-name/);
+  const longName = findNode(piles[1], (node) => node.props && node.props.className === "kandev-kandy-token-pile-name");
+  assert.ok(longName);
+  assert.equal(textContent(longName).length, 18, "long floor labels are capped to a bounded visible name");
+  assert.match(textContent(longName), /…$/);
+  assert.match(longName.props.transform, /^scale\(/, "floor labels scale into their spot instead of overflowing neighbours");
   piles[1].props.onClick();
   assert.equal(revealed, "codex-acp\u0000gpt-5.6-mini-with-a-very-long-model-name");
   assert.ok(render.tokenPileScale("100", "100") > render.tokenPileScale("20", "100"));
+  assert.equal(render.tokenGrottoVisiblePileName("short-model"), "short-model");
+  assert.equal(render.tokenGrottoVisiblePileName("a-model-name-that-is-too-long").length, 18);
   assert.ok(findNode(room, (node) => node.props && /kandev-kandy-grotto-room-scene/.test(node.props.className || "")));
   assert.ok(findNode(room, (node) => node.type === "kandy-in-room"));
 });
@@ -422,11 +429,11 @@ test("chamber floor spots rank by size and recency, and merge the overflow", () 
   const gaps = ys.slice(0, -1).map((y, i) => ys[i] - ys[i + 1]);
   assert.ok(Math.max(...gaps) <= 48, "no gap between adjacent depth rows exceeds 48 viewBox units: " + gaps.join(","));
 
-  const model = (name, tokens, lastSeen) => ({ name, tokens, lastSeen });
+  const model = (name, tokens, recentRank) => ({ name, tokens, recentRank });
   // Fewer models than spots: everyone stands on their own, biggest first.
   const few = render.tokenPilePlacement([
-    model("small", "5", "2026-08-01T10:00:00Z"),
-    model("big", "900", "2026-07-01T10:00:00Z"),
+    model("small", "5", "2"),
+    model("big", "900", "1"),
   ]);
   assert.deepEqual(few.map((entry) => entry.model.name), ["big", "small"]);
   assert.ok(few.every((entry) => !entry.merged));
@@ -436,7 +443,7 @@ test("chamber floor spots rank by size and recency, and merge the overflow", () 
   for (let i = 0; i < 14; i++) {
     // Descending size, ascending recency: rank 0 is the biggest and the oldest,
     // rank 13 is the smallest and the newest.
-    many.push(model("m" + i, String(1000 - i * 10), "2026-07-" + String(10 + i).padStart(2, "0") + "T10:00:00Z"));
+    many.push(model("m" + i, String(1000 - i * 10), String(i + 1)));
   }
   const placed = render.tokenPilePlacement(many);
   assert.equal(placed.length, 10);
@@ -457,6 +464,16 @@ test("chamber floor spots rank by size and recency, and merge the overflow", () 
   assert.equal(merged.model.tokens, hidden.toString());
   assert.match(merged.model.name, /^5 more models$/);
   assert.ok(merged.models.every((entry) => !standing.includes(entry.name)), "nothing is counted twice");
+
+  // Recency ordinals are decimal strings, so ordering must not fall back to
+  // JavaScript's lexicographic comparison once the ordinal reaches 10.
+  const decimalRanks = render.tokenPilePlacement([
+    model("old", "1", "9"),
+    model("new", "1", "10"),
+    model("hidden", "1", "1"),
+    model("other", "1", "2"),
+  ], 3);
+  assert.equal(decimalRanks[1].model.name, "new");
 });
 
 test("the merged pile opens a list of the models it hides", () => {
@@ -470,7 +487,7 @@ test("the merged pile opens a list of the models it hides", () => {
     },
   ];
   for (let i = 0; i < 13; i++) {
-    rooms[0].models.push({ name: "m" + i, tokens: String(500 - i * 10), last_seen: "2026-07-2" + (i % 9) + "T10:00:00Z" });
+    rooms[0].models.push({ name: "m" + i, tokens: String(500 - i * 10), recent_rank: String(i + 1) });
   }
   const model = render.tokenGrottoModelFor(sampleKandy({ token_grotto: { status: "ready", total_tokens: "1000", rooms } }));
 
@@ -510,8 +527,8 @@ test("the merged pile opens a list of the models it hides", () => {
   assert.ok(manifest, "opening the merged pile lists what is in it");
   const text = textContent(manifest);
   assert.match(text, /4 models in this pile/);
-  assert.match(text, /m9/);
-  assert.match(text, /m12/);
+  assert.match(text, /m5/);
+  assert.match(text, /m8/);
   const modelRow = findNode(manifest, (node) => node.props && node.props.className === "kandev-kandy-grotto-manifest-row");
   assert.ok(modelRow, "model rows keep the name and exact count visually distinct");
   const separator = findNode(modelRow, (node) => node.props && node.props.className === "kandev-kandy-grotto-manifest-separator");
@@ -527,9 +544,9 @@ test("overflow placement never crashes on an unavailable count and never drops a
   // count. Summing the merged pile's total must not throw BigInt(0) + null.
   const withUnavailable = [];
   for (let i = 0; i < 11; i++) {
-    withUnavailable.push({ name: "m" + i, tokens: String(5000 - i), lastSeen: "2026-08-01T00:00:00Z" });
+    withUnavailable.push({ name: "m" + i, tokens: String(5000 - i), recentRank: String(i + 1) });
   }
-  withUnavailable.push({ name: "broken", tokens: null, lastSeen: "" });
+  withUnavailable.push({ name: "broken", tokens: null, recentRank: "" });
   const placedUnavailable = render.tokenPilePlacement(withUnavailable);
   const mergedUnavailable = placedUnavailable[placedUnavailable.length - 1];
   assert.ok(mergedUnavailable.merged);
@@ -540,9 +557,9 @@ test("overflow placement never crashes on an unavailable count and never drops a
   // an accidental prototype-chain lookup on a plain {} used as a set.
   const withProtoName = [];
   for (let i = 0; i < 11; i++) {
-    withProtoName.push({ name: "n" + i, tokens: String(9000 - i * 10), lastSeen: "2026-08-01T00:00:00Z" });
+    withProtoName.push({ name: "n" + i, tokens: String(9000 - i * 10), recentRank: String(i + 1) });
   }
-  withProtoName.push({ name: "constructor", tokens: "999999", lastSeen: "2026-08-04T00:00:00Z" });
+  withProtoName.push({ name: "constructor", tokens: "999999", recentRank: "99" });
   const placedProto = render.tokenPilePlacement(withProtoName);
   const allNames = placedProto.flatMap((entry) => entry.models.map((m) => m.name));
   assert.equal(new Set(allNames).size, withProtoName.length, "every model, including one named constructor, is placed exactly once");
@@ -710,7 +727,7 @@ test("the chamber view discloses partial/estimated status, not just the hub", ()
       agent_type: "codex-acp",
       label: "Codex",
       tokens: "120000",
-      models: [{ name: "Mystery model", tokens: "120000", last_seen: "2026-07-28T12:01:00Z" }],
+      models: [{ name: "Mystery model", tokens: "120000", recent_rank: "1" }],
     },
   ];
   const partialModel = render.tokenGrottoModelFor(

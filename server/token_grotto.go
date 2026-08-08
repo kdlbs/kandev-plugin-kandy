@@ -45,12 +45,11 @@ type tokenGrottoRoom struct {
 }
 
 type tokenGrottoModel struct {
-	Name   string `json:"name"`
-	Tokens string `json:"tokens"`
-	// LastSeen is the source timestamp of the most recent observation for this
-	// model, kept so the chamber can show recently used models beside the
-	// biggest ones. Omitted when empty, which keeps ledgers written before this
-	// field byte-identical — and therefore still valid under their old seal.
+	Name       string `json:"name"`
+	Tokens     string `json:"tokens"`
+	RecentRank string `json:"recent_rank,omitempty"`
+	// LastSeen is read only to migrate ledgers written by the short-lived
+	// timestamp-based recency implementation. New ledgers never write it.
 	LastSeen string `json:"last_seen,omitempty"`
 }
 
@@ -69,16 +68,15 @@ type tokenGrottoRoomResponse struct {
 }
 
 type tokenGrottoModelResponse struct {
-	Name     string `json:"name"`
-	Tokens   string `json:"tokens"`
-	LastSeen string `json:"last_seen,omitempty"`
+	Name       string `json:"name"`
+	Tokens     string `json:"tokens"`
+	RecentRank string `json:"recent_rank,omitempty"`
 }
 
 type observedTokenUsage struct {
 	AgentType string
 	Model     string
 	Tokens    *big.Int
-	Timestamp string
 	DedupKey  string
 	Partial   bool
 }
@@ -125,14 +123,14 @@ func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) 
 		return
 	}
 	grotto := cloneTokenGrotto(loaded)
+	// Migrate timestamp-based recency fields in memory as a safety net for a
+	// state read that was served without a seal key. A valid usage write below
+	// will persist the migrated aggregate without the source timestamps.
+	migrateTokenGrotto(grotto)
 	usage, ok := normalizeTokenUsage(event)
 	if !ok {
 		grotto.Partial = true
 		grotto.UpdatedAt = p.now().UTC().Format(time.RFC3339)
-		observedAt := tokenUsageTimestamp(event, p.now())
-		if grotto.ObservedSince == "" || observedAt < grotto.ObservedSince {
-			grotto.ObservedSince = observedAt
-		}
 		p.persistTokenGrotto(ctx, grotto)
 		return
 	}
@@ -150,21 +148,10 @@ func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) 
 		grotto.RecentBodyHashes = append([]string(nil), grotto.RecentBodyHashes[len(grotto.RecentBodyHashes)-tokenGrottoDigestLimit:]...)
 	}
 	grotto.UpdatedAt = p.now().UTC().Format(time.RFC3339)
-	if grotto.ObservedSince == "" || usage.Timestamp < grotto.ObservedSince {
-		grotto.ObservedSince = usage.Timestamp
+	if grotto.ObservedSince == "" {
+		grotto.ObservedSince = grotto.UpdatedAt
 	}
 	p.persistTokenGrotto(ctx, grotto)
-}
-
-func tokenUsageTimestamp(event *pluginsdk.Event, fallback time.Time) string {
-	if event != nil && event.Payload != nil {
-		if timestamp, ok := event.Payload["timestamp"].(string); ok {
-			if parsed, err := time.Parse(time.RFC3339Nano, timestamp); err == nil {
-				return parsed.UTC().Format(time.RFC3339)
-			}
-		}
-	}
-	return fallback.UTC().Format(time.RFC3339)
 }
 
 func (p *plugin) ensureTokenGrottoLineage(ctx context.Context) (*ledger, bool) {
@@ -267,7 +254,6 @@ func normalizeTokenUsage(event *pluginsdk.Event) (observedTokenUsage, bool) {
 		AgentType: agentType,
 		Model:     model,
 		Tokens:    tokens,
-		Timestamp: parsed.UTC().Format(time.RFC3339),
 		DedupKey:  dedupKey,
 		Partial:   usedFallback || estimated,
 	}, true
@@ -312,6 +298,7 @@ func sanitizeGrottoLabel(value, fallback string, maxBytes int) string {
 
 func addTokenUsage(grotto *tokenGrottoLedger, usage observedTokenUsage) {
 	grotto.TotalTokens = addDecimal(grotto.TotalTokens, usage.Tokens)
+	recentRank := nextTokenGrottoRecentRank(grotto)
 	roomIndex := -1
 	for i := range grotto.Rooms {
 		if grotto.Rooms[i].AgentType == usage.AgentType {
@@ -328,14 +315,81 @@ func addTokenUsage(grotto *tokenGrottoLedger, usage observedTokenUsage) {
 	for i := range room.Models {
 		if room.Models[i].Name == usage.Model {
 			room.Models[i].Tokens = addDecimal(room.Models[i].Tokens, usage.Tokens)
-			// Out-of-order deliveries must not move the stamp backwards.
-			if usage.Timestamp > room.Models[i].LastSeen {
-				room.Models[i].LastSeen = usage.Timestamp
-			}
+			room.Models[i].RecentRank = recentRank
+			room.Models[i].LastSeen = ""
 			return
 		}
 	}
-	room.Models = append(room.Models, tokenGrottoModel{Name: usage.Model, Tokens: usage.Tokens.String(), LastSeen: usage.Timestamp})
+	room.Models = append(room.Models, tokenGrottoModel{Name: usage.Model, Tokens: usage.Tokens.String(), RecentRank: recentRank})
+}
+
+func nextTokenGrottoRecentRank(grotto *tokenGrottoLedger) string {
+	maximum := new(big.Int)
+	for _, room := range grotto.Rooms {
+		for _, model := range room.Models {
+			rank, ok := new(big.Int).SetString(model.RecentRank, 10)
+			if ok && rank.Sign() >= 0 && rank.Cmp(maximum) > 0 {
+				maximum = rank
+			}
+		}
+	}
+	return new(big.Int).Add(maximum, big.NewInt(1)).String()
+}
+
+func migrateTokenGrotto(grotto *tokenGrottoLedger) bool {
+	type candidate struct {
+		model *tokenGrottoModel
+		agent string
+		seen  string
+		name  string
+	}
+	var missing []candidate
+	maximum := new(big.Int)
+	changed := false
+	for roomIndex := range grotto.Rooms {
+		room := &grotto.Rooms[roomIndex]
+		for modelIndex := range room.Models {
+			model := &room.Models[modelIndex]
+			rank, ok := new(big.Int).SetString(model.RecentRank, 10)
+			if !ok || rank.Sign() < 0 {
+				missing = append(missing, candidate{model: model, agent: room.AgentType, seen: model.LastSeen, name: model.Name})
+				changed = true
+			} else if rank.Cmp(maximum) > 0 {
+				maximum = rank
+			}
+			if model.LastSeen != "" {
+				changed = true
+			}
+		}
+	}
+	if len(missing) > 0 {
+		sort.SliceStable(missing, func(i, j int) bool {
+			if missing[i].seen != missing[j].seen {
+				if missing[i].seen == "" {
+					return false
+				}
+				if missing[j].seen == "" {
+					return true
+				}
+				return missing[i].seen < missing[j].seen
+			}
+			if missing[i].agent != missing[j].agent {
+				return missing[i].agent < missing[j].agent
+			}
+			return missing[i].name < missing[j].name
+		})
+		next := new(big.Int).Add(maximum, big.NewInt(1))
+		for _, item := range missing {
+			item.model.RecentRank = next.String()
+			next.Add(next, big.NewInt(1))
+		}
+	}
+	for roomIndex := range grotto.Rooms {
+		for modelIndex := range grotto.Rooms[roomIndex].Models {
+			grotto.Rooms[roomIndex].Models[modelIndex].LastSeen = ""
+		}
+	}
+	return changed
 }
 
 func addDecimal(current string, delta *big.Int) string {
@@ -382,6 +436,13 @@ func (p *plugin) loadTokenGrotto(ctx context.Context, lineage string) (*tokenGro
 	if !tokenGrottoSealValid(loaded, key) {
 		log.Printf("kandy: token grotto seal invalid; restarting token history without changing Kandy")
 		p.grottoCached = fresh
+		return p.grottoCached, nil
+	}
+	if migrateTokenGrotto(loaded) {
+		p.persistTokenGrotto(ctx, loaded)
+		if p.grottoCached == nil {
+			p.grottoCached = loaded
+		}
 		return p.grottoCached, nil
 	}
 	p.grottoCached = loaded
@@ -467,7 +528,7 @@ func (p *plugin) presentTokenGrotto(ctx context.Context, lineage uint32) tokenGr
 			Models:    []tokenGrottoModelResponse{},
 		}
 		for _, model := range room.Models {
-			roomResponse.Models = append(roomResponse.Models, tokenGrottoModelResponse{Name: model.Name, Tokens: model.Tokens, LastSeen: model.LastSeen})
+			roomResponse.Models = append(roomResponse.Models, tokenGrottoModelResponse{Name: model.Name, Tokens: model.Tokens, RecentRank: model.RecentRank})
 		}
 		sort.Slice(roomResponse.Models, func(i, j int) bool {
 			comparison := compareDecimals(roomResponse.Models[i].Tokens, roomResponse.Models[j].Tokens)

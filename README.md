@@ -86,7 +86,7 @@ Kandev also sends the typed per-session
 `session_prompt_usage.updated.*` event. Kandy reads only this aggregate usage
 metadata:
 
-- source timestamp;
+- source timestamp, transiently for canonical duplicate suppression;
 - task/session/lifecycle agent IDs, transiently and only to construct a
   duplicate-suppression key;
 - agent type (the CLI/adapter slug, such as `claude-acp` or `codex-acp`);
@@ -116,7 +116,7 @@ normalize this, so it stores and displays whatever total each event reports
 verbatim, and the grotto UI calls this out rather than implying the totals
 share a unit.
 
-The task/session/lifecycle IDs and usage categories are never persisted,
+The task/session/lifecycle IDs, source timestamps, and usage categories are never persisted,
 logged, or returned to the browser. Only a SHA-256 digest of the typed,
 normalized aggregate body survives for practical duplicate suppression;
 delivery EventID and OccurredAt are excluded, so transport retries with the
@@ -131,11 +131,10 @@ The plugin stores two instance-scoped aggregate ledgers in Kandev Host state.
 The existing creature ledger keeps XP/activity counts, timestamps, appearance
 seed, and care temperament. The separate `kandy-token-grotto` ledger keeps the
 Kandy lineage, observation boundary, exact decimal-string lifetime total, one
-counter per distinct agent type/model pair, the source timestamp of each pair's
-most recent observation, a partial-data flag, and the most
-recent 512 duplicate-suppression keys. The per-model timestamp exists so a
-chamber can stand its most recently used models on the floor beside its
-biggest ones; it records when a model was last observed, never what it did. Repeated usage updates existing counters;
+counter per distinct agent type/model pair, a monotonic per-model recency
+ordinal used only for floor presentation, a partial-data flag, and the most
+recent 512 duplicate-suppression keys. The ordinal contains no source time and
+does not represent per-turn history. Repeated usage updates existing counters;
 no per-turn history is stored. Storage therefore grows with genuinely distinct
 adapter/model pairs, not event count; distinct aggregates have no artificial
 cap because each chamber is part of Kandy's history.
@@ -154,7 +153,9 @@ never estimates a price.
 ## Token-Grotto boundary and lifecycle
 
 “Tokens in this grotto” means valid usage events Kandy caught after grotto
-observation began. There is no supported usage reader or cursor for backfill
+observation began. The boundary starts when the first valid event is observed;
+rejected usage can mark the history partial but cannot start that boundary.
+There is no supported usage reader or cursor for backfill
 or reconciliation in Kandev v0.83.0, so the first iteration is deliberately
 best effort. Events can be missed while the plugin is disabled, restarting,
 overloaded, or when an agent reports no usable usage. Missing or unusable usage

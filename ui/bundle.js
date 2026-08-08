@@ -4665,7 +4665,7 @@ function tokenGrottoModelFor(data) {
               return {
                 name: tokenGrottoText(model.name, "Mystery model", 128),
                 tokens: tokenGrottoDecimal(model.tokens),
-                lastSeen: typeof model.last_seen === "string" ? model.last_seen : "",
+                recentRank: typeof model.recent_rank === "string" ? model.recent_rank : "",
               };
             })
           : [];
@@ -6002,7 +6002,8 @@ function tokenPilePlacement(models, spots) {
     return order || left.name.localeCompare(right.name);
   });
   var byRecency = models.slice().sort(function (left, right) {
-    if (left.lastSeen !== right.lastSeen) return left.lastSeen < right.lastSeen ? 1 : -1;
+    var recentOrder = compareTokenGrottoDecimals(right.recentRank, left.recentRank);
+    if (recentOrder) return recentOrder;
     var order = compareTokenGrottoDecimals(right.tokens, left.tokens);
     return order || left.name.localeCompare(right.name);
   });
@@ -6053,7 +6054,7 @@ function tokenPilePlacement(models, spots) {
       model: {
         name: rest.length + " more models",
         tokens: anyUnavailable ? null : total.toString(),
-        lastSeen: "",
+        recentRank: "",
       },
       models: rest,
       merged: true,
@@ -6062,8 +6063,19 @@ function tokenPilePlacement(models, spots) {
   return placed;
 }
 
-// One pile standing on one floor spot, drawn in the backdrop's coordinate
-// space so it rests on the painted stone rather than floating in a CSS grid.
+function tokenGrottoVisiblePileName(name) {
+  var text = typeof name === "string" && name ? name : "Mystery model";
+  return text.length > 18 ? text.slice(0, 17) + "…" : text;
+}
+
+function tokenGrottoPileLabelTransform(name, spotScale) {
+  var scale = typeof spotScale === "number" && isFinite(spotScale) ? Math.max(0.5, Math.min(1, spotScale)) : 1;
+  var estimatedWidth = Math.max(1, name.length) * 12.5 + 14;
+  var availableWidth = 180 * scale;
+  var horizontalScale = Math.max(0.5, Math.min(scale, availableWidth / estimatedWidth));
+  return "scale(" + horizontalScale.toFixed(3) + " 1)";
+}
+
 // One pile standing on one floor spot, drawn in the backdrop's coordinate
 // space so it rests on the painted stone rather than floating in a CSS grid.
 // scale (PROPORTION) is this model's share of the room's biggest pile; tier
@@ -6079,6 +6091,8 @@ function tokenModelPile(h, room, entry, spot, maximum, revealedKey, onToggle, li
   var tierInfo = hoardTierFor(model.tokens);
   var style = hoardStyleFor(lineageSeed);
   var art = hoardArtFor(h, room.agentType + "\u0000" + model.name, style, tierInfo, scale);
+  var visibleName = tokenGrottoVisiblePileName(model.name);
+  var labelTransform = tokenGrottoPileLabelTransform(visibleName, spot.scale);
   var label = entry.merged
     ? model.name + ", " + exact + " tokens together, open the list"
     : model.name + ", " + exact + " tokens in " + room.label + " chamber";
@@ -6105,6 +6119,7 @@ function tokenModelPile(h, room, entry, spot, maximum, revealedKey, onToggle, li
         onToggle(key);
       },
     },
+    h("title", null, model.name + ", " + exact + " tokens"),
     // The hit area covers the mound and its labels, so tapping anywhere on the
     // pile works on a phone.
     h("rect", {
@@ -6120,10 +6135,10 @@ function tokenModelPile(h, room, entry, spot, maximum, revealedKey, onToggle, li
       { className: "kandev-kandy-token-pile-hoard", transform: "scale(" + spot.scale + ") translate(-63 -126)", "aria-hidden": "true" },
       art,
     ),
-    h("text", { className: "kandev-kandy-token-pile-name", x: 0, y: 24, "aria-hidden": "true" }, model.name),
+    h("text", { className: "kandev-kandy-token-pile-name", x: 0, y: 24, transform: labelTransform, "aria-hidden": "true" }, visibleName),
     h(
       "text",
-      { className: "kandev-kandy-token-pile-compact", x: 0, y: 44, "aria-hidden": "true" },
+      { className: "kandev-kandy-token-pile-compact", x: 0, y: 44, transform: labelTransform, "aria-hidden": "true" },
       formatTokenCompact(model.tokens) + " tokens",
     ),
     h(
@@ -9002,6 +9017,8 @@ window.registerKandevPlugin(PLUGIN_ID, {
     formatTokenExact: formatTokenExact,
     formatTokenCompact: formatTokenCompact,
     tokenPileScale: tokenPileScale,
+    tokenGrottoVisiblePileName: tokenGrottoVisiblePileName,
+    tokenGrottoPileLabelTransform: tokenGrottoPileLabelTransform,
     hoardTierFor: hoardTierFor,
     hoardStyleFor: hoardStyleFor,
     hoardTiers: HOARD_TIERS,

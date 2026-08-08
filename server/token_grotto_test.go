@@ -55,7 +55,7 @@ func TestTokenGrotto_ObservedUsageAppearsInKandyWebhook(t *testing.T) {
 				"label":      "Claude Code",
 				"tokens":     "25068",
 				"models": []any{
-					map[string]any{"name": "claude-sonnet-4-5", "tokens": "25068", "last_seen": "2026-07-28T12:00:00Z"},
+					map[string]any{"name": "claude-sonnet-4-5", "tokens": "25068", "recent_rank": "1"},
 				},
 			},
 		},
@@ -144,12 +144,13 @@ func TestTokenGrotto_UnusableUsageMarksEmptyGrottoPartial(t *testing.T) {
 	require.Equal(t, "partial", grotto.Status)
 	require.Equal(t, "0", grotto.TotalTokens)
 	require.Empty(t, grotto.Rooms)
-	require.Equal(t, "2026-07-28T12:00:00Z", grotto.ObservedSince)
+	require.Empty(t, grotto.ObservedSince, "rejected usage latches partial but does not start observation")
 }
 
-func TestTokenGrotto_OutOfOrderUsagePreservesEarliestObservedTimestamp(t *testing.T) {
+func TestTokenGrotto_ObservationStartsAtFirstAcceptedEvent(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
+	p.now = func() time.Time { return time.Date(2026, 8, 2, 15, 4, 0, 0, time.UTC) }
 	ctx := context.Background()
 
 	recent := tokenUsageFixture("recent", "codex-acp", "gpt-5.6", 10, time.Date(2026, 7, 28, 12, 1, 0, 0, time.UTC))
@@ -158,11 +159,11 @@ func TestTokenGrotto_OutOfOrderUsagePreservesEarliestObservedTimestamp(t *testin
 	require.NoError(t, p.OnEvent(ctx, earlier))
 
 	grotto := fetchKandy(t, p, "").TokenGrotto
-	require.Equal(t, "2026-07-28T12:00:00Z", grotto.ObservedSince)
+	require.Equal(t, "2026-08-02T15:04:00Z", grotto.ObservedSince)
 	require.Equal(t, "30", grotto.TotalTokens)
 }
 
-func TestTokenGrotto_ModelLastSeenTracksNewestObservationOnly(t *testing.T) {
+func TestTokenGrotto_ModelRecentRankTracksObservedOrder(t *testing.T) {
 	host := newFakeHost(nil)
 	p := newTestPlugin(t, host)
 	ctx := context.Background()
@@ -181,29 +182,30 @@ func TestTokenGrotto_ModelLastSeenTracksNewestObservationOnly(t *testing.T) {
 	for _, model := range rooms[0].Models {
 		models[model.Name] = model
 	}
-	// A late delivery of an older turn must not drag the stamp backwards.
-	require.Equal(t, "2026-07-30T09:00:00Z", models["gpt-5.6"].LastSeen)
+	// A late delivery of an older turn is still the newest event Kandy caught.
+	require.Equal(t, "3", models["gpt-5.6"].RecentRank)
 	require.Equal(t, "30", models["gpt-5.6"].Tokens)
-	// A small but recent model keeps its own, newer stamp.
-	require.Equal(t, "2026-07-31T08:00:00Z", models["gpt-5.6-mini"].LastSeen)
+	// A small model keeps its own position in the observed order.
+	require.Equal(t, "4", models["gpt-5.6-mini"].RecentRank)
 }
 
-func TestTokenGrotto_LedgerWithoutLastSeenStaysSealedAndKeepsCounting(t *testing.T) {
+func TestTokenGrotto_LegacyTimestampRecencyMigratesWithoutExposure(t *testing.T) {
 	host := newFakeHost(nil)
 	ctx := context.Background()
 	p1 := newTestPlugin(t, host)
 	require.NoError(t, p1.OnEvent(ctx, tokenUsageFixture("legacy", "codex-acp", "gpt-5.6", 40, time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC))))
 
-	// Rewrite the ledger the way a build without this field would have left it:
-	// no stamp, and sealed over those bytes. The stamp is omitted when empty,
-	// so such a ledger still verifies here instead of restarting the history.
+	// Rewrite the ledger the way the short-lived timestamp-recency build left
+	// it: remove the ordinal and restore the legacy source timestamp, then seal
+	// those exact bytes so migration must verify the old representation first.
 	stored := host.state[stateMapKey(stateScope, "", tokenGrottoStateKey)]
 	require.NotNil(t, stored)
 	legacy, ok := tokenGrottoFromMap(stored)
 	require.True(t, ok)
 	for i := range legacy.Rooms {
 		for j := range legacy.Rooms[i].Models {
-			legacy.Rooms[i].Models[j].LastSeen = ""
+			legacy.Rooms[i].Models[j].RecentRank = ""
+			legacy.Rooms[i].Models[j].LastSeen = "2026-07-28T12:00:00Z"
 		}
 	}
 	key, _, err := p1.ensureSealKey(ctx, host)
@@ -213,13 +215,16 @@ func TestTokenGrotto_LedgerWithoutLastSeenStaysSealedAndKeepsCounting(t *testing
 
 	p2 := newTestPlugin(t, host)
 	grotto := fetchKandy(t, p2, "").TokenGrotto
-	require.Equal(t, "40", grotto.TotalTokens, "an unstamped ledger stays valid instead of restarting")
-	require.Empty(t, grotto.Rooms[0].Models[0].LastSeen)
+	require.Equal(t, "40", grotto.TotalTokens, "legacy recency state stays valid instead of restarting")
+	require.Equal(t, "1", grotto.Rooms[0].Models[0].RecentRank)
+	migrated, ok := tokenGrottoFromMap(host.state[stateMapKey(stateScope, "", tokenGrottoStateKey)])
+	require.True(t, ok)
+	require.Empty(t, migrated.Rooms[0].Models[0].LastSeen, "migrated state does not retain a source timestamp")
 
 	require.NoError(t, p2.OnEvent(ctx, tokenUsageFixture("fresh", "codex-acp", "gpt-5.6", 2, time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC))))
 	grotto = fetchKandy(t, p2, "").TokenGrotto
 	require.Equal(t, "42", grotto.TotalTokens)
-	require.Equal(t, "2026-08-01T10:00:00Z", grotto.Rooms[0].Models[0].LastSeen, "the next observation stamps it")
+	require.Equal(t, "2", grotto.Rooms[0].Models[0].RecentRank, "the next observation advances the ordinal")
 }
 
 func TestTokenGrotto_ReadFailureDoesNotOverwriteHistory(t *testing.T) {
