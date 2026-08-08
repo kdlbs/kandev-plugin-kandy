@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.13.0] - 2026-08-09
+
+### Fixed
+
+- Kandy can no longer go unresponsive and wedge the Kandev host. Every handler
+  used to serialize on one mutex that was held across Host round-trips, so a
+  single slow Host call stopped the plugin answering events, webhook polls and
+  the health check at once — the state Kandev reports as `status: error`, where
+  it can neither disable the plugin nor shut down cleanly.
+- The in-memory lock now covers ledger mutation only and is never held across a
+  Host RPC. XP is applied in memory; a single background writer coalesces the
+  persists, so a mutator waits for its own write at most, never for the backlog.
+- Webhook reads (the UI's 1-3s poll, pet and bonk) serve from an in-memory
+  snapshot: once warm, the read path makes no Host call at all and cannot queue
+  behind an event's persist.
+- Every Host round-trip now runs under a 4s timeout, so a stalled Kandev can
+  park a plugin goroutine for a bounded time and no longer.
+- The ledger HMAC key is memoized for the process lifetime instead of costing a
+  secrets round-trip on every XP award; only a failed fetch is retried.
+
+XP values, the no-XP-for-task-creation rule and OnEvent's always-return-nil
+contract (a retried delivery would double-award) are unchanged.
+
 ## [0.12.0] - 2026-08-08
 
 ### Changed
