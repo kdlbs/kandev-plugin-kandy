@@ -132,10 +132,11 @@ type kandyResponse struct {
 	Scarred         bool   `json:"scarred"`
 	// Counterfeit is the permanent tamper mark (see seal.go). The UI gets
 	// the boolean only — never the signature or the key.
-	Counterfeit  bool   `json:"counterfeit"`
-	RefusingPets bool   `json:"refusing_pets"`
-	Flavor       string `json:"flavor"`
-	AliveSince   string `json:"alive_since"`
+	Counterfeit  bool                `json:"counterfeit"`
+	RefusingPets bool                `json:"refusing_pets"`
+	Flavor       string              `json:"flavor"`
+	AliveSince   string              `json:"alive_since"`
+	TokenGrotto  tokenGrottoResponse `json:"token_grotto"`
 }
 
 type plugin struct {
@@ -143,8 +144,9 @@ type plugin struct {
 
 	// mu guards cached and sealKey: OnEvent deliveries are sequential per
 	// plugin, but a webhook debug_grant can race an event delivery.
-	mu     sync.Mutex
-	cached *ledger
+	mu           sync.Mutex
+	cached       *ledger
+	grottoCached *tokenGrottoLedger
 	// sealKey is the decoded ledger HMAC key, cached for the process
 	// lifetime after the first successful vault read (see seal.go).
 	sealKey []byte
@@ -244,6 +246,12 @@ func (p *plugin) OnEvent(ctx context.Context, e *pluginsdk.Event) error {
 	if e == nil {
 		return nil
 	}
+	if isTokenUsageEvent(e.EventType) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.observeTokenUsage(ctx, e)
+		return nil
+	}
 	delta, apply := xpForEvent(e)
 	if delta <= 0 {
 		return nil
@@ -309,7 +317,8 @@ func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookReques
 	}
 
 	l := p.loadLedger(ctx)
-	body, err := json.Marshal(p.presentLedger(l, idleOverride))
+	view := p.presentKandy(ctx, l, idleOverride)
+	body, err := json.Marshal(view)
 	if err != nil {
 		return jsonResponse(500, []byte(`{"error":"encoding state"}`)), nil
 	}
@@ -331,7 +340,7 @@ func (p *plugin) handlePet(ctx context.Context) *pluginsdk.WebhookResponse {
 	// stamp, no lift, no temperament change. The UI mirrors this with a
 	// turn-away reaction.
 	if p.within(l.LastBonkedAt, distrustWindow) {
-		view := p.presentLedger(l, nil)
+		view := p.presentKandy(ctx, l, nil)
 		view.Flavor = "It doesn't trust you right now."
 		return presentResponse(view)
 	}
@@ -353,7 +362,8 @@ func (p *plugin) handlePet(ctx context.Context) *pluginsdk.WebhookResponse {
 		l.Temperament = clampTemperament(l.Temperament + gain)
 		l.LastPetEffectAt = p.now().UTC().Format(time.RFC3339)
 	})
-	return presentResponse(p.presentLedger(l, nil))
+	view := p.presentKandy(ctx, l, nil)
+	return presentResponse(view)
 }
 
 // handleBonk dumps a bucket of cold water on the kandy. Like petting it never touches
@@ -377,7 +387,7 @@ func (p *plugin) handleBonk(ctx context.Context) *pluginsdk.WebhookResponse {
 		l.LastBonkedAt = p.now().UTC().Format(time.RFC3339)
 		l.LastPettedAt = "" // a bonk cancels any active pet lift
 	})
-	view := p.presentLedger(l, nil)
+	view := p.presentKandy(ctx, l, nil)
 	view.Flavor = "Your kandy got drenched."
 	return presentResponse(view)
 }
@@ -388,6 +398,12 @@ func presentResponse(view kandyResponse) *pluginsdk.WebhookResponse {
 		return jsonResponse(500, []byte(`{"error":"encoding state"}`))
 	}
 	return jsonResponse(200, body)
+}
+
+func (p *plugin) presentKandy(ctx context.Context, l *ledger, idleOverride *time.Duration) kandyResponse {
+	view := p.presentLedger(l, idleOverride)
+	view.TokenGrotto = p.presentTokenGrotto(ctx, l.Salt)
+	return view
 }
 
 // applyDebugGrant handles the ?debug_grant dev/demo knob. It grants XP only

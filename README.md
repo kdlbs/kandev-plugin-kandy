@@ -18,6 +18,13 @@ an egg. It never stops.
   your browser — nothing is uploaded, and no surrounding task or app UI
   enters the image. On plain-HTTP deployments, Kandy uses the browser's
   native image-copy path when available.
+- **Token Grotto**: ask Kandy to show its grotto and it walks off the card,
+  then walks back in along the water into an underground hub. Each agent CLI/adapter has a chamber;
+  each model used through that adapter has a pile of stones on the chamber floor.
+  Larger piles mean more observed tokens. Hover, focus, or tap a pile for its
+  exact lifetime count. A chamber floor holds ten piles: the biggest and the
+  most recently used models get a spot, and anything left over is merged into
+  one pile that opens into a list.
 - **Moods**: it celebrates when XP lands and gets bored, sad, and eventually
   gloomy (rain cloud included) when nothing ships for days.
 - **Care**: left-click drops it a treat; right-click dumps a bucket of cold
@@ -65,31 +72,106 @@ or `POST /api/plugins/install`.
 ## How it works and what it reads
 
 Kandy is a visual, instance-wide companion. It does not call an agent, read a
-conversation, or analyze work. Kandev sends it three activity notifications:
+conversation, or analyze work. Kandev sends it three activity notifications
+for private XP bookkeeping:
 
 - a message was added;
 - an agent turn completed; or
 - an agent run completed.
 
-For each notification, Kandy uses only its type to update an aggregate XP
-ledger. It deliberately does **not** inspect event payloads, so it does not
-read message text, prompts, responses, tool calls, files, agent identity, or
-session identity. The top-bar UI listens for session updates only to know when
-to refresh its own card; it ignores the update data. One Kandy is shared by
+For those three notifications, Kandy still uses only the event type. The XP
+recipe and activity counters remain private and unchanged.
+
+Kandev also sends the typed per-session
+`session_prompt_usage.updated.*` event. Kandy reads only this aggregate usage
+metadata:
+
+- source timestamp, transiently for canonical duplicate suppression;
+- task/session/lifecycle agent IDs, transiently and only to construct a
+  duplicate-suppression key;
+- agent type (the CLI/adapter slug, such as `claude-acp` or `codex-acp`);
+- observed model name; and
+- input, output, cache-read, cache-write, thought, and total token integers,
+  plus the whole-record `estimated` flag.
+
+Kandy prefers a positive observed `total_tokens` (which some adapters or
+Kandev may infer). When total is missing or zero, it uses positive input plus
+output only; Kandy itself never adds cache or thought tokens on top of a
+reported total. Fallback, estimated, malformed, missing, or otherwise unusable
+usage marks the grotto partial without storing the rejected payload. Missing
+agent/model names enter explicit Mystery buckets. Chambers identify the agent
+CLI/adapter, not necessarily the model provider, configured profile, person,
+or agent run. Kandev v0.83.0 exposes no authoritative provider field on this
+typed event, so provider breakdown is unavailable. Aliases and renamed models
+remain separate piles.
+
+**Chambers are not directly comparable across agents.** Whether the upstream
+`total_tokens` folds in cache read/write tokens is decided by each agent
+adapter before Kandev ever publishes the event, and it is not uniform: some
+adapters report a `total` that already includes cache tokens, others report
+cache-excluded totals or omit cache fields entirely, and at least one adapter
+has no per-turn usage frame at all and emits an `estimated` cumulative
+occupancy-delta approximation instead. Kandy has no adapter-agnostic signal to
+normalize this, so it stores and displays whatever total each event reports
+verbatim, and the grotto UI calls this out rather than implying the totals
+share a unit.
+
+The task/session/lifecycle IDs, source timestamps, and usage categories are never persisted,
+logged, or returned to the browser. Only a SHA-256 digest of the typed,
+normalized aggregate body survives for practical duplicate suppression;
+delivery EventID and OccurredAt are excluded, so transport retries with the
+same body hash identically. Kandy never reads or stores
+message text, prompts, responses, reasoning, tool calls, files, credentials,
+or provider-reported cost. The top-bar UI listens for session updates only to
+know when to refetch Kandy's own webhook. One Kandy and one grotto are shared by
 the whole Kandev instance, rather than being tied to a person, task, agent, or
 session.
 
-The plugin stores one small instance-scoped ledger in Kandev Host state:
-aggregate XP and activity counts, timestamps, a random appearance seed, and
-the pet/bonk temperament state. It stores no conversation content or token
-data. It also stores one integrity key in kandev's encrypted secrets vault,
-used only to detect out-of-band edits to that ledger. Its browser UI uses the local clock only for the day/night scene and
-sleep schedule, and calls only Kandy's own Kandev-hosted webhooks; it has no
-external service or analytics integration.
+The plugin stores two instance-scoped aggregate ledgers in Kandev Host state.
+The existing creature ledger keeps XP/activity counts, timestamps, appearance
+seed, and care temperament. The separate `kandy-token-grotto` ledger keeps the
+Kandy lineage, observation boundary, exact decimal-string lifetime total, one
+counter per distinct agent type/model pair, a monotonic per-model recency
+ordinal used only for floor presentation, a partial-data flag, and the most
+recent 512 duplicate-suppression keys. The ordinal contains no source time and
+does not represent per-turn history. Repeated usage updates existing counters;
+no per-turn history is stored. Storage therefore grows with genuinely distinct
+adapter/model pairs, not event count; distinct aggregates have no artificial
+cap because each chamber is part of Kandy's history.
 
-Kandy does not use, request, or spend LLM tokens. Agent work can consume
-tokens independently, but Kandy sees only the three completed activity
-signals above—not token counts—and adds no model calls or token cost.
+Both ledgers use domain-separated HMAC-SHA256 signatures backed by one key in
+kandev's encrypted secrets vault. Grotto corruption restarts only token history;
+it cannot counterfeit or rebirth Kandy. The browser UI uses the local clock
+only for day/night and sleep, and calls only Kandy's Kandev-hosted webhooks; it
+has no external service or analytics integration.
+
+Kandy does not use, request, or spend LLM tokens. It observes aggregate usage
+reported by existing agent work and adds no model calls. Token count is not
+price, billing history, quota, or cost; Kandy ignores monetary fields and
+never estimates a price.
+
+## Token-Grotto boundary and lifecycle
+
+“Tokens in this grotto” means valid usage events Kandy caught after grotto
+observation began. The boundary starts when the first valid event is observed;
+rejected usage can mark the history partial but cannot start that boundary.
+There is no supported usage reader or cursor for backfill
+or reconciliation in Kandev v0.83.0, so the first iteration is deliberately
+best effort. Events can be missed while the plugin is disabled, restarting,
+overloaded, or when an agent reports no usable usage. Missing or unusable usage
+marks the history partial. Delivery retries with the same normalized body are
+suppressed within the most recent 512 keys, including across plugin restarts;
+changed delivery IDs do not turn an identical body into a second observation.
+A replay older than that rolling window can count again.
+The grotto says “observed” and never claims complete billing or lifetime history
+before its displayed start date.
+
+Host state participates in Kandev database backup/restore and survives plugin
+restart and upgrade. Disabling preserves captured history but misses events.
+There is no dedicated grotto export/reset UI in this iteration. A new Kandy
+lineage starts an empty grotto; rollback ignores the separate state; re-upgrade
+resumes it when lineage still matches. Uninstall removes the Kandy and ends
+its grotto history.
 
 ## Development
 
@@ -112,7 +194,7 @@ its `checksums.txt` asset.
 
 ## State
 
-One small JSON ledger in kandev Host state (scope `instance`), so the kandy
-participates in kandev backups, survives plugin upgrades, and is removed on
-uninstall. Uninstalling the plugin is, in the kindest possible terms, the end
-of that kandy's story.
+Two aggregate JSON ledgers in kandev Host state (scope `instance`) participate
+in kandev backups, survive plugin upgrades, and are removed on uninstall.
+Uninstalling the plugin is, in the kindest possible terms, the end of that
+kandy's story and its Token Grotto.

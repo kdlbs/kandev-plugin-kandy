@@ -135,6 +135,7 @@ var WS_ACTIONS = [
   "session.turn.completed",
   "session.message.added",
   "session.state_changed",
+  "session.prompt_usage",
 ];
 // The plugin backend awards XP when its own event delivery lands, which races
 // the WS notification to the browser. Debounce so a burst of events costs one
@@ -144,6 +145,12 @@ var WS_DEBOUNCE_MS = 1500;
 // The widget re-reads the local clock on this tick so dusk (and bedtime)
 // arrive on their own, without needing a refetch or a page interaction.
 var TIME_TICK_MS = 60000;
+
+// The two halves of the grotto walk, each matching its CSS animation with a
+// frame to spare: Kandy leaves frame, the panel swaps while it is off screen,
+// then it walks back in on the other side.
+var GROTTO_WALK_OUT_MS = 640;
+var GROTTO_WALK_IN_MS = 940;
 
 function localHour() {
   var d = new Date();
@@ -229,6 +236,17 @@ function isAsleep(seed, timeOfDay) {
   var s = sleepScheduleFor(seed);
   var t = ((timeOfDay % 24) + 24) % 24;
   return t >= s.bedtime || t < s.wake;
+}
+
+// kandyStationaryFor — the egg-stage extension of "asleep hides the
+// creature and suppresses the grotto walk": an unhatched egg (level <= 1)
+// gets the exact same stationary treatment as a sleeping kandy, since
+// neither one has anywhere to walk to yet. Takes the already-computed
+// asleep flag (isAsleep's result) rather than re-deriving it, so this stays
+// a one-line combination, independently callable and testable without a
+// lineage seed or clock.
+function kandyStationaryFor(asleep, level) {
+  return asleep || !(level > 1);
 }
 
 // currentDayPhase is set by sceneFor around building props so the shared
@@ -2348,31 +2366,75 @@ function biomeProps(biome, phase, rand, level) {
 // onto the biome background plus an SVG wash rect laid over the props, so
 // every biome and phase gets tinted without any biome rewrite. Celestial
 // phases (4-5) are already dark/starry, so they only get a subtle shift.
+//
+// Both halves are tabled because the card is not the only surface wearing
+// them. The grotto's cave mouth paints the same hour in SVG, and it cannot
+// recover it from the scene: sceneBgStops reads hex colours only, so the base
+// biome gradient survives the trip and this rgba layer does not. Stops are
+// [offset, "r,g,b", alpha]; the CSS string is generated from the same rows the
+// SVG gradient is built from, so the two surfaces cannot drift apart. Every
+// alpha is hand-authored — the dim (celestial, phase 4-5) tier is its own set
+// of values, not a scaling of the lit one.
+var SKY_TINTS = {
+  dawn: {
+    lit: [["0%", "255,196,110", 0.3], ["55%", "255,172,118", 0.1], ["100%", "255,152,92", 0.16]],
+    dim: [["0%", "255,196,110", 0.08], ["55%", "255,172,118", 0.03], ["100%", "255,152,92", 0.05]],
+  },
+  dusk: {
+    lit: [["0%", "255,122,70", 0.3], ["55%", "226,92,150", 0.2], ["100%", "122,62,142", 0.18]],
+    dim: [["0%", "255,122,70", 0.08], ["55%", "226,92,150", 0.05], ["100%", "122,62,142", 0.05]],
+  },
+  night: {
+    lit: [["0%", "11,16,52", 0.62], ["55%", "9,13,44", 0.5], ["100%", "4,8,28", 0.6]],
+    dim: [["0%", "10,16,50", 0.22], ["100%", "6,10,34", 0.2]],
+  },
+};
+
+var SKY_WASHES = {
+  dawn: { fill: "#ffb75e", lit: 0.13, dim: 0.05 },
+  dusk: { fill: "#ff8a6b", lit: 0.15, dim: 0.06 },
+  night: { fill: "#0b1238", lit: 0.3, dim: 0.1 },
+};
+
+function skyTintFor(dayPhase, phase) {
+  var tint = SKY_TINTS[dayPhase];
+  if (!tint) return null;
+  return phase >= 4 ? tint.dim : tint.lit;
+}
+
+function skyWashFor(dayPhase, phase) {
+  var wash = SKY_WASHES[dayPhase];
+  if (!wash) return null;
+  return { fill: wash.fill, opacity: phase >= 4 ? wash.dim : wash.lit };
+}
+
+function skyTintCss(stops) {
+  return (
+    "linear-gradient(to bottom, " +
+    stops
+      .map(function (stop) {
+        return "rgba(" + stop[1] + "," + stop[2] + ") " + stop[0];
+      })
+      .join(", ") +
+    ")"
+  );
+}
+
 function skyOverlayFor(dayPhase, phase) {
-  if (dayPhase === "day") return null;
-  var dim = phase >= 4;
-  function wash(fill, opacity) {
-    return h0("rect", { key: "skywash", x: -10, y: -10, width: 260, height: 140, fill: fill, opacity: opacity });
-  }
-  if (dayPhase === "dawn") {
-    return {
-      bg:
-        "linear-gradient(to bottom, rgba(255,196,110," + (dim ? 0.08 : 0.3) + ") 0%, rgba(255,172,118," + (dim ? 0.03 : 0.1) + ") 55%, rgba(255,152,92," + (dim ? 0.05 : 0.16) + ") 100%)",
-      wash: wash("#ffb75e", dim ? 0.05 : 0.13),
-    };
-  }
-  if (dayPhase === "dusk") {
-    return {
-      bg:
-        "linear-gradient(to bottom, rgba(255,122,70," + (dim ? 0.08 : 0.3) + ") 0%, rgba(226,92,150," + (dim ? 0.05 : 0.2) + ") 55%, rgba(122,62,142," + (dim ? 0.05 : 0.18) + ") 100%)",
-      wash: wash("#ff8a6b", dim ? 0.06 : 0.15),
-    };
-  }
+  var tint = skyTintFor(dayPhase, phase);
+  if (!tint) return null;
+  var washPaint = skyWashFor(dayPhase, phase);
   return {
-    bg: dim
-      ? "linear-gradient(to bottom, rgba(10,16,50,0.22) 0%, rgba(6,10,34,0.2) 100%)"
-      : "linear-gradient(to bottom, rgba(11,16,52,0.62) 0%, rgba(9,13,44,0.5) 55%, rgba(4,8,28,0.6) 100%)",
-    wash: wash("#0b1238", dim ? 0.1 : 0.3),
+    bg: skyTintCss(tint),
+    wash: h0("rect", {
+      key: "skywash",
+      x: -10,
+      y: -10,
+      width: 260,
+      height: 140,
+      fill: washPaint.fill,
+      opacity: washPaint.opacity,
+    }),
   };
 }
 
@@ -2609,6 +2671,75 @@ var KANDY_CSS =
   // INLINE styles driven by widget state so the corner grip can drag them;
   // the classes remain as hooks for the phone override below.
   ".kandev-kandy-dialogframe{position:relative}" +
+  // Token grotto: one bounded underground scene, sticky navigation, and
+  // ordinary vertical overflow. Door/pile grids reflow; there is no
+  // carousel, page state, or horizontal content track.
+  ".kandev-kandy-grotto-panel{--grotto-ink:#f4ede2;--grotto-ink-dim:#b6a894;--grotto-edge:rgba(255,255,255,.1);box-sizing:border-box;width:100%;max-height:calc(100vh - 32px);overflow:hidden;border:1px solid var(--grotto-edge);border-radius:16px;background:linear-gradient(180deg,#241d17,#100d0b);color:var(--grotto-ink);box-shadow:0 18px 50px rgba(0,0,0,.45)}" +
+  ".kandev-kandy-grotto-panel:focus{outline:none}.kandev-kandy-grotto-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-3px}" +
+  ".kandev-kandy-grotto-bar{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--grotto-edge);background:linear-gradient(180deg,rgba(30,24,19,.96),rgba(22,18,15,.86));backdrop-filter:blur(10px)}" +
+  ".kandev-kandy-grotto-heading{min-width:0;text-align:center}.kandev-kandy-grotto-title{display:block;font-size:16px;font-weight:750;line-height:1.2;overflow-wrap:anywhere}.kandev-kandy-grotto-subtitle{margin-top:2px;color:var(--grotto-ink-dim);font-size:10px;line-height:1.35;overflow-wrap:anywhere}" +
+  ".kandev-kandy-grotto-action{min-height:40px;min-width:44px;padding:0 10px;border:1px solid var(--grotto-edge);border-radius:10px;background:rgba(255,255,255,.07);color:inherit;font-size:11px;font-weight:650;cursor:pointer}.kandev-kandy-grotto-action:hover{background:rgba(255,255,255,.13)}.kandev-kandy-grotto-action:focus-visible,.kandev-kandy-grotto-door:focus-visible,.kandev-kandy-token-pile:focus-visible,.kandev-kandy-grotto-entry:focus-visible,.kandev-kandy-grotto-manifest-open:focus-visible{outline:2px solid var(--ring);outline-offset:2px}" +
+  ".kandev-kandy-grotto-scroll{max-height:calc(100vh - 104px);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;touch-action:pan-y}" +
+  ".kandev-kandy-grotto-scene{position:relative;isolation:isolate;overflow:hidden;display:flex;flex-direction:column;min-height:340px;padding:18px;box-sizing:border-box;background:#0d1418}" +
+  ".kandev-kandy-grotto-backdrop{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;pointer-events:none}" +
+  ".kandev-kandy-token-stage{position:absolute;inset:0;z-index:1;width:100%;height:100%;display:block;pointer-events:none;overflow:visible}" +
+  ".kandev-kandy-grotto-hub{position:relative;z-index:1;flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(70px,auto) minmax(0,1fr);gap:14px 24px;align-content:start}.kandev-kandy-grotto-kandy{display:flex;align-items:flex-end;justify-content:center;min-height:72px}.kandev-kandy-grotto-room-scene .kandev-kandy-grotto-kandy{margin-top:auto}.kandev-kandy-grotto-kandy.is-left{justify-content:flex-start;padding-left:18px}.kandev-kandy-grotto-kandy.is-right{justify-content:flex-end;padding-right:18px}.kandev-kandy-grotto-kandy svg{filter:drop-shadow(0 8px 8px rgba(0,0,0,.24))}" +
+  ".kandev-kandy-grotto-door{position:relative;min-width:0;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--grotto-edge);background:linear-gradient(180deg,rgba(20,30,34,.72),rgba(6,11,14,.82));color:var(--grotto-ink);box-shadow:inset 0 -14px 20px rgba(0,0,0,.3),0 8px 18px rgba(0,0,0,.35);cursor:pointer;text-align:left}" +
+  ".kandev-kandy-grotto-door.is-left{margin-right:auto;border-radius:12px 34px 34px 12px;padding-right:16px}" +
+  ".kandev-kandy-grotto-door.is-right{margin-left:auto;flex-direction:row-reverse;border-radius:34px 12px 12px 34px;padding-left:16px;text-align:right}" +
+  ".kandev-kandy-grotto-door-body{min-width:0;display:flex;flex-direction:column;gap:2px}" +
+  ".kandev-kandy-grotto-door::after{content:\"\";position:absolute;top:50%;width:22px;height:2px;background:repeating-linear-gradient(90deg,rgba(196,238,215,.45) 0 5px,transparent 5px 11px)}" +
+  ".kandev-kandy-grotto-door.is-left::after{right:-22px}.kandev-kandy-grotto-door.is-right::after{left:-22px}" +
+  ".kandev-kandy-grotto-door:hover{background:linear-gradient(180deg,rgba(255,214,150,.16),rgba(0,0,0,.26))}.kandev-kandy-grotto-door-art{width:46px;height:46px;flex:0 0 auto}.kandev-kandy-grotto-door-label{max-width:100%;font-size:13px;font-weight:750;line-height:1.2;overflow-wrap:anywhere}.kandev-kandy-grotto-door-count{color:var(--grotto-ink-dim);font-size:10px}" +
+  ".kandev-kandy-grotto-room{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;justify-content:flex-end;min-height:240px}" +
+  ".kandev-kandy-token-pile{pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent}.kandev-kandy-token-pile:focus{outline:none}" +
+  ".kandev-kandy-token-pile-hit{fill:transparent;stroke:none}.kandev-kandy-token-pile:focus-visible .kandev-kandy-token-pile-hit{stroke:var(--ring);stroke-width:3}" +
+  ".kandev-kandy-token-pile-name,.kandev-kandy-token-pile-compact,.kandev-kandy-grotto-exact{text-anchor:middle;paint-order:stroke;stroke:rgba(6,5,4,.72);stroke-width:5;stroke-linejoin:round;font-family:inherit}" +
+  ".kandev-kandy-token-pile-name{fill:var(--grotto-ink);font-size:23px;font-weight:750}.kandev-kandy-token-pile-compact{fill:var(--grotto-ink-dim);font-size:19px}" +
+  ".kandev-kandy-grotto-exact{fill:#ffe4a8;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;opacity:0;visibility:hidden}" +
+  ".kandev-kandy-token-pile:hover .kandev-kandy-token-pile-hoard,.kandev-kandy-token-pile:focus-visible .kandev-kandy-token-pile-hoard,.kandev-kandy-token-pile.is-revealed .kandev-kandy-token-pile-hoard{filter:drop-shadow(0 2px 3px rgba(0,0,0,.3)) brightness(1.14)}" +
+  ".kandev-kandy-token-pile-hoard{filter:drop-shadow(0 2px 2px rgba(0,0,0,.28))}" +
+  ".kandev-kandy-token-pile:hover .kandev-kandy-grotto-exact,.kandev-kandy-token-pile:focus-visible .kandev-kandy-grotto-exact,.kandev-kandy-token-pile.is-revealed .kandev-kandy-grotto-exact{opacity:1;visibility:visible}" +
+  ".kandev-kandy-grotto-manifest{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:2;box-sizing:border-box;width:min(300px,calc(100% - 24px));max-height:62%;overflow-y:auto;overscroll-behavior:contain;padding:10px 12px;border:1px solid var(--grotto-edge);border-radius:12px;background:rgba(12,10,8,.94);color:var(--grotto-ink);font-size:11px}" +
+  ".kandev-kandy-grotto-manifest strong{display:block;margin-bottom:6px;font-size:11px}.kandev-kandy-grotto-manifest ul{margin:0;padding:0;list-style:none}" +
+  ".kandev-kandy-grotto-manifest li{padding:3px 0;border-top:1px solid rgba(255,255,255,.07);font-variant-numeric:tabular-nums}" +
+  ".kandev-kandy-grotto-manifest-row{display:flex;align-items:baseline;gap:7px}.kandev-kandy-grotto-manifest-separator{flex:0 0 auto;color:var(--grotto-ink-dim)}.kandev-kandy-grotto-manifest-count{flex:0 0 auto;margin-left:auto;white-space:nowrap;text-align:right}" +
+  ".kandev-kandy-grotto-manifest-open{width:100%;display:flex;justify-content:flex-start;align-items:baseline;gap:7px;margin:0;padding:0;border:none;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:6px}" +
+  ".kandev-kandy-grotto-manifest-open:hover{color:#ffe4a8}" +
+  ".kandev-kandy-grotto-manifest-name{min-width:0;overflow-wrap:anywhere;text-align:left}" +
+  ".kandev-kandy-grotto-door-overflow.is-revealed{background:linear-gradient(180deg,rgba(255,214,150,.16),rgba(0,0,0,.26))}" +
+  ".kandev-kandy-grotto-boundary{margin:16px 0 0;color:var(--grotto-ink-dim);font-size:10px;text-align:center}.kandev-kandy-grotto-empty{min-height:270px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--grotto-ink-dim)}.kandev-kandy-grotto-empty-door{font-size:58px;line-height:1;opacity:.45}" +
+  "@media (max-width:480px){.kandev-kandy-grotto-hub{grid-template-columns:1fr;grid-template-rows:auto!important;gap:10px}.kandev-kandy-grotto-hub>*{grid-column:1!important;grid-row:auto!important}.kandev-kandy-grotto-door{margin:0!important;border-radius:14px!important}.kandev-kandy-grotto-door::after{display:none}.kandev-kandy-grotto-scene{padding:12px}.kandev-kandy-grotto-bar{gap:6px;padding:8px}.kandev-kandy-grotto-subtitle{font-size:9px}.kandev-kandy-grotto-action{padding:0 8px}}" +
+  // Kandy walks between the surface and the grotto: it strolls out of frame,
+  // the panel swaps while it is gone, then it walks back in — down from the
+  // ceiling into the grotto, in from the side back on the surface. These
+  // classes sit on their own wrapper so the archetype gait keeps animating
+  // underneath them.
+  "@keyframes kandev-kandy-walkoff{0%{transform:translateX(0);opacity:1}78%{opacity:1}100%{transform:translateX(190px);opacity:0}}" +
+  "@keyframes kandev-kandy-walkin-shore{0%{transform:translate(-170px,120px);opacity:0}22%{opacity:1}100%{transform:translate(0,0);opacity:1}}" +
+  "@keyframes kandev-kandy-walkin-side{0%{transform:translateX(-180px);opacity:0}16%{opacity:1}100%{transform:translateX(0);opacity:1}}" +
+  ".kandev-kandy-walkoff{animation:kandev-kandy-walkoff .62s linear both}" +
+  "@keyframes kandev-kandy-walkoff-left{0%{transform:translateX(0);opacity:1}78%{opacity:1}100%{transform:translateX(-190px);opacity:0}}" +
+  "@keyframes kandev-kandy-walkin-shore-right{0%{transform:translate(170px,120px);opacity:0}22%{opacity:1}100%{transform:translate(0,0);opacity:1}}" +
+  "@keyframes kandev-kandy-walkin-entrance{0%{transform:translateY(-85px);opacity:0}70%{opacity:.9}100%{transform:translateY(0);opacity:1}}" +
+  "@keyframes kandev-kandy-walkout-entrance{0%{transform:translateY(0);opacity:1}30%{opacity:.9}100%{transform:translateY(-85px);opacity:0}}" +
+  ".kandev-kandy-walkoff-left{animation:kandev-kandy-walkoff-left .62s linear both}" +
+  ".kandev-kandy-walkin-shore-right{animation:kandev-kandy-walkin-shore-right .76s linear both}" +
+  ".kandev-kandy-walkin-entrance{animation:kandev-kandy-walkin-entrance .9s ease-out both}" +
+  ".kandev-kandy-walkout-entrance{animation:kandev-kandy-walkout-entrance .62s ease-in both}" +
+  ".kandev-kandy-walkin-shore{animation:kandev-kandy-walkin-shore .76s linear both}" +
+  // A chamber Kandy stands on the floor (margin-top:auto) against one wall
+  // (is-left/is-right), inside a scene that clips. Two things follow. It walks
+  // in FLAT — the shore walk-in drops 120px, which down here starts it below
+  // the floor. And it walks a SHORT way: the wall inset above is what buys the
+  // walk its visible run, so the travel here has to stay close to that inset
+  // plus the creature's own width, or the trip is over before it clears the
+  // edge and Kandy just appears at its resting spot.
+  "@keyframes kandev-kandy-walkin-floor{0%{transform:translateX(-96px);opacity:0}6%{opacity:1}100%{transform:translateX(0);opacity:1}}" +
+  "@keyframes kandev-kandy-walkin-floor-right{0%{transform:translateX(96px);opacity:0}6%{opacity:1}100%{transform:translateX(0);opacity:1}}" +
+  ".kandev-kandy-walkin-floor{animation:kandev-kandy-walkin-floor .9s linear both}" +
+  ".kandev-kandy-walkin-floor-right{animation:kandev-kandy-walkin-floor-right .9s linear both}" +
+  ".kandev-kandy-walkin-side{animation:kandev-kandy-walkin-side .7s linear both}" +
   // Resize grip: a ~16px muted diagonal-lines affordance hugging the
   // dialog's bottom-right corner, OUTSIDE the zoomed wrapper so its hit
   // area never scales. touch-action:none keeps pointer-captured drags from
@@ -2800,7 +2931,7 @@ var KANDY_CSS =
   ".kandev-kandy-photo-panel:focus{outline:none}" +
   ".kandev-kandy-photo-panel:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}" +
   ".kandev-kandy-static,.kandev-kandy-static *{animation:none!important}" +
-  "@media (prefers-reduced-motion: reduce){.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc,.kandev-kandy-sob,.kandev-kandy-tear,.kandev-kandy-puddle,.kandev-kandy-gait-waddle,.kandev-kandy-gait-stride,.kandev-kandy-gait-slither,.kandev-kandy-gait-shuffle,.kandev-kandy-gait-hopskip,.kandev-kandy-gait-glide{animation:none}.kandev-kandy-gait-drift{transform:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-helpcontent{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
+  "@media (prefers-reduced-motion: reduce){.kandev-kandy-walkoff,.kandev-kandy-walkoff-left,.kandev-kandy-walkin-shore,.kandev-kandy-walkin-shore-right,.kandev-kandy-walkin-floor,.kandev-kandy-walkin-floor-right,.kandev-kandy-walkin-entrance,.kandev-kandy-walkout-entrance,.kandev-kandy-walkin-side,.kandev-kandy-bob,.kandev-kandy-bob-fast,.kandev-kandy-bob-slow,.kandev-kandy-bobsad,.kandev-kandy-blink,.kandev-kandy-wiggle,.kandev-kandy-celebrate,.kandev-kandy-celebrate::after,.kandev-kandy-levelup,.kandev-kandy-levelup::after,.kandev-kandy-cardhop,.kandev-kandy-burst,.kandev-kandy-namehl,.kandev-kandy-heartfloat,.kandev-kandy-munch,.kandev-kandy-soaked,.kandev-kandy-turnaway,.kandev-kandy-treat,.kandev-kandy-treat-ignored,.kandev-kandy-crumb,.kandev-kandy-bucket,.kandev-kandy-holdtip,.kandev-kandy-holdcancel,.kandev-kandy-pour,.kandev-kandy-splat,.kandev-kandy-splashdrop,.kandev-kandy-drip,.kandev-kandy-dots,.kandev-kandy-zzz,.kandev-kandy-snow,.kandev-kandy-petal,.kandev-kandy-leaf,.kandev-kandy-firefly,.kandev-kandy-bubble,.kandev-kandy-greetarc,.kandev-kandy-sob,.kandev-kandy-tear,.kandev-kandy-puddle,.kandev-kandy-gait-waddle,.kandev-kandy-gait-stride,.kandev-kandy-gait-slither,.kandev-kandy-gait-shuffle,.kandev-kandy-gait-hopskip,.kandev-kandy-gait-glide{animation:none}.kandev-kandy-gait-drift{transform:none}.kandev-kandy-control{transition:none}.kandev-kandy-photo-entry-surface{transition:none}.kandev-kandy-token-pile-hoard{animation:none!important;transition:none!important}.kandev-kandy-helpcontent{transition:none}.kandev-kandy-control:active:not(:disabled){transform:none}}";
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -4457,6 +4588,1656 @@ function burstSparkles(h, big) {
   return h("div", { key: "burstwrap", style: { position: "absolute", inset: 0, pointerEvents: "none" } }, out);
 }
 
+// ===========================================================================
+// TOKEN GROTTO — the underground scene reached from the dialog, in five parts:
+//
+//   1. data model .... webhook DTO allowlist, exact decimal math, pile geometry
+//   2. navigation .... which walk animation a surface/transit pair wears
+//   3. scenery ....... two authored inline-SVG backdrops (cave mouth, chamber)
+//   4. scenes ........ shell, chamber doors, hub, model piles
+//   5. entry ......... the dialog button, filed with its Photo Booth twin below
+//
+// Everything here is presentation over aggregate agent-type/model totals. No
+// raw event identity, conversation content, cost, or XP reaches this code.
+// ===========================================================================
+
+// --- Grotto data model -----------------------------------------------------
+
+var TOKEN_GROTTO_STATUSES = { empty: true, ready: true, partial: true };
+
+function tokenGrottoDecimal(value) {
+  var text = typeof value === "string" ? value.trim() : "";
+  if (!/^\d+$/.test(text)) return null;
+  return text.replace(/^0+(?=\d)/, "");
+}
+
+function compareTokenGrottoDecimals(left, right) {
+  left = tokenGrottoDecimal(left);
+  right = tokenGrottoDecimal(right);
+  if (left === null || right === null) {
+    if (left === right) return 0;
+    return left === null ? -1 : 1;
+  }
+  if (left.length !== right.length) return left.length > right.length ? 1 : -1;
+  if (left === right) return 0;
+  return left > right ? 1 : -1;
+}
+
+function tokenCountBigInt(value) {
+  var decimal = tokenGrottoDecimal(value);
+  if (decimal === null) return null;
+  try {
+    return BigInt(decimal);
+  } catch (_) {
+    return null;
+  }
+}
+
+function formatTokenExact(value, locale) {
+  var count = tokenCountBigInt(value);
+  if (count === null) return "Unavailable";
+  return new Intl.NumberFormat(locale).format(count);
+}
+
+function formatTokenCompact(value, locale) {
+  var count = tokenCountBigInt(value);
+  if (count === null) return "Unavailable";
+  return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(count);
+}
+
+function tokenGrottoText(value, fallback, limit) {
+  var text = typeof value === "string" ? value.trim() : "";
+  if (!text) return fallback;
+  return text.slice(0, limit);
+}
+
+// Strict aggregate-only allowlist. Raw event identity and conversation data
+// have no path from the webhook response into the grotto renderer.
+function tokenGrottoModelFor(data) {
+  var source = data && data.token_grotto && typeof data.token_grotto === "object" ? data.token_grotto : {};
+  var status = TOKEN_GROTTO_STATUSES[source.status] ? source.status : "empty";
+  var rooms = Array.isArray(source.rooms)
+    ? source.rooms.map(function (room) {
+        room = room && typeof room === "object" ? room : {};
+        var models = Array.isArray(room.models)
+          ? room.models.map(function (model) {
+              model = model && typeof model === "object" ? model : {};
+              return {
+                name: tokenGrottoText(model.name, "Mystery model", 128),
+                tokens: tokenGrottoDecimal(model.tokens),
+                recentRank: typeof model.recent_rank === "string" ? model.recent_rank : "",
+              };
+            })
+          : [];
+        models.sort(function (left, right) {
+          var tokenOrder = compareTokenGrottoDecimals(right.tokens, left.tokens);
+          return tokenOrder || left.name.localeCompare(right.name);
+        });
+        return {
+          agentType: tokenGrottoText(room.agent_type, "mystery-agent", 64),
+          label: tokenGrottoText(room.label, "Mystery agent", 80),
+          tokens: tokenGrottoDecimal(room.tokens),
+          models: models,
+        };
+      })
+    : [];
+  rooms.sort(function (left, right) {
+    var tokenOrder = compareTokenGrottoDecimals(right.tokens, left.tokens);
+    return tokenOrder || left.label.localeCompare(right.label);
+  });
+  return {
+    status: status,
+    observedSince: typeof source.observed_since === "string" ? source.observed_since : "",
+    totalTokens: tokenGrottoDecimal(source.total_tokens),
+    rooms: rooms,
+  };
+}
+
+function tokenPileScale(value, maximum) {
+  var decimal = tokenGrottoDecimal(value);
+  var maxDecimal = tokenGrottoDecimal(maximum);
+  if (decimal === null || maxDecimal === null || decimal === "0" || maxDecimal === "0") return 0.16;
+  function log10Decimal(text) {
+    var head = Number(text.slice(0, 15));
+    return text.length - 1 + Math.log10(head / Math.pow(10, Math.min(text.length, 15) - 1));
+  }
+  // Area, not height, tracks the share of the chamber's largest pile, so the
+  // dominant model reads as dominant instead of collapsing into its neighbours.
+  // The floor is deliberately low: a bare minimum keeps the smallest pile
+  // clickable without dragging every pile toward the same silhouette.
+  var ratio = Math.pow(10, Math.min(0, log10Decimal(decimal) - log10Decimal(maxDecimal)));
+  return 0.16 + 0.84 * Math.sqrt(Math.max(0, Math.min(1, ratio)));
+}
+
+function tokenGrottoHash(agentType, model) {
+  var input = String(agentType || "") + "\u0000" + String(model || "");
+  var hash = 2166136261;
+  for (var i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+// --- Grotto hoards: what a model's tokens are made of -----------------------
+//
+// Three independent axes, the same way a creature already varies along more
+// than one dimension (level vs. lineage_seed vs. biome):
+//   PROPORTION — tokenPileScale, relative to the biggest model in THIS room.
+//     Sizes a pile among its neighbours. Unchanged, still self-normalizing.
+//   SPECTACLE — the model's own absolute token count against a fixed ladder
+//     (hoardTierFor). Decides what the pile is MADE OF, so a friend with 10x
+//     more tokens is visibly richer, not just a taller version of the same
+//     pile. The ladder is capped the same way levels are (bandMax in
+//     server/level.go): steps get tight and simply stop past a few billion
+//     tokens, because nobody realistically reaches a trillion — the top tier
+//     repeats forever, exactly like the post-bandMax prestige ladder does.
+//   IDENTITY — lineage_seed picks a palette+motif family (hoardStyleFor), so
+//     two grottos at the identical tier still read as different creatures'
+//     hoards, not a shared asset recolored.
+var HOARD_TIERS = [
+  { max: 30e3, kind: "scatter", name: "loose coins", gems: 0, glow: 0, relics: 0 },
+  { max: 100e3, kind: "scatter", name: "handful", gems: 0, glow: 0, relics: 0 },
+  { max: 320e3, kind: "mound", name: "coin mound", gems: 0, glow: 0.08, relics: 0 },
+  { max: 1e6, kind: "mound", name: "coin hoard", gems: 0, glow: 0.15, relics: 0 },
+  { max: 3.2e6, kind: "chest", name: "small chest", gems: 0, glow: 0.22, relics: 0 },
+  { max: 10e6, kind: "chest", name: "banded chest", gems: 1, glow: 0.32, relics: 0 },
+  { max: 32e6, kind: "chest", name: "gem chest", gems: 3, glow: 0.42, relics: 0 },
+  { max: 100e6, kind: "chest", name: "royal chest", gems: 5, glow: 0.52, relics: 0 },
+  { max: 320e6, kind: "vault", name: "ornate vault", gems: 7, glow: 0.62, relics: 1 },
+  { max: 1e9, kind: "vault", name: "twin hoard", gems: 9, glow: 0.74, relics: 2 },
+  { max: 3.2e9, kind: "dragon", name: "dragon hoard", gems: 12, glow: 0.88, relics: 3 },
+  { max: Infinity, kind: "dragon", name: "mythic hoard", gems: 15, glow: 1, relics: 4 },
+];
+
+function hoardTierFor(tokens) {
+  var decimal = tokenGrottoDecimal(tokens);
+  var n = decimal === null ? 0 : Number(decimal);
+  for (var i = 0; i < HOARD_TIERS.length; i++) {
+    if (n < HOARD_TIERS[i].max) return { tier: HOARD_TIERS[i], index: i };
+  }
+  return { tier: HOARD_TIERS[HOARD_TIERS.length - 1], index: HOARD_TIERS.length - 1 };
+}
+
+// One palette+motif family per lineage. Coin/gem colors and material lean
+// (gold, silver, gemstone, verdant, void, ember) come along together so a
+// grotto reads as one hoard, not mismatched parts.
+var HOARD_STYLES = [
+  { id: "goldsmith", coin: "#f6c944", coinDark: "#8a5a1c", shine: "#fff6cf", wood: "#6b4326", lid: "#7a4e2c", band: "#3a3a3f", trim: "#e0aa3f", glow: "#ffdb7a", gems: ["#7fd8e0", "#c9a6f0", "#f28ba0"] },
+  { id: "silverwright", coin: "#dfe7ef", coinDark: "#79879a", shine: "#ffffff", wood: "#3f4a63", lid: "#4c5878", band: "#232833", trim: "#b9c6d6", glow: "#cfe2ff", gems: ["#8fd0ff", "#b9a6f0", "#7fe0c0"] },
+  { id: "gemcutter", coin: "#efd9a0", coinDark: "#8b7440", shine: "#fff8e6", wood: "#4b3560", lid: "#5b4174", band: "#2a1e38", trim: "#d9b8ff", glow: "#e6c6ff", gems: ["#ff8fb0", "#8fe0ff", "#c08fff", "#8fffb8", "#ffd98f"] },
+  { id: "relicarium", coin: "#c08a3e", coinDark: "#6b4a1e", shine: "#ecd0a0", wood: "#3f4a33", lid: "#4d5a3d", band: "#2b3325", trim: "#7fbfa0", glow: "#9fd8b0", gems: ["#7fbfa0", "#c9b07f", "#a0c0d0"] },
+  { id: "voidcache", coin: "#a98fe0", coinDark: "#4b3a75", shine: "#e6dcff", wood: "#241f33", lid: "#2f2842", band: "#15121f", trim: "#6fe0d0", glow: "#a98fff", gems: ["#6fe0d0", "#ff8fd0", "#8f9fff"] },
+  { id: "emberforge", coin: "#f09040", coinDark: "#8a3a10", shine: "#ffd8a0", wood: "#3a2420", lid: "#4a2e26", band: "#1e1512", trim: "#ff7040", glow: "#ff9050", gems: ["#ffb060", "#ff6040", "#ffd070"] },
+];
+
+function hoardStyleFor(lineageSeed) {
+  return HOARD_STYLES[tokenGrottoHash("hoardstyle", String(lineageSeed >>> 0)) % HOARD_STYLES.length];
+}
+
+function hoardCoin(h, key, x, y, r, style) {
+  return h(
+    "g",
+    { key: key },
+    h("ellipse", { cx: x, cy: y + r * 0.16, rx: r, ry: r * 0.42, fill: style.coinDark }),
+    h("ellipse", { cx: x, cy: y, rx: r, ry: r * 0.42, fill: style.coin, stroke: style.coinDark, strokeWidth: 0.6 }),
+    h("ellipse", { cx: x, cy: y - r * 0.08, rx: r * 0.42, ry: r * 0.17, fill: style.shine, opacity: 0.7 }),
+  );
+}
+
+function hoardScatter(h, seed, style, size) {
+  var count = 2 + Math.round(size * 5);
+  var coins = [];
+  for (var i = 0; i < count; i++) {
+    var hv = tokenGrottoHash(seed, "s" + i);
+    coins.push(hoardCoin(h, "s" + i, 63 + ((hv % 1000) / 1000 - 0.5) * 62, 116 + ((hv >>> 9) % 8), 9 - (hv % 3), style));
+  }
+  return h("g", null, h("ellipse", { cx: 63, cy: 121, rx: 36, ry: 7, fill: "rgba(0,0,0,.22)" }), coins);
+}
+
+function hoardMound(h, seed, style, size, spreadMul) {
+  var stacks = 3 + Math.round(size * 6);
+  var spread = (28 + size * 44) * (spreadMul || 1);
+  var coins = [];
+  for (var s = 0; s < stacks; s++) {
+    var hb = tokenGrottoHash(seed, "k" + s);
+    var x = 63 + ((hb % 1000) / 1000 - 0.5) * spread * 2;
+    var tall = Math.max(1, Math.round((2 + size * 9) * (0.5 + ((hb >>> 8) % 100) / 200) * (1 - Math.abs(x - 63) / (spread * 2 + 40))));
+    for (var c = 0; c < tall; c++) {
+      var hv = tokenGrottoHash(seed, "k" + s + "c" + c);
+      coins.push({ x: x + ((hv >>> 4) % 5) - 2, y: 122 - c * 3.5, r: 12 - (hv % 3), key: s + "_" + c });
+    }
+  }
+  coins.sort(function (a, b) {
+    return a.y - b.y;
+  });
+  return h(
+    "g",
+    null,
+    h("ellipse", { cx: 63, cy: 121, rx: 24 + spread, ry: 10, fill: "rgba(0,0,0,.26)" }),
+    coins.map(function (c) {
+      return hoardCoin(h, c.key, c.x, c.y, c.r, style);
+    }),
+  );
+}
+
+function hoardGems(h, seed, style, count, w, bodyH) {
+  var gems = [];
+  for (var i = 0; i < count; i++) {
+    var hv = tokenGrottoHash(seed, "g" + i);
+    var gx = 63 + ((hv % 1000) / 1000 - 0.5) * w * 0.86;
+    var gy = 126 - bodyH * (0.25 + ((hv >>> 8) % 100) / 100 * 0.55);
+    var r = 2.6 + (hv % 4);
+    var col = style.gems[(hv >>> 3) % style.gems.length];
+    gems.push(
+      h(
+        "g",
+        { key: "g" + i },
+        h("path", {
+          fill: col,
+          stroke: "#fff",
+          strokeWidth: 0.5,
+          opacity: 0.95,
+          d: "M" + gx + " " + (gy - r) + " L" + (gx + r) + " " + gy + " L" + gx + " " + (gy + r) + " L" + (gx - r) + " " + gy + " Z",
+        }),
+        h("path", { fill: "#fff", opacity: 0.55, d: "M" + gx + " " + (gy - r) + " L" + (gx + r * 0.4) + " " + (gy - r * 0.1) + " L" + gx + " " + gy + " Z" }),
+      ),
+    );
+  }
+  return h("g", null, gems);
+}
+
+// Crown / goblet / amulet — a small deterministic pick per relic slot, only
+// reached at vault tier and up.
+function hoardRelic(h, seed, style, index, x, y) {
+  var kind = tokenGrottoHash(seed, "r" + index) % 3;
+  if (kind === 0) {
+    return h(
+      "g",
+      { key: "r" + index },
+      h("path", {
+        fill: style.trim,
+        stroke: style.coinDark,
+        strokeWidth: 0.7,
+        d: "M" + (x - 11) + " " + y + " L" + (x - 11) + " " + (y - 7) + " L" + (x - 5.5) + " " + (y - 2) + " L" + x + " " + (y - 10) + " L" + (x + 5.5) + " " + (y - 2) + " L" + (x + 11) + " " + (y - 7) + " L" + (x + 11) + " " + y + " Z",
+      }),
+      h("circle", { cx: x, cy: y - 11, r: 2, fill: style.gems[0] }),
+    );
+  }
+  if (kind === 1) {
+    return h(
+      "g",
+      { key: "r" + index },
+      h("path", {
+        fill: style.trim,
+        stroke: style.coinDark,
+        strokeWidth: 0.7,
+        d: "M" + (x - 6) + " " + (y - 14) + " L" + (x + 6) + " " + (y - 14) + " L" + (x + 3) + " " + (y - 5) + " L" + (x - 3) + " " + (y - 5) + " Z",
+      }),
+      h("rect", { x: x - 1.4, y: y - 6, width: 2.8, height: 5, fill: style.trim }),
+      h("ellipse", { cx: x, cy: y, rx: 6, ry: 2.2, fill: style.trim }),
+    );
+  }
+  return h(
+    "g",
+    { key: "r" + index },
+    h("circle", { cx: x, cy: y - 8, r: 5.5, fill: "none", stroke: style.trim, strokeWidth: 2 }),
+    h("circle", { cx: x, cy: y - 8, r: 2.2, fill: style.gems[1 % style.gems.length] }),
+  );
+}
+
+function hoardChest(h, seed, style, tier, size, ornate, wMul) {
+  var w = (62 + size * 58) * (wMul || 1);
+  var bodyH = 28 + size * 28;
+  var x0 = 63 - w / 2;
+  var dome = bodyH * 0.34;
+  var band = ornate ? style.trim : style.band;
+  return h(
+    "g",
+    null,
+    tier.glow > 0.3 ? h("ellipse", { cx: 63, cy: 126 - bodyH * 0.55, rx: w * 0.78, ry: bodyH * 1.05, fill: style.glow, opacity: tier.glow * 0.22 }) : null,
+    h("ellipse", { cx: 63, cy: 121, rx: w * 0.62, ry: 9, fill: "rgba(0,0,0,.3)" }),
+    hoardCoin(h, "spL", 63 - w * 0.46, 120, 8, style),
+    hoardCoin(h, "spR", 63 + w * 0.46, 120, 8, style),
+    h("rect", { x: x0, y: 126 - bodyH, width: w, height: bodyH, rx: 4, fill: style.wood, stroke: "rgba(0,0,0,.4)", strokeWidth: 2 }),
+    h("path", { fill: style.lid, stroke: "rgba(0,0,0,.4)", strokeWidth: 2, d: "M" + x0 + " " + (126 - bodyH) + " Q63 " + (126 - bodyH - dome * 2) + " " + (x0 + w) + " " + (126 - bodyH) + " Z" }),
+    h("rect", { x: x0 + 2, y: 126 - bodyH - 1.6, width: w - 4, height: 3.2, fill: style.glow, opacity: 0.45 + tier.glow * 0.55 }),
+    h("rect", { x: 63 - w * 0.055, y: 126 - bodyH, width: w * 0.11, height: bodyH, fill: band }),
+    h("rect", { x: x0, y: 126 - bodyH * 0.54, width: w, height: bodyH * 0.1, fill: band }),
+    ornate ? h("rect", { x: x0, y: 126 - bodyH * 0.9, width: w, height: bodyH * 0.06, fill: style.trim, opacity: 0.8 }) : null,
+    h("rect", { x: 63 - w * 0.065, y: 126 - bodyH * 0.6, width: w * 0.13, height: bodyH * 0.2, rx: 2, fill: style.trim }),
+    tier.gems > 0 ? hoardGems(h, seed, style, Math.min(tier.gems, 6), w * 0.9, bodyH) : null,
+  );
+}
+
+// The hero chest sits centered and forward; flanking chests (dragon tier)
+// tuck in behind at a smaller scale. Their offsets are DERIVED from that
+// scale, not eyeballed: at scale s a chest's own baseline (y=126) lands at
+// 126*s, so translateY = desiredFloorY - 126*s, and its centre (x=63) lands
+// at 63*s, so translateX = desiredCenterX - 63*s. Guessing these left them
+// floating off the floor during prototyping.
+function hoardFlank(h, node, desiredX, desiredY, scale) {
+  var tx = desiredX - 63 * scale;
+  var ty = desiredY - 126 * scale;
+  return h("g", { transform: "translate(" + tx + " " + ty + ") scale(" + scale + ")" }, node);
+}
+
+function hoardArtFor(h, seed, style, tierInfo, size) {
+  var tier = tierInfo.tier;
+  if (tier.kind === "scatter") return hoardScatter(h, seed, style, size);
+  if (tier.kind === "mound") return hoardMound(h, seed, style, size);
+  if (tier.kind === "chest") return hoardChest(h, seed, style, tier, size, tierInfo.index >= 7, 1);
+  var heroH = 28 + size * 28;
+  if (tier.kind === "vault") {
+    return h(
+      "g",
+      null,
+      hoardMound(h, seed + " bed", style, Math.min(1, size + 0.25), 1.25),
+      hoardChest(h, seed, style, tier, size, true, 0.92),
+      hoardGems(h, seed + " loose", style, Math.max(0, tier.gems - 6), 118, 34),
+      tier.relics >= 1 ? hoardRelic(h, seed, style, 0, 63, 126 - heroH - 14) : null,
+      tier.relics >= 2 ? hoardRelic(h, seed, style, 1, 26, 120) : null,
+    );
+  }
+  // dragon: one glow, a deep coin bed, a hero chest with two smaller chests
+  // flanking it further back, and a relic row on top. The flanking chests
+  // draw with glow disabled — three stacked glow ellipses read as grey mud
+  // rather than three points of light.
+  var flankTier = Object.assign({}, tier, { glow: 0 });
+  var relics = [];
+  for (var i = 0; i < tier.relics; i++) {
+    relics.push(hoardRelic(h, seed, style, i, 63 + (i - (tier.relics - 1) / 2) * 26, 126 - heroH - 22));
+  }
+  return h(
+    "g",
+    null,
+    h("ellipse", { cx: 63, cy: 104, rx: 82, ry: 30, fill: style.glow, opacity: tier.glow * 0.16 }),
+    hoardFlank(h, hoardChest(h, seed + " L", style, flankTier, size, true, 1), 11, 54, 0.46),
+    hoardFlank(h, hoardChest(h, seed + " R", style, flankTier, size, true, 1), 101, 54, 0.46),
+    hoardMound(h, seed + " bed", style, 1, 1.55),
+    hoardChest(h, seed, style, flankTier, size, true, 0.84),
+    hoardGems(h, seed + " loose", style, Math.max(0, tier.gems - 8), 132, 40),
+    relics,
+  );
+}
+
+function tokenGrottoAction(h, label, onClick) {
+  return h(
+    "button",
+    {
+      type: "button",
+      className: "kandev-kandy-grotto-action",
+      "aria-label": label,
+      onClick: onClick,
+    },
+    label,
+  );
+}
+
+function tokenGrottoResolvedView(model, view) {
+  if (!view || view === "hub") return view;
+  for (var i = 0; i < model.rooms.length; i++) {
+    if (model.rooms[i].agentType === view) return view;
+  }
+  return "hub";
+}
+
+// --- Grotto navigation -----------------------------------------------------
+
+// Which walk class the creature on a given surface wears for a transit step.
+// Surfaces are "card" (above ground), "hub" (the cave), and "room" (a
+// chamber). Side is the wall the chosen passage sits on, so Kandy leaves and
+// arrives on the same side it travelled through; anything else stands still.
+// A passage on the hub's right wall puts Kandy on the chamber's left: you leave
+// one room by its right side and walk in through the far room's left, the way
+// screen direction works on film. The mirrored side is where Kandy then stands.
+function grottoRoomSide(side) {
+  return side === "left" ? "right" : "left";
+}
+
+function walkOffClass(side) {
+  return side === "left" ? "kandev-kandy-walkoff-left" : "kandev-kandy-walkoff";
+}
+
+// Arriving in the hub, Kandy comes up the shore: it stands partway up that
+// scene, so the walk can afford to climb.
+function walkInClass(side) {
+  return side === "left" ? "kandev-kandy-walkin-shore" : "kandev-kandy-walkin-shore-right";
+}
+
+// Arriving in a chamber it is already on the floor at the bottom of a clipped
+// scene, so the same climb would walk it in from under the ground. Flat walk.
+function walkInFloorClass(side) {
+  return side === "left" ? "kandev-kandy-walkin-floor" : "kandev-kandy-walkin-floor-right";
+}
+
+function grottoTransitClass(transit, surface, side) {
+  if (surface === "card") {
+    if (transit === "depart-surface") return "kandev-kandy-walkoff";
+    if (transit === "arrive-surface") return "kandev-kandy-walkin-side";
+    return null;
+  }
+  if (surface === "hub") {
+    // Out through the passage's own wall; back in through it as well. With no
+    // passage in play the visitor is leaving the grotto entirely, so Kandy
+    // climbs back out through the cave mouth it came in by.
+    if (transit === "depart-hub") return side ? walkOffClass(side) : "kandev-kandy-walkout-entrance";
+    // Coming down from the surface there is no passage to match: Kandy appears
+    // at the cave mouth in the middle of the scene and walks out of it.
+    if (transit === "arrive-hub") return side ? walkInClass(side) : "kandev-kandy-walkin-entrance";
+    return null;
+  }
+  if (surface === "room") {
+    if (transit === "arrive-room") return walkInFloorClass(grottoRoomSide(side));
+    // It leaves a chamber the same way it came in.
+    if (transit === "depart-room") return walkOffClass(grottoRoomSide(side));
+    return null;
+  }
+  return null;
+}
+
+function focusGrottoDoor(panel, agentType) {
+  if (!panel || !panel.querySelectorAll) return false;
+  var doors = panel.querySelectorAll("[data-grotto-agent]");
+  for (var i = 0; i < doors.length; i++) {
+    if (doors[i].dataset && doors[i].dataset.grottoAgent === agentType && doors[i].focus) {
+      doors[i].focus();
+      return true;
+    }
+  }
+  return false;
+}
+
+// --- Grotto scenery: shared SVG helpers ------------------------------------
+//
+// The backdrops are decorative inline SVG: they scale with the panel, need no
+// asset pipeline, and keep an underground palette of their own instead of
+// inheriting the surface theme. Each backdrop owns a namespaced id prefix and
+// its own <defs> set — the host page carries SVG defs too, and a bare "water"
+// or "softBlur" would collide with them and with the other backdrop.
+//
+// Geometry lives in flat const tables above each backdrop rather than inline
+// in the tree: the tables are authored art, the function is the assembly.
+
+function grottoRef(prefix, id) {
+  return "url(#" + prefix + id + ")";
+}
+
+function grottoStops(h, stops) {
+  return stops.map(function (stop, index) {
+    return h("stop", {
+      key: "stop" + index,
+      offset: stop[0],
+      stopColor: stop[1],
+      stopOpacity: stop.length > 2 ? stop[2] : undefined,
+    });
+  });
+}
+
+function grottoLinear(h, prefix, id, coords, stops) {
+  return h(
+    "linearGradient",
+    { key: id, id: prefix + id, x1: coords[0], y1: coords[1], x2: coords[2], y2: coords[3] },
+    grottoStops(h, stops),
+  );
+}
+
+function grottoShapes(h, tag, list) {
+  return list.map(function (props, index) {
+    return h(tag, Object.assign({ key: tag + index }, props));
+  });
+}
+
+// The shape lists below are authored art: nothing about them varies per render,
+// so each table is turned into its prop objects once at load instead of being
+// remapped every time a backdrop is drawn.
+function grottoPaths(list) {
+  return list.map(function (d) {
+    return { d: d };
+  });
+}
+
+// --- Grotto scenery: cave entrance (the hub backdrop) ----------------------
+
+var GROTTO_ID = "kandev-kandy-grotto-";
+
+var GROTTO_STALACTITES = [
+  "M60 48 C88 69 104 100 103 172 L131 108 L151 62 Z",
+  "M175 42 C208 73 217 123 211 224 L243 138 L268 59 Z",
+  "M305 42 C337 78 343 111 338 176 L369 113 L394 55 Z",
+  "M775 47 C800 78 810 116 807 199 L838 123 L855 58 Z",
+  "M895 54 C922 80 940 127 936 231 L970 139 L996 61 Z",
+  "M1050 35 C1091 80 1094 138 1087 194 L1124 110 L1150 44 Z",
+];
+
+var GROTTO_STALACTITE_SHAPES = grottoPaths(GROTTO_STALACTITES);
+
+var GROTTO_PLANTS = [
+  "M490 420 C480 360 500 315 512 280 C511 340 523 377 520 425 Z",
+  "M522 425 C520 375 548 330 570 300 C551 359 557 393 555 430 Z",
+  "M704 425 C700 367 720 324 740 288 C728 354 735 395 733 430 Z",
+  "M739 430 C741 386 768 345 786 318 C769 373 770 405 771 433 Z",
+];
+
+var GROTTO_PLANT_SHAPES = grottoPaths(GROTTO_PLANTS);
+
+var GROTTO_RIPPLES = [
+  ["M438 534 C523 548 672 547 761 531", "#82bcb1", 4],
+  ["M490 569 C557 579 650 579 719 568", "#5f9994", 3],
+  ["M415 613 C520 628 694 628 795 611", "#315f64", 5],
+  ["M118 548 C205 536 286 540 357 554", "#315b62", 3],
+  ["M862 553 C942 536 1031 537 1112 549", "#315b62", 3],
+  ["M52 652 C173 638 286 640 383 656", "#173640", 5],
+  ["M817 655 C925 637 1065 639 1173 653", "#173640", 5],
+];
+
+var GROTTO_RIPPLE_SHAPES = GROTTO_RIPPLES.map(function (ripple) {
+  return { d: ripple[0], stroke: ripple[1], strokeWidth: ripple[2] };
+});
+
+var GROTTO_PEBBLES = [
+  { cx: 356, cy: 640, rx: 48, ry: 22 },
+  { cx: 418, cy: 656, rx: 31, ry: 15 },
+  { cx: 816, cy: 647, rx: 44, ry: 20 },
+  { cx: 875, cy: 661, rx: 27, ry: 13 },
+];
+
+var GROTTO_MOTES = [
+  { cx: 524, cy: 288, r: 3, opacity: 0.8 },
+  { cx: 560, cy: 241, r: 2, opacity: 0.6 },
+  { cx: 682, cy: 279, r: 2.5, opacity: 0.7 },
+  { cx: 650, cy: 204, r: 2, opacity: 0.55 },
+  { cx: 710, cy: 337, r: 3, opacity: 0.5 },
+  { cx: 488, cy: 351, r: 2, opacity: 0.45 },
+];
+
+// The mouth is a window, not a coloured hole: the lineage's own surface scene
+// is drawn inside the opening clip, so a volcano lineage looks out at its
+// volcano and an alpine one at its peaks — the same habitat the card paints,
+// at the same hour and season. The view box is the mouth's own bounds; the
+// scene fits to its width and stands on its floor ("meet", bottom-anchored),
+// which keeps every biome prop and the sun in frame instead of cropping them
+// away as a cover-fit would.
+var GROTTO_VIEW = { x: 450, y: 107, width: 316, height: 293 };
+
+// The scene's own night wash only covers the scene's box (-10..130 in scene
+// units), so the bare sky above it needs the same darkening laid over the
+// opening or the hour stops at the horizon. Derived, never hardcoded, so it
+// cannot drift from the card's wash.
+var GROTTO_VIEW_SCALE = Math.min(GROTTO_VIEW.width / 240, GROTTO_VIEW.height / 120);
+var GROTTO_VIEW_WASH_TOP = GROTTO_VIEW.y + GROTTO_VIEW.height - 130 * GROTTO_VIEW_SCALE;
+
+// How far the outside light reaches into the rock. Midday floods the cave;
+// after dark only a rumour of it gets past the mouth.
+var GROTTO_GLOW_STRENGTH = { dawn: 0.8, day: 1, dusk: 0.76, night: 0.34 };
+
+// What Kandy sees when it looks out. Reduces a full scene to what the mouth
+// can show: the sky's gradient stops, the scene's props, and the hour that
+// decides how much of that light lands on the cave walls.
+function grottoOutsideFor(biome, level, seed, timeOfDay, season) {
+  var scene = sceneFor(biome, level, seed, timeOfDay, season);
+  return {
+    stops: sceneBgStops(scene),
+    props: scene.props,
+    dayPhase: dayPhaseFor(timeOfDay),
+    phase: scenePhase(level),
+  };
+}
+
+// outside omitted (offline tooling, old harnesses) keeps the original teal
+// cave with its painted-on ridgelines, byte-identical.
+function grottoBackdrop(h, outside) {
+  var sky = outside ? outside.stops : ["#b9e4cf", "#61a995", "#285e5c"];
+  var glow = outside
+    ? [sky[0], sky[1], sky[2], sky[2]]
+    : ["#d8f4dc", "#78c5a5", "#2e6d68", "#16383a"];
+  var glowStrength = outside ? GROTTO_GLOW_STRENGTH[outside.dayPhase] : 1;
+  var viewTint = outside ? skyTintFor(outside.dayPhase, outside.phase) : null;
+  var viewWash = outside ? skyWashFor(outside.dayPhase, outside.phase) : null;
+  var tint = { sky: sky, glow: glow };
+  return h(
+    "svg",
+    {
+      className: "kandev-kandy-grotto-backdrop",
+      viewBox: "0 0 1200 700",
+      preserveAspectRatio: "xMidYMid slice",
+      "aria-hidden": "true",
+      focusable: "false",
+    },
+    h(
+      "defs",
+      null,
+      grottoLinear(h, GROTTO_ID, "cave", ["0", "0", "0", "1"], [
+        ["0%", "#10151d"],
+        ["55%", "#17252b"],
+        ["100%", "#0a1217"],
+      ]),
+      h(
+        "radialGradient",
+        { id: GROTTO_ID + "glow", cx: "50%", cy: "47%", r: "55%" },
+        grottoStops(h, [
+          ["0%", tint.glow[0], 0.95],
+          ["28%", tint.glow[1], 0.75],
+          ["65%", tint.glow[2], 0.25],
+          ["100%", tint.glow[3], 0],
+        ]),
+      ),
+      grottoLinear(h, GROTTO_ID, "sky", ["0", "0", "0", "1"], [
+        ["0%", tint.sky[0]],
+        ["55%", tint.sky[1]],
+        ["100%", tint.sky[2]],
+      ]),
+      grottoLinear(h, GROTTO_ID, "far", ["0", "0", "1", "1"], [
+        ["0%", "#304046"],
+        ["55%", "#1d2b30"],
+        ["100%", "#111a1e"],
+      ]),
+      grottoLinear(h, GROTTO_ID, "mid", ["0", "0", "1", "0"], [
+        ["0%", "#11181d"],
+        ["50%", "#263238"],
+        ["100%", "#0c1216"],
+      ]),
+      grottoLinear(h, GROTTO_ID, "front", ["0", "0", "0.8", "1"], [
+        ["0%", "#171b21"],
+        ["45%", "#252c32"],
+        ["100%", "#080b0f"],
+      ]),
+      grottoLinear(h, GROTTO_ID, "water", ["0", "0", "0", "1"], [
+        ["0%", "#315f64"],
+        ["20%", "#183b43"],
+        ["100%", "#07161d"],
+      ]),
+      grottoLinear(h, GROTTO_ID, "reflection", ["0", "0", "0", "1"], [
+        ["0%", "#a7e0c8", 0.5],
+        ["100%", "#4b9790", 0],
+      ]),
+      h(
+        "filter",
+        { id: GROTTO_ID + "blurglow", x: "-50%", y: "-50%", width: "200%", height: "200%" },
+        h("feGaussianBlur", { stdDeviation: 24 }),
+      ),
+      h(
+        "filter",
+        { id: GROTTO_ID + "softblur", x: "-20%", y: "-20%", width: "140%", height: "140%" },
+        h("feGaussianBlur", { stdDeviation: 7 }),
+      ),
+      // Region and grouping here are load-bearing for APPEARANCE, not just
+      // cost: a filter's region sets the raster grid its turbulence is sampled
+      // on, so shrinking it (or merging filtered siblings under one filter)
+      // re-rolls the rock grain. Measured: ~14% of pixels shift. Leave it.
+      h(
+        "filter",
+        { id: GROTTO_ID + "rock", x: "-10%", y: "-10%", width: "120%", height: "120%" },
+        h("feTurbulence", { type: "fractalNoise", baseFrequency: "0.018", numOctaves: 3, seed: 8, result: "noise" }),
+        h("feColorMatrix", {
+          in: "noise",
+          type: "matrix",
+          values: "0 0 0 0 0.45 0 0 0 0 0.48 0 0 0 0 0.50 0 0 0 0.22 0",
+          result: "texture",
+        }),
+        h("feBlend", { in: "SourceGraphic", in2: "texture", mode: "soft-light" }),
+      ),
+      viewTint
+        ? h(
+            "linearGradient",
+            { id: GROTTO_ID + "skytint", x1: "0", y1: "0", x2: "0", y2: "1" },
+            grottoStops(
+              h,
+              viewTint.map(function (stop) {
+                return [stop[0], "rgb(" + stop[1] + ")", stop[2]];
+              }),
+            ),
+          )
+        : null,
+      h(
+        "clipPath",
+        { id: GROTTO_ID + "opening" },
+        h("path", {
+          d: "M474 405 C448 340 451 249 499 184 C535 135 579 105 624 111 C672 117 713 155 739 207 C770 270 765 347 735 410 C684 433 527 436 474 405 Z",
+        }),
+      ),
+    ),
+    h("rect", { width: 1200, height: 700, fill: grottoRef(GROTTO_ID, "cave") }),
+    h("ellipse", {
+      cx: 610,
+      cy: 305,
+      rx: 300,
+      ry: 275,
+      fill: grottoRef(GROTTO_ID, "glow"),
+      filter: grottoRef(GROTTO_ID, "blurglow"),
+      opacity: glowStrength === 1 ? undefined : glowStrength,
+    }),
+    // The world outside the mouth: the sky, then either the lineage's real
+    // habitat or (legacy) the painted-on ridgelines, then the ferns growing at
+    // the cave's lip, which stay in front of both.
+    h(
+      "g",
+      { clipPath: grottoRef(GROTTO_ID, "opening") },
+      // The biome's own sky, from the scene's hex stops...
+      h("rect", { x: 430, y: 80, width: 370, height: 380, fill: grottoRef(GROTTO_ID, "sky") }),
+      // ...then the hour over it, the rgba layer the stops could not carry.
+      // Together these are the card's two background layers, in SVG.
+      viewTint
+        ? h("rect", { x: 430, y: 80, width: 370, height: 380, fill: grottoRef(GROTTO_ID, "skytint") })
+        : null,
+      outside
+        ? h(
+            "svg",
+            {
+              x: GROTTO_VIEW.x,
+              y: GROTTO_VIEW.y,
+              width: GROTTO_VIEW.width,
+              height: GROTTO_VIEW.height,
+              viewBox: "0 0 240 120",
+              preserveAspectRatio: "xMidYMax meet",
+            },
+            outside.props,
+          )
+        : h("path", { d: "M410 370 L490 280 L540 325 L615 220 L690 310 L750 245 L825 365 Z", fill: "#396f68", opacity: 0.6 }),
+      outside
+        ? null
+        : h("path", { d: "M400 405 L500 315 L575 360 L655 285 L735 350 L820 300 L845 420 Z", fill: "#234b4c", opacity: 0.8 }),
+      // The hour, carried up over the sky the scene's own wash never reaches.
+      viewWash
+        ? h("rect", {
+            x: 430,
+            y: 80,
+            width: 370,
+            height: GROTTO_VIEW_WASH_TOP - 80,
+            fill: viewWash.fill,
+            opacity: viewWash.opacity,
+          })
+        : null,
+      h("g", { fill: "#183f3d", opacity: 0.8 }, grottoShapes(h, "path", GROTTO_PLANT_SHAPES)),
+    ),
+    h("path", {
+      d: "M0 0 H1200 V260 C1100 232 1035 236 956 275 C880 312 835 351 770 390 C740 300 759 221 715 150 C677 88 630 58 580 73 C526 90 476 140 450 208 C426 271 437 337 457 394 C370 354 303 302 230 278 C150 251 77 251 0 274 Z",
+      fill: grottoRef(GROTTO_ID, "far"),
+      filter: grottoRef(GROTTO_ID, "rock"),
+    }),
+    h("path", {
+      d: "M0 0 H1200 V104 C1135 93 1100 127 1038 117 C977 107 947 67 882 79 C825 90 790 120 729 98 C672 77 645 35 578 57 C510 80 463 92 407 65 C341 32 304 70 245 78 C177 87 115 51 0 93 Z",
+      fill: "#090d11",
+    }),
+    h("g", { fill: grottoRef(GROTTO_ID, "front"), filter: grottoRef(GROTTO_ID, "rock") }, grottoShapes(h, "path", GROTTO_STALACTITE_SHAPES)),
+    h("path", {
+      d: "M0 92 C80 119 144 166 188 229 C229 288 247 348 284 393 C317 433 363 456 425 475 L424 700 H0 Z",
+      fill: grottoRef(GROTTO_ID, "mid"),
+      filter: grottoRef(GROTTO_ID, "rock"),
+    }),
+    h("path", {
+      d: "M1200 77 C1110 107 1049 156 1014 217 C979 278 962 341 920 390 C880 436 832 462 775 484 L775 700 H1200 Z",
+      fill: grottoRef(GROTTO_ID, "mid"),
+      filter: grottoRef(GROTTO_ID, "rock"),
+    }),
+    h("path", {
+      d: "M0 402 C77 375 128 390 192 423 C244 449 296 455 356 474 C395 487 426 506 456 536 L454 700 H0 Z",
+      fill: "#11171b",
+    }),
+    h("path", {
+      d: "M1200 389 C1119 375 1067 405 1010 434 C957 460 908 469 848 487 C807 500 777 521 745 551 L748 700 H1200 Z",
+      fill: "#101519",
+    }),
+    h("path", {
+      d: "M0 505 C165 485 283 507 401 520 C526 534 660 518 789 518 C927 518 1066 492 1200 510 V700 H0 Z",
+      fill: grottoRef(GROTTO_ID, "water"),
+    }),
+    h("path", {
+      d: "M525 430 C560 420 653 420 693 432 C677 481 664 526 685 622 C646 642 568 642 525 620 C550 530 540 484 525 430 Z",
+      fill: grottoRef(GROTTO_ID, "reflection"),
+      filter: grottoRef(GROTTO_ID, "softblur"),
+      opacity: glowStrength === 1 ? undefined : glowStrength,
+    }),
+    h(
+      "g",
+      { fill: "none", strokeLinecap: "round", opacity: 0.45 },
+      grottoShapes(h, "path", GROTTO_RIPPLE_SHAPES),
+    ),
+    h("path", {
+      d: "M0 590 C57 550 111 546 168 572 C222 597 263 603 333 588 C380 578 414 591 457 629 L488 700 H0 Z",
+      fill: grottoRef(GROTTO_ID, "front"),
+      filter: grottoRef(GROTTO_ID, "rock"),
+    }),
+    h("path", {
+      d: "M1200 577 C1137 548 1080 553 1024 580 C968 607 924 606 868 590 C818 576 782 596 742 636 L714 700 H1200 Z",
+      fill: grottoRef(GROTTO_ID, "front"),
+      filter: grottoRef(GROTTO_ID, "rock"),
+    }),
+    h("g", { fill: "#242d31" }, grottoShapes(h, "ellipse", GROTTO_PEBBLES)),
+    h(
+      "g",
+      { fill: "#c4eed7", opacity: glowStrength === 1 ? undefined : glowStrength },
+      grottoShapes(h, "circle", GROTTO_MOTES),
+    ),
+    h("rect", { width: 1200, height: 700, fill: "none", stroke: "#020406", strokeWidth: 70, opacity: 0.42 }),
+  );
+}
+
+// --- Grotto scenery: chamber (the per-agent-type backdrop) -----------------
+//
+// Chambers are a different room from the hub: a torch-lit grotto with a stone
+// floor. The piles are the content, so the floor carries no marked spots — the
+// stones the model piles draw are the only thing standing on it.
+
+var CHAMBER_ID = "kandev-kandy-chamber-";
+
+var CHAMBER_BLOCKS = [
+  "M260 170 C430 135 770 135 940 170",
+  "M230 255 C420 218 780 218 970 255",
+  "M220 350 C430 319 770 319 980 350",
+  "M215 440 C430 415 770 415 985 440",
+  "M345 125 L331 476",
+  "M475 75 L468 479",
+  "M600 48 L600 479",
+  "M725 75 L732 479",
+  "M855 125 L869 476",
+];
+
+var CHAMBER_BLOCK_SHAPES = grottoPaths(CHAMBER_BLOCKS);
+
+var CHAMBER_STALACTITES = [
+  "M84 35 C102 68 110 112 104 176 L137 89 L159 40 Z",
+  "M244 35 C264 71 269 120 262 196 L292 112 L313 43 Z",
+  "M403 25 C427 62 430 100 425 150 L452 82 L468 29 Z",
+  "M732 29 L748 82 L775 150 C770 100 773 62 797 25 Z",
+  "M887 43 L908 112 L938 196 C931 120 936 71 956 35 Z",
+  "M1041 40 L1063 89 L1096 176 C1090 112 1098 68 1116 35 Z",
+];
+
+var CHAMBER_STALACTITE_SHAPES = grottoPaths(CHAMBER_STALACTITES);
+
+var CHAMBER_TORCHES = [
+  "translate(232 255) scale(1.05)",
+  "translate(460 190) scale(0.95)",
+  "translate(740 190) scale(0.95)",
+  "translate(968 255) scale(1.05)",
+];
+
+var CHAMBER_TORCH_SHAPES = CHAMBER_TORCHES.map(function (transform) {
+  return { href: "#" + CHAMBER_ID + "torch", transform: transform };
+});
+
+var CHAMBER_POOLS = [
+  { cx: 250, cy: 275, rx: 245, ry: 235 },
+  { cx: 500, cy: 235, rx: 245, ry: 225 },
+  { cx: 700, cy: 235, rx: 245, ry: 225 },
+  { cx: 950, cy: 275, rx: 245, ry: 235 },
+];
+
+var CHAMBER_POOL_SHAPES = CHAMBER_POOLS.map(function (pool) {
+  return Object.assign({ fill: grottoRef(CHAMBER_ID, "torchlight"), filter: grottoRef(CHAMBER_ID, "largeglow") }, pool);
+});
+
+var CHAMBER_PERSPECTIVE = [
+  "M600 455 L184 700",
+  "M600 455 L365 700",
+  "M600 455 L525 700",
+  "M600 455 L675 700",
+  "M600 455 L835 700",
+  "M600 455 L1016 700",
+  "M192 505 C403 487 797 487 1008 505",
+  "M116 565 C371 539 829 539 1084 565",
+  "M42 642 C340 607 860 607 1158 642",
+];
+
+var CHAMBER_PERSPECTIVE_SHAPES = grottoPaths(CHAMBER_PERSPECTIVE);
+
+var CHAMBER_CRACKS = [
+  "M81 526 L132 548 L109 580 L153 604",
+  "M1088 514 L1047 541 L1072 574 L1026 602",
+  "M570 505 L552 524 L567 544",
+  "M630 566 L649 583 L637 607",
+  "M378 629 L353 647 L370 672",
+  "M824 620 L847 641 L832 667",
+];
+
+var CHAMBER_CRACK_SHAPES = grottoPaths(CHAMBER_CRACKS);
+
+var CHAMBER_STONES = [
+  { cx: 106, cy: 606, rx: 31, ry: 13 },
+  { cx: 153, cy: 625, rx: 18, ry: 8 },
+  { cx: 1093, cy: 602, rx: 32, ry: 13 },
+  { cx: 1048, cy: 625, rx: 19, ry: 8 },
+  { cx: 570, cy: 677, rx: 13, ry: 6 },
+  { cx: 631, cy: 646, rx: 11, ry: 5 },
+];
+
+var CHAMBER_GROUND_LIGHT = [
+  { cx: 278, cy: 529, rx: 235, ry: 95 },
+  { cx: 922, cy: 529, rx: 235, ry: 95 },
+  { cx: 600, cy: 520, rx: 280, ry: 110 },
+];
+
+function chamberTorch(h) {
+  return h(
+    "g",
+    { id: CHAMBER_ID + "torch" },
+    h("path", { d: "M-16 11 L16 11 L10 23 L-10 23 Z", fill: "#28211c", stroke: "#080909", strokeWidth: 4 }),
+    h("rect", { x: -7, y: 17, width: 14, height: 58, rx: 4, fill: "#5a3820", stroke: "#18110c", strokeWidth: 4 }),
+    h("path", { d: "M-9 38 L9 31", stroke: "#8c5c31", strokeWidth: 4, opacity: 0.7 }),
+    h("path", { d: "M-9 55 L9 48", stroke: "#8c5c31", strokeWidth: 4, opacity: 0.7 }),
+    h("ellipse", {
+      cx: 0,
+      cy: -15,
+      rx: 34,
+      ry: 48,
+      fill: grottoRef(CHAMBER_ID, "flame-outer"),
+      filter: grottoRef(CHAMBER_ID, "flameglow"),
+      opacity: 0.85,
+    }),
+    h("path", { d: "M0 7 C-25 -8 -19 -31 -6 -48 C-7 -29 5 -27 8 -47 C28 -25 25 -4 0 7 Z", fill: "#ed5c19" }),
+    h("path", {
+      d: "M0 3 C-12 -7 -8 -23 1 -34 C2 -23 10 -18 7 -7 C5 -1 2 1 0 3 Z",
+      fill: grottoRef(CHAMBER_ID, "flame-core"),
+    }),
+  );
+}
+
+function chamberBackdrop(h) {
+  return h(
+    "svg",
+    {
+      className: "kandev-kandy-grotto-backdrop",
+      viewBox: "0 0 1200 700",
+      preserveAspectRatio: "xMidYMax slice",
+      "aria-hidden": "true",
+      focusable: "false",
+    },
+    h(
+      "defs",
+      null,
+      h(
+        "radialGradient",
+        { id: CHAMBER_ID + "dark", cx: "50%", cy: "38%", r: "80%" },
+        grottoStops(h, [
+          ["0%", "#302a24"],
+          ["48%", "#191817"],
+          ["100%", "#07090a"],
+        ]),
+      ),
+      grottoLinear(h, CHAMBER_ID, "rear", ["0", "0", "0", "1"], [
+        ["0%", "#171819"],
+        ["55%", "#282622"],
+        ["100%", "#111315"],
+      ]),
+      grottoLinear(h, CHAMBER_ID, "wall-left", ["0", "0", "1", "0"], [
+        ["0%", "#080a0b"],
+        ["100%", "#302b25"],
+      ]),
+      grottoLinear(h, CHAMBER_ID, "wall-right", ["1", "0", "0", "0"], [
+        ["0%", "#080a0b"],
+        ["100%", "#302b25"],
+      ]),
+      grottoLinear(h, CHAMBER_ID, "floor", ["0", "0", "0", "1"], [
+        ["0%", "#302d29"],
+        ["50%", "#1d1d1c"],
+        ["100%", "#090c0d"],
+      ]),
+      h(
+        "radialGradient",
+        { id: CHAMBER_ID + "flame-outer", cx: "50%", cy: "65%", r: "55%" },
+        grottoStops(h, [
+          ["0%", "#fff2a6"],
+          ["38%", "#ffad35"],
+          ["72%", "#e85518"],
+          ["100%", "#7f170b", 0],
+        ]),
+      ),
+      grottoLinear(h, CHAMBER_ID, "flame-core", ["0", "0", "0", "1"], [
+        ["0%", "#fffbd1"],
+        ["52%", "#ffd35b"],
+        ["100%", "#ff731e"],
+      ]),
+      h(
+        "radialGradient",
+        { id: CHAMBER_ID + "torchlight", cx: "50%", cy: "45%", r: "55%" },
+        grottoStops(h, [
+          ["0%", "#ffca68", 0.62],
+          ["35%", "#e98535", 0.28],
+          ["72%", "#c34d1e", 0.08],
+          ["100%", "#c34d1e", 0],
+        ]),
+      ),
+      // Default region, for the reason given on the grotto's own rock filter.
+      h(
+        "filter",
+        { id: CHAMBER_ID + "rock", x: "-10%", y: "-10%", width: "120%", height: "120%" },
+        h("feTurbulence", { type: "fractalNoise", baseFrequency: "0.018", numOctaves: 4, seed: 21, result: "noise" }),
+        h("feColorMatrix", {
+          in: "noise",
+          type: "matrix",
+          values: "0 0 0 0 0.50 0 0 0 0 0.47 0 0 0 0 0.43 0 0 0 0.18 0",
+          result: "texture",
+        }),
+        h("feBlend", { in: "SourceGraphic", in2: "texture", mode: "soft-light" }),
+      ),
+      h(
+        "filter",
+        { id: CHAMBER_ID + "largeglow", x: "-100%", y: "-100%", width: "300%", height: "300%" },
+        h("feGaussianBlur", { stdDeviation: 28 }),
+      ),
+      h(
+        "filter",
+        { id: CHAMBER_ID + "flameglow", x: "-200%", y: "-200%", width: "500%", height: "500%" },
+        h("feGaussianBlur", { stdDeviation: 7 }),
+      ),
+      chamberTorch(h),
+    ),
+    h("rect", { width: 1200, height: 700, fill: grottoRef(CHAMBER_ID, "dark") }),
+    h("path", {
+      d: "M205 490 L205 195 C210 95 364 33 600 27 C836 33 990 95 995 195 L995 490 Z",
+      fill: grottoRef(CHAMBER_ID, "rear"),
+      filter: grottoRef(CHAMBER_ID, "rock"),
+    }),
+    h("g", { fill: "none", stroke: "#49433b", strokeWidth: 3, opacity: 0.28 }, grottoShapes(h, "path", CHAMBER_BLOCK_SHAPES)),
+    h("path", {
+      d: "M0 0 H228 C209 83 187 144 190 211 C193 288 217 356 205 433 C196 493 163 544 130 590 L92 700 H0 Z",
+      fill: grottoRef(CHAMBER_ID, "wall-left"),
+      filter: grottoRef(CHAMBER_ID, "rock"),
+    }),
+    h("path", {
+      d: "M1200 0 H972 C991 83 1013 144 1010 211 C1007 288 983 356 995 433 C1004 493 1037 544 1070 590 L1108 700 H1200 Z",
+      fill: grottoRef(CHAMBER_ID, "wall-right"),
+      filter: grottoRef(CHAMBER_ID, "rock"),
+    }),
+    h("path", {
+      d: "M0 0 H1200 V73 C1086 49 996 92 902 74 C804 55 721 11 600 27 C479 11 396 55 298 74 C204 92 114 49 0 73 Z",
+      fill: "#080a0b",
+      filter: grottoRef(CHAMBER_ID, "rock"),
+    }),
+    h("g", { fill: "#101213" }, grottoShapes(h, "path", CHAMBER_STALACTITE_SHAPES)),
+    h("g", null, grottoShapes(h, "ellipse", CHAMBER_POOL_SHAPES)),
+    h("g", null, grottoShapes(h, "use", CHAMBER_TORCH_SHAPES)),
+    h("path", {
+      d: "M0 438 C169 421 326 435 455 452 C515 460 559 464 600 464 C641 464 685 460 745 452 C874 435 1031 421 1200 438 V700 H0 Z",
+      fill: grottoRef(CHAMBER_ID, "floor"),
+      filter: grottoRef(CHAMBER_ID, "rock"),
+    }),
+    h("g", { fill: "none", stroke: "#5a5146", strokeWidth: 2, opacity: 0.25 }, grottoShapes(h, "path", CHAMBER_PERSPECTIVE_SHAPES)),
+    h("g", { fill: "none", stroke: "#080a0b", strokeWidth: 4, strokeLinecap: "round", opacity: 0.58 }, grottoShapes(h, "path", CHAMBER_CRACK_SHAPES)),
+    h("g", { fill: "#34312d" }, grottoShapes(h, "ellipse", CHAMBER_STONES)),
+    h("g", { fill: "#ffb65a", opacity: 0.08, filter: grottoRef(CHAMBER_ID, "largeglow") }, grottoShapes(h, "ellipse", CHAMBER_GROUND_LIGHT)),
+    h("path", {
+      d: "M0 660 C183 630 324 649 459 674 C515 685 558 689 600 689 C642 689 685 685 741 674 C876 649 1017 630 1200 660 V700 H0 Z",
+      fill: "#040607",
+      opacity: 0.42,
+    }),
+    h("rect", { width: 1200, height: 700, fill: "none", stroke: "#020303", strokeWidth: 64, opacity: 0.62 }),
+  );
+}
+
+// --- Grotto scenes ---------------------------------------------------------
+//
+// One panel with a sticky bar; the scene below it swaps between the hub (rows
+// of chamber doors down the cave walls) and one chamber (model piles on the
+// floor). Both scenes draw a backdrop from the section above, then lay the
+// interactive content over it.
+
+function tokenGrottoShell(h, DialogTitle, title, subtitle, panelRef, onBack, onExit, children) {
+  return h(
+    "section",
+    {
+      ref: panelRef,
+      tabIndex: -1,
+      role: "region",
+      "aria-label": "Kandy Token Grotto",
+      className: "kandev-kandy-grotto-panel",
+    },
+    h(
+      "header",
+      { className: "kandev-kandy-grotto-bar" },
+      tokenGrottoAction(h, "Back", onBack),
+      h(
+        "div",
+        { className: "kandev-kandy-grotto-heading" },
+        h(DialogTitle, { className: "kandev-kandy-grotto-title" }, title),
+        subtitle ? h("div", { className: "kandev-kandy-grotto-subtitle" }, subtitle) : null,
+      ),
+      tokenGrottoAction(h, "Exit Grotto", onExit),
+    ),
+    h("div", { className: "kandev-kandy-grotto-scroll" }, children),
+  );
+}
+
+// The hub's cave-mouth backdrop is one SVG stretched to the scene's full
+// height; past roughly a screen's worth of door rows the "slice" scaling
+// zooms in far enough that the painted mountains/moon/water fall outside the
+// visible crop and the scene reads as a flat, featureless gradient. Capping
+// door count keeps the scene short enough to stay recognizable — measured
+// against the real 680px dialog width, 11 real doors (scene ~630px tall,
+// backdrop scale ~0.9) stayed fully intact in a browser screenshot, while 30+
+// visibly lost the moon/water/grass. The last slot becomes an overflow door
+// once the cap is exceeded, mirroring CHAMBER_PILE_SPOTS' merge-the-rest
+// pattern below.
+var HUB_DOOR_CAP = 12;
+var HUB_OVERFLOW_KEY = "\u0000hub-overflow";
+
+// Rooms arrive pre-sorted tokens-desc/label-asc (tokenGrottoModelFor), so the
+// first cap-1 are simply the biggest chambers; everything past that merges
+// into one overflow door.
+function hubDoorPlacement(rooms, cap) {
+  if (rooms.length <= cap) {
+    return rooms.map(function (room) {
+      return { room: room, rooms: [room], merged: false };
+    });
+  }
+  var shown = rooms.slice(0, cap - 1);
+  var rest = rooms.slice(cap - 1);
+  var placed = shown.map(function (room) {
+    return { room: room, rooms: [room], merged: false };
+  });
+  // tokenCountBigInt(room.tokens) is null for an unavailable count (the
+  // webhook body is untrusted input); BigInt(0) + null throws, so an
+  // unavailable count in the overflow set must not join the arithmetic.
+  var total = rest.reduce(function (sum, room) {
+    var count = tokenCountBigInt(room.tokens);
+    return count === null ? sum : sum + count;
+  }, BigInt(0));
+  var anyUnavailable = rest.some(function (room) {
+    return tokenCountBigInt(room.tokens) === null;
+  });
+  placed.push({
+    room: {
+      agentType: HUB_OVERFLOW_KEY,
+      label: rest.length + " more chambers",
+      tokens: anyUnavailable ? null : total.toString(),
+      models: [],
+    },
+    rooms: rest,
+    merged: true,
+  });
+  return placed;
+}
+
+// A live usage refresh can change the ranking while a visitor is inside a
+// chamber. Resolve the selected room against the hub's current placement so
+// Back focuses its real door when visible, or the overflow door when the room
+// has moved behind the cap.
+function hubDoorFocusKey(rooms, agentType) {
+  var placements = hubDoorPlacement(rooms, HUB_DOOR_CAP);
+  for (var i = 0; i < placements.length; i++) {
+    var entry = placements[i];
+    if (entry.merged) {
+      for (var j = 0; j < entry.rooms.length; j++) {
+        if (entry.rooms[j].agentType === agentType) return HUB_OVERFLOW_KEY;
+      }
+    } else if (entry.room.agentType === agentType) {
+      return agentType;
+    }
+  }
+  return null;
+}
+
+// Chambers hang off the cave walls: even ranks on the left rock face, odd on
+// the right, each one row further back. DOM order stays token order, so the
+// keyboard walks the chambers biggest-first however they are placed.
+function tokenGrottoDoor(h, room, onOpen, index) {
+  var exact = formatTokenExact(room.tokens);
+  var side = index % 2 === 0 ? "left" : "right";
+  return h(
+    "button",
+    {
+      key: room.agentType,
+      type: "button",
+      className: "kandev-kandy-grotto-door is-" + side,
+      style: { gridColumn: side === "left" ? 1 : 3, gridRow: Math.floor(index / 2) + 1 },
+      "data-grotto-agent": room.agentType,
+      "data-grotto-side": side,
+      "aria-label": room.label + ", " + exact + " tokens, open chamber",
+      onClick: function () {
+        onOpen(room.agentType, side);
+      },
+    },
+    h(
+      "svg",
+      { viewBox: "0 0 88 88", "aria-hidden": "true", className: "kandev-kandy-grotto-door-art" },
+      h("path", {
+        d: "M15 78V42C15 21 28 10 44 10s29 11 29 32v36Z",
+        fill: "color-mix(in oklch,var(--muted) 82%,#65472f)",
+        stroke: "color-mix(in oklch,var(--foreground) 25%,transparent)",
+        strokeWidth: 3,
+      }),
+      h("path", {
+        d: "M25 78V43c0-14 8-23 19-23s19 9 19 23v35Z",
+        fill: "color-mix(in oklch,var(--background) 65%,#2f241d)",
+      }),
+      h("circle", { cx: 56, cy: 50, r: 2.5, fill: "#f6c85f" }),
+    ),
+    h(
+      "span",
+      { className: "kandev-kandy-grotto-door-body" },
+      h("span", { className: "kandev-kandy-grotto-door-label" }, room.label),
+      h("span", { className: "kandev-kandy-grotto-door-count" }, formatTokenCompact(room.tokens) + " tokens"),
+    ),
+  );
+}
+
+// The cap's last door: it doesn't lead anywhere itself — it toggles a list of
+// every remaining chamber (kandev-kandy-grotto-manifest, the same popover the
+// chamber scene already uses for its own "N more models" overflow pile), so
+// visiting one of those chambers is still a single tap/click/Enter away.
+function tokenGrottoOverflowDoor(h, entry, index, revealed, onToggle) {
+  var room = entry.room;
+  var exact = formatTokenExact(room.tokens);
+  var side = index % 2 === 0 ? "left" : "right";
+  var label = room.label + (room.tokens === null ? "" : ", " + exact + " tokens") + ", open the list";
+  return h(
+    "button",
+    {
+      key: HUB_OVERFLOW_KEY,
+      type: "button",
+      className: "kandev-kandy-grotto-door kandev-kandy-grotto-door-overflow is-" + side + (revealed ? " is-revealed" : ""),
+      style: { gridColumn: side === "left" ? 1 : 3, gridRow: Math.floor(index / 2) + 1 },
+      "data-grotto-overflow": "true",
+      // Shares the door lookup focusGrottoDoor already does by agentType; the
+      // return focus is resolved against the current hub placement on Back.
+      "data-grotto-agent": HUB_OVERFLOW_KEY,
+      "aria-label": label,
+      "aria-pressed": revealed,
+      onClick: function () {
+        onToggle(HUB_OVERFLOW_KEY);
+      },
+    },
+    h(
+      "svg",
+      { viewBox: "0 0 88 88", "aria-hidden": "true", className: "kandev-kandy-grotto-door-art" },
+      h("circle", { cx: 44, cy: 44, r: 34, fill: "color-mix(in oklch,var(--muted) 82%,#65472f)" }),
+      h("circle", { cx: 30, cy: 44, r: 4.5, fill: "#f6c85f" }),
+      h("circle", { cx: 44, cy: 44, r: 4.5, fill: "#f6c85f" }),
+      h("circle", { cx: 58, cy: 44, r: 4.5, fill: "#f6c85f" }),
+    ),
+    h(
+      "span",
+      { className: "kandev-kandy-grotto-door-body" },
+      h("span", { className: "kandev-kandy-grotto-door-label" }, room.label),
+      room.tokens !== null
+        ? h("span", { className: "kandev-kandy-grotto-door-count" }, formatTokenCompact(room.tokens) + " tokens")
+        : null,
+    ),
+  );
+}
+
+// The overflow door's own list: real navigation, not a read-only tally, so
+// unlike tokenPileManifest each row is a button that opens straight into that
+// chamber.
+function hubOverflowManifest(h, entry, onOpen) {
+  return h(
+    "div",
+    { className: "kandev-kandy-grotto-manifest", role: "group", "aria-label": "Remaining chambers" },
+    h("strong", null, entry.rooms.length + " more chambers"),
+    h(
+      "ul",
+      null,
+      entry.rooms.map(function (room, index) {
+        var exact = formatTokenExact(room.tokens);
+        return h(
+          "li",
+          { key: room.agentType },
+          h(
+            "button",
+            {
+              type: "button",
+              className: "kandev-kandy-grotto-manifest-open",
+              "aria-label": room.label + ", " + exact + " tokens, open chamber",
+              onClick: function () {
+                onOpen(room.agentType, index % 2 === 0 ? "left" : "right");
+              },
+            },
+            h("span", { className: "kandev-kandy-grotto-manifest-name" }, room.label),
+            h("span", { className: "kandev-kandy-grotto-manifest-separator", "aria-hidden": "true" }, "·"),
+            h("span", { className: "kandev-kandy-grotto-manifest-count" }, exact),
+          ),
+        );
+      }),
+    ),
+  );
+}
+
+function tokenGrottoHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, onBack, onExit, outside, revealedKey, onToggle) {
+  var statusLine = model.status === "partial" ? "Some usage is estimated or incomplete." : "Tokens Kandy caught while listening.";
+  var body;
+  if (!model.rooms.length) {
+    body = h(
+      "div",
+      { className: "kandev-kandy-grotto-empty" },
+      creature,
+      h("div", { className: "kandev-kandy-grotto-empty-door", "aria-hidden": "true" }, "⌂"),
+      h("strong", null, "No chambers yet."),
+      h("span", null, "Kandy is listening."),
+    );
+  } else {
+    var placements = hubDoorPlacement(model.rooms, HUB_DOOR_CAP);
+    var overflowEntry = null;
+    placements.forEach(function (entry) {
+      if (entry.merged) overflowEntry = entry;
+    });
+    var pathRows = Math.ceil(placements.length / 2);
+    // One grid, no inner wrapper: the passages share their rows with the cave
+    // floor below them, so Kandy always ends up standing on the ground.
+    body = h(
+      "div",
+      {
+        className: "kandev-kandy-grotto-hub",
+        "aria-label": "Agent chambers",
+        // Passage rows first, then one growing row for the cave floor, so
+        // Kandy stands on the ground however many chambers there are.
+        style: { gridTemplateRows: "repeat(" + pathRows + ", auto) 1fr" },
+      },
+      placements.map(function (entry, index) {
+        return entry.merged
+          ? tokenGrottoOverflowDoor(h, entry, index, revealedKey === HUB_OVERFLOW_KEY, onToggle)
+          : tokenGrottoDoor(h, entry.room, onOpenRoom, index);
+      }),
+      h(
+        "div",
+        {
+          className: "kandev-kandy-grotto-kandy",
+          style: { gridColumn: "1 / -1", gridRow: pathRows + 1, alignSelf: "end" },
+        },
+        creature,
+      ),
+      overflowEntry && revealedKey === HUB_OVERFLOW_KEY ? hubOverflowManifest(h, overflowEntry, onOpenRoom) : null,
+    );
+  }
+  return tokenGrottoShell(
+    h,
+    DialogTitle,
+    "Token Grotto",
+    (model.totalTokens === null ? "Unavailable" : formatTokenExact(model.totalTokens) + " observed tokens") + " · " + statusLine,
+    panelRef,
+    onBack,
+    onExit,
+    h(
+      "div",
+      { className: "kandev-kandy-grotto-scene" },
+      grottoBackdrop(h, outside),
+      body,
+      model.observedSince
+        ? h("p", { className: "kandev-kandy-grotto-boundary" }, "Observed since " + model.observedSince.slice(0, 10) + ". No backfill.")
+        : null,
+      // Whether a chamber's total folds in cache tokens depends on which
+      // agent reported it — Kandy has no adapter-agnostic way to normalize
+      // that, so chambers are not directly comparable across agents.
+      model.rooms.length > 1
+        ? h(
+            "p",
+            { className: "kandev-kandy-grotto-boundary" },
+            "Counting may differ by agent — some chambers include cache tokens, some don't.",
+          )
+        : null,
+    ),
+  );
+}
+
+// Ten floor spots ranked front-first: index 0 is the room's main stage and
+// index 9 is the back of the room. Y climbs in an even perspective gradient
+// from the front (y=628) up toward the floor line (y≈438) at the back, so no
+// cluster crowds the bottom edge and no row floats far from its neighbours.
+// The frontmost label (+44 below the spot) clears the viewBox bottom (700)
+// with room for the pile's own ground shadow hit area (+52 below).
+var CHAMBER_PILE_SPOTS = [
+  { x: 600, y: 628, scale: 1 },
+  { x: 360, y: 612, scale: 0.94 },
+  { x: 840, y: 612, scale: 0.94 },
+  { x: 500, y: 566, scale: 0.8 },
+  { x: 700, y: 566, scale: 0.8 },
+  { x: 300, y: 530, scale: 0.72 },
+  { x: 900, y: 530, scale: 0.72 },
+  { x: 430, y: 496, scale: 0.62 },
+  { x: 770, y: 496, scale: 0.62 },
+  { x: 600, y: 472, scale: 0.56 },
+];
+
+var MERGED_PILE_KEY = "\u0000merged";
+
+// Which models get a standing spot. Ranking alternates between the biggest and
+// the most recently used, so an enormous old model and a small model used
+// minutes ago both make the floor. Whatever is left over is merged into the
+// last spot as a single pile the visitor can open for the full list.
+function tokenPilePlacement(models, spots) {
+  var capacity = spots || CHAMBER_PILE_SPOTS.length;
+  if (!models.length) return [];
+  var bySize = models.slice().sort(function (left, right) {
+    var order = compareTokenGrottoDecimals(right.tokens, left.tokens);
+    return order || left.name.localeCompare(right.name);
+  });
+  var byRecency = models.slice().sort(function (left, right) {
+    var recentOrder = compareTokenGrottoDecimals(right.recentRank, left.recentRank);
+    if (recentOrder) return recentOrder;
+    var order = compareTokenGrottoDecimals(right.tokens, left.tokens);
+    return order || left.name.localeCompare(right.name);
+  });
+  if (models.length <= capacity) {
+    return bySize.map(function (model) {
+      return { model: model, models: [model], merged: false };
+    });
+  }
+  var chosen = [];
+  // Object.create(null): a model literally named "constructor" or
+  // "toString" must not collide with a prototype method and read as
+  // already-taken.
+  var taken = Object.create(null);
+  var sizeIndex = 0;
+  var recencyIndex = 0;
+  // One short of capacity: the final spot belongs to everything left over.
+  while (chosen.length < capacity - 1) {
+    var pick = null;
+    if (chosen.length % 2 === 0) {
+      while (sizeIndex < bySize.length && taken[bySize[sizeIndex].name]) sizeIndex++;
+      pick = sizeIndex < bySize.length ? bySize[sizeIndex] : null;
+    } else {
+      while (recencyIndex < byRecency.length && taken[byRecency[recencyIndex].name]) recencyIndex++;
+      pick = recencyIndex < byRecency.length ? byRecency[recencyIndex] : null;
+    }
+    if (!pick) break;
+    taken[pick.name] = true;
+    chosen.push(pick);
+  }
+  var rest = bySize.filter(function (model) {
+    return !taken[model.name];
+  });
+  var placed = chosen.map(function (model) {
+    return { model: model, models: [model], merged: false };
+  });
+  if (rest.length) {
+    // tokenCountBigInt(model.tokens) is null for an unavailable count (the
+    // webhook body is untrusted input); BigInt(0) + null throws, so an
+    // unavailable count in the overflow set must not join the arithmetic.
+    var total = rest.reduce(function (sum, model) {
+      var count = tokenCountBigInt(model.tokens);
+      return count === null ? sum : sum + count;
+    }, BigInt(0));
+    var anyUnavailable = rest.some(function (model) {
+      return tokenCountBigInt(model.tokens) === null;
+    });
+    placed.push({
+      model: {
+        name: rest.length + " more models",
+        tokens: anyUnavailable ? null : total.toString(),
+        recentRank: "",
+      },
+      models: rest,
+      merged: true,
+    });
+  }
+  return placed;
+}
+
+function tokenGrottoVisiblePileName(name) {
+  var text = typeof name === "string" && name ? name : "Mystery model";
+  return text.length > 18 ? text.slice(0, 17) + "…" : text;
+}
+
+function tokenGrottoPileLabelTransform(name, spotScale) {
+  var scale = typeof spotScale === "number" && isFinite(spotScale) ? Math.max(0.5, Math.min(1, spotScale)) : 1;
+  var estimatedWidth = Math.max(1, name.length) * 12.5 + 14;
+  var availableWidth = 180 * scale;
+  var horizontalScale = Math.max(0.5, Math.min(scale, availableWidth / estimatedWidth));
+  return "scale(" + horizontalScale.toFixed(3) + " 1)";
+}
+
+// One pile standing on one floor spot, drawn in the backdrop's coordinate
+// space so it rests on the painted stone rather than floating in a CSS grid.
+// scale (PROPORTION) is this model's share of the room's biggest pile; tier
+// (SPECTACLE) is this model's own absolute token count against the fixed
+// ladder; style (IDENTITY) is the lineage's own palette, shared by every
+// pile in this grotto. See the "Grotto hoards" block above tokenGrottoAction.
+function tokenModelPile(h, room, entry, spot, maximum, revealedKey, onToggle, lineageSeed) {
+  var model = entry.model;
+  var key = entry.merged ? MERGED_PILE_KEY : room.agentType + "\u0000" + model.name;
+  var exact = formatTokenExact(model.tokens);
+  var revealed = revealedKey === key;
+  var scale = tokenPileScale(model.tokens, maximum);
+  var tierInfo = hoardTierFor(model.tokens);
+  var style = hoardStyleFor(lineageSeed);
+  var art = hoardArtFor(h, room.agentType + "\u0000" + model.name, style, tierInfo, scale);
+  var visibleName = tokenGrottoVisiblePileName(model.name);
+  var labelTransform = tokenGrottoPileLabelTransform(visibleName, spot.scale);
+  var label = entry.merged
+    ? model.name + ", " + exact + " tokens together, open the list"
+    : model.name + ", " + exact + " tokens in " + room.label + " chamber";
+  var pileHeight = 126 * spot.scale;
+  return h(
+    "g",
+    {
+      key: key,
+      className: "kandev-kandy-token-pile" + (revealed ? " is-revealed" : "") + (entry.merged ? " is-merged" : ""),
+      transform: "translate(" + spot.x + " " + spot.y + ")",
+      role: "button",
+      tabIndex: 0,
+      "data-grotto-model": model.name,
+      "data-grotto-merged": entry.merged ? "true" : undefined,
+      "data-grotto-tier": tierInfo.tier.name,
+      "aria-label": label,
+      "aria-pressed": revealed,
+      onClick: function () {
+        onToggle(key);
+      },
+      onKeyDown: function (event) {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        if (event.preventDefault) event.preventDefault();
+        onToggle(key);
+      },
+    },
+    h("title", null, model.name + ", " + exact + " tokens"),
+    // The hit area covers the mound and its labels, so tapping anywhere on the
+    // pile works on a phone.
+    h("rect", {
+      className: "kandev-kandy-token-pile-hit",
+      x: -66 * spot.scale,
+      y: -pileHeight,
+      width: 132 * spot.scale,
+      height: pileHeight + 52,
+      rx: 10,
+    }),
+    h(
+      "g",
+      { className: "kandev-kandy-token-pile-hoard", transform: "scale(" + spot.scale + ") translate(-63 -126)", "aria-hidden": "true" },
+      art,
+    ),
+    h("text", { className: "kandev-kandy-token-pile-name", x: 0, y: 24, transform: labelTransform, "aria-hidden": "true" }, visibleName),
+    h(
+      "text",
+      { className: "kandev-kandy-token-pile-compact", x: 0, y: 44, transform: labelTransform, "aria-hidden": "true" },
+      formatTokenCompact(model.tokens) + " tokens",
+    ),
+    h(
+      "text",
+      { className: "kandev-kandy-grotto-exact", x: 0, y: -pileHeight - 10, "aria-hidden": "true" },
+      entry.merged ? exact + " tokens · tap for the list" : exact + " tokens",
+    ),
+  );
+}
+
+// The chamber floor. Placements come back ranked, so spot order is prominence
+// order: the front of the room first, the back of the room last.
+function tokenPileStage(h, room, placements, revealedKey, onToggle, lineageSeed) {
+  var maximum = null;
+  placements.forEach(function (entry) {
+    if (maximum === null || compareTokenGrottoDecimals(entry.model.tokens, maximum) > 0) maximum = entry.model.tokens;
+  });
+  return h(
+    "svg",
+    {
+      className: "kandev-kandy-token-stage",
+      viewBox: "0 0 1200 700",
+      preserveAspectRatio: "xMidYMax slice",
+      role: "group",
+      "aria-label": room.label + " model piles",
+    },
+    placements.map(function (entry, index) {
+      return tokenModelPile(h, room, entry, CHAMBER_PILE_SPOTS[index], maximum, revealedKey, onToggle, lineageSeed);
+    }),
+  );
+}
+
+// What the merged pile is hiding, listed in full when it is opened.
+function tokenPileManifest(h, entry) {
+  return h(
+    "div",
+    { className: "kandev-kandy-grotto-manifest", role: "group", "aria-label": "Models in the merged pile" },
+    h("strong", null, entry.models.length + " models in this pile"),
+    h(
+      "ul",
+      null,
+      entry.models.map(function (model) {
+        return h(
+          "li",
+          { key: model.name, className: "kandev-kandy-grotto-manifest-row" },
+          h("span", { className: "kandev-kandy-grotto-manifest-name" }, model.name),
+          h("span", { className: "kandev-kandy-grotto-manifest-separator", "aria-hidden": "true" }, "·"),
+          h("span", { className: "kandev-kandy-grotto-manifest-count" }, formatTokenExact(model.tokens)),
+        );
+      }),
+    ),
+  );
+}
+
+function tokenGrottoRoom(h, DialogTitle, grotto, agentType, revealedKey, panelRef, onBack, onExit, onToggle, creature, side, lineageSeed) {
+  var room = null;
+  for (var i = 0; i < grotto.rooms.length; i++) {
+    if (grotto.rooms[i].agentType === agentType) {
+      room = grotto.rooms[i];
+      break;
+    }
+  }
+  if (!room) {
+    return tokenGrottoShell(h, DialogTitle, "Token Grotto", "That chamber is no longer available.", panelRef, onBack, onExit, null);
+  }
+  var placements = tokenPilePlacement(room.models);
+  var merged = null;
+  placements.forEach(function (entry) {
+    if (entry.merged) merged = entry;
+  });
+  // The hub already discloses "some usage is estimated or incomplete" but a
+  // visitor may open a chamber straight from a deep link or a restored
+  // focus and never see that line — the disclosure has to travel with the
+  // numbers, not just sit on the door.
+  var roomSubtitle =
+    formatTokenExact(room.tokens) +
+    " observed tokens" +
+    (grotto.status === "partial" ? " · some usage is estimated or incomplete" : "");
+  return tokenGrottoShell(
+    h,
+    DialogTitle,
+    room.label + " chamber",
+    roomSubtitle,
+    panelRef,
+    onBack,
+    onExit,
+    h(
+      "div",
+      { className: "kandev-kandy-grotto-scene kandev-kandy-grotto-room-scene" },
+      chamberBackdrop(h),
+      placements.length
+        ? tokenPileStage(h, room, placements, revealedKey, onToggle, (lineageSeed || 1) >>> 0)
+        : h("div", { className: "kandev-kandy-grotto-room" }, h("div", { className: "kandev-kandy-grotto-empty" }, "No model piles yet.")),
+      merged && revealedKey === MERGED_PILE_KEY ? tokenPileManifest(h, merged) : null,
+      h("div", { className: "kandev-kandy-grotto-kandy is-" + (side === "left" ? "left" : "right") }, creature),
+    ),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Photo Booth — a dedicated, static SVG artboard. Clipboard copy rasterizes
 // this SVG only: no app DOM, task text, account data, upload, or external service.
@@ -4568,7 +6349,7 @@ function photoPhaseHour(dayPhase) {
   return TIME_OF_DAY_DEFAULT;
 }
 
-function photoSceneStops(scene) {
+function sceneBgStops(scene) {
   var colors = String((scene && scene.bg) || "").match(/#[0-9a-f]{6}/gi) || [];
   if (colors.length >= 3) return colors.slice(-3);
   return ["#b9dcea", "#9bc78d", "#659e65"];
@@ -4621,7 +6402,7 @@ function photoPortraitSvg(h, model, theme, svgRef) {
   };
   if (model.sleepState) renderData.sleep_state = model.sleepState;
   var scene = sceneFor(model.biome, model.level, model.lineageSeed, photoPhaseHour(model.dayPhase));
-  var stops = photoSceneStops(scene);
+  var stops = sceneBgStops(scene);
   var key = "kandy-photo-" + model.lineageSeed + "-" + model.level;
   var skyID = key + "-sky";
   var clipID = key + "-clip";
@@ -4866,6 +6647,44 @@ function photoBoothButton(h, onOpen, buttonRef) {
       },
       cameraIcon(h),
     ),
+  );
+}
+
+// The Token Grotto entry point (rest of the grotto is its own section above).
+// It lives beside photoBoothButton because the two are the dialog's mutually
+// exclusive doorways and share the entry-button markup and styling.
+function tokenGrottoButton(h, onOpen, buttonRef) {
+  return h(
+    "button",
+    {
+      type: "button",
+      ref: buttonRef,
+      "aria-label": "Show me your Token Grotto",
+      title: "Show me your Token Grotto",
+      className: "kandev-kandy-control kandev-kandy-grotto-entry",
+      onClick: onOpen,
+      style: {
+        minWidth: "66px",
+        height: "40px",
+        minHeight: "40px",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "5px",
+        padding: "0 9px",
+        border: "none",
+        borderRadius: "10px",
+        background: "color-mix(in oklch,var(--background) 86%,transparent)",
+        color: "inherit",
+        boxShadow: "0 0 0 1px color-mix(in oklch,var(--foreground) 7%,transparent),0 1px 4px rgba(0,0,0,0.08)",
+        backdropFilter: "blur(8px)",
+        cursor: "pointer",
+        fontSize: "10px",
+        fontWeight: 700,
+      },
+    },
+    h("span", { "aria-hidden": "true", style: { fontSize: "14px" } }, "▣"),
+    "Grotto",
   );
 }
 
@@ -5351,7 +7170,9 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
   // anchor mirroring applies while idle too.
   var mirrored = !!(motion && motion.facing < 0);
   var gaitInfo = gaitFor(data.archetype || 0);
-  var walking = !!(motion && motion.walking) && sleepState === null;
+  // A transit walk is a walk: the gait animates even though the motion
+  // clock is not driving a wander leg.
+  var walking = !!(motion && (motion.walking || motion.transit)) && sleepState === null;
   var crying =
     !!(motion && motion.cry) &&
     sleepState === null &&
@@ -5449,7 +7270,11 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
       h(
         "div",
         { style: { transform: motion.facing < 0 ? "scaleX(-1)" : "none" } },
-        h("div", { className: (walking && gaitInfo.cls) || "" }, inner),
+        h(
+          "div",
+          { className: (walking && gaitInfo.cls) || "" },
+          motion.transit ? h("div", { className: motion.transit }, inner) : inner,
+        ),
       ),
     );
   }
@@ -5736,6 +7561,23 @@ function makeKandyWidget(host) {
     var photoHook = React.useState(false);
     var photoOpen = photoHook[0];
     var setPhotoOpen = photoHook[1];
+    var grottoViewHook = React.useState(null);
+    var grottoView = grottoViewHook[0];
+    var setGrottoView = grottoViewHook[1];
+    var grottoRevealHook = React.useState(null);
+    var grottoRevealKey = grottoRevealHook[0];
+    var setGrottoRevealKey = grottoRevealHook[1];
+    // Which leg of the grotto walk is running: "depart-surface" and
+    // "depart-grotto" walk Kandy out of frame, "arrive-grotto" and
+    // "arrive-surface" walk it back in. null while it just stands there.
+    var grottoTransitHook = React.useState(null);
+    var grottoTransit = grottoTransitHook[0];
+    var setGrottoTransit = grottoTransitHook[1];
+    // The wall the chosen passage sits on. Kandy leaves the hub that way and
+    // walks into the chamber from the same side, then stands there.
+    var grottoSideHook = React.useState(null);
+    var grottoSide = grottoSideHook[0];
+    var setGrottoSide = grottoSideHook[1];
     var photoThemeHook = React.useState(function () {
       return currentPhotoTheme();
     });
@@ -5808,6 +7650,11 @@ function makeKandyWidget(host) {
     var photoPanelRef = React.useRef(null);
     var photoEntryRef = React.useRef(null);
     var returnToPhotoEntryRef = React.useRef(false);
+    var grottoPanelRef = React.useRef(null);
+    var grottoEntryRef = React.useRef(null);
+    var returnToGrottoEntryRef = React.useRef(false);
+    var returnToGrottoDoorRef = React.useRef(null);
+    var grottoWalkTimerRef = React.useRef(null);
     var celebrationTimerRef = React.useRef(null);
     var petTimerRef = React.useRef(null);
     var bonkTimerRef = React.useRef(null);
@@ -6481,7 +8328,41 @@ function makeKandyWidget(host) {
       persistDialogZoom(null);
     }
 
+    // The walk owns the dialog for about a second; anything that changes the
+    // surface underneath cancels it so no stale walk class lands on the next
+    // panel and no queued swap fires late.
+    function clearGrottoWalk() {
+      if (grottoWalkTimerRef.current) clearTimeout(grottoWalkTimerRef.current);
+      grottoWalkTimerRef.current = null;
+      setGrottoTransit(null);
+    }
+
+    // Walk Kandy off the current scene, swap the panel while it is gone, then
+    // walk it back in on the other side. Asleep or still an egg, Kandy stays
+    // stationary — the panel just swaps, same as reduced motion.
+    function walkBetweenScenes(departPhase, arrivePhase, swap) {
+      clearGrottoWalk();
+      if (prefersReducedMotion() || kandyStationary) {
+        swap();
+        return;
+      }
+      setGrottoTransit(departPhase);
+      grottoWalkTimerRef.current = setTimeout(function () {
+        grottoWalkTimerRef.current = null;
+        if (!mountedRef.current) return;
+        swap();
+        setGrottoTransit(arrivePhase);
+        grottoWalkTimerRef.current = setTimeout(function () {
+          grottoWalkTimerRef.current = null;
+          if (mountedRef.current) setGrottoTransit(null);
+        }, GROTTO_WALK_IN_MS);
+      }, GROTTO_WALK_OUT_MS);
+    }
+
     function openPhotoBooth() {
+      clearGrottoWalk();
+      setGrottoView(null);
+      setGrottoRevealKey(null);
       returnToPhotoEntryRef.current = true;
       clearPreparedPhoto();
       setPhotoTheme(currentPhotoTheme());
@@ -6494,6 +8375,96 @@ function makeKandyWidget(host) {
       clearPreparedPhoto();
       setPhotoStatus("idle");
       setPhotoOpen(false);
+    }
+
+    function openTokenGrotto() {
+      clearPreparedPhoto();
+      setPhotoStatus("idle");
+      setPhotoOpen(false);
+      returnToGrottoEntryRef.current = true;
+      setGrottoRevealKey(null);
+      // The dialog opens first so Kandy has a surface to walk off of. There is
+      // no passage involved on the way down, so no side is remembered.
+      setDialogOpen(true);
+      setGrottoSide(null);
+      walkBetweenScenes("depart-surface", "arrive-hub", function () {
+        setGrottoView("hub");
+      });
+    }
+
+    function openTokenRoom(agentType, side) {
+      setGrottoRevealKey(null);
+      // The room may move between the visible and overflow placements while
+      // it is open; keep its identity and resolve the actual focus target when
+      // the hub is rendered again.
+      returnToGrottoDoorRef.current = agentType;
+      setGrottoSide(side || "right");
+      walkBetweenScenes("depart-hub", "arrive-room", function () {
+        setGrottoView(agentType);
+      });
+    }
+
+    function backToTokenHub() {
+      setGrottoRevealKey(null);
+      walkBetweenScenes("depart-room", "arrive-hub", function () {
+        setGrottoView("hub");
+      });
+    }
+
+    function backFromTokenGrotto() {
+      setGrottoRevealKey(null);
+      returnToGrottoDoorRef.current = null;
+      if (resolvedGrottoView === "hub") {
+        // Leaving from the hub means leaving by the entrance, so drop the
+        // remembered passage first and let Kandy climb out the way it came in.
+        setGrottoSide(null);
+        walkBetweenScenes("depart-hub", "arrive-surface", function () {
+          setGrottoView(null);
+          setGrottoSide(null);
+        });
+        return;
+      }
+      // Leaving from a chamber routes back through the hub's cave mouth
+      // rather than side-walking straight to the surface: Kandy walks out
+      // the chamber door, the hub flashes past with Kandy already climbing
+      // out the mouth it came in by, and it surfaces beside the cave opening.
+      // This is its own three-step walk (not walkBetweenScenes) because the
+      // hub is only a transit scene here — Kandy walks straight out of it
+      // without an arrive-hub settle that would leave it standing down on
+      // the shore and force a teleport back up to the cave mouth to depart.
+      clearGrottoWalk();
+      if (prefersReducedMotion() || kandyStationary) {
+        setGrottoView(null);
+        setGrottoSide(null);
+        return;
+      }
+      setGrottoTransit("depart-room");
+      grottoWalkTimerRef.current = setTimeout(function () {
+        if (!mountedRef.current) {
+          grottoWalkTimerRef.current = null;
+          return;
+        }
+        setGrottoView("hub");
+        setGrottoSide(null);
+        setGrottoTransit("depart-hub");
+        grottoWalkTimerRef.current = setTimeout(function () {
+          if (!mountedRef.current) {
+            grottoWalkTimerRef.current = null;
+            return;
+          }
+          setGrottoView(null);
+          setGrottoSide(null);
+          setGrottoTransit("arrive-surface");
+          grottoWalkTimerRef.current = setTimeout(function () {
+            grottoWalkTimerRef.current = null;
+            if (mountedRef.current) setGrottoTransit(null);
+          }, GROTTO_WALK_IN_MS);
+        }, GROTTO_WALK_OUT_MS);
+      }, GROTTO_WALK_OUT_MS);
+    }
+
+    function toggleGrottoCount(key) {
+      setGrottoRevealKey(grottoRevealKey === key ? null : key);
     }
 
     function copyPhoto() {
@@ -6518,10 +8489,15 @@ function makeKandyWidget(host) {
     function changeDialogOpen(nextOpen) {
       setDialogOpen(nextOpen);
       if (!nextOpen) {
+        clearGrottoWalk();
         returnToPhotoEntryRef.current = false;
         clearPreparedPhoto();
         setPhotoOpen(false);
         setPhotoStatus("idle");
+        returnToGrottoEntryRef.current = false;
+        returnToGrottoDoorRef.current = null;
+        setGrottoRevealKey(null);
+        setGrottoView(null);
       }
     }
 
@@ -6559,6 +8535,7 @@ function makeKandyWidget(host) {
         if (sleepyTimerRef.current) clearTimeout(sleepyTimerRef.current);
         if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
         if (greetTimerRef.current) clearTimeout(greetTimerRef.current);
+        if (grottoWalkTimerRef.current) clearTimeout(grottoWalkTimerRef.current);
         clearHoldTimers(holdRef.current);
         holdRef.current = null;
         if (holdClearTimerRef.current) clearTimeout(holdClearTimerRef.current);
@@ -6583,6 +8560,46 @@ function makeKandyWidget(host) {
       [photoOpen],
     );
 
+    var tokenGrottoModel = tokenGrottoModelFor(data || EGG_PLACEHOLDER);
+    var resolvedGrottoView = tokenGrottoResolvedView(tokenGrottoModel, grottoView);
+    // The dialog card walks; the hover card never does.
+    var cardWalk = grottoTransitClass(grottoTransit, "card");
+    var dialogMotion = cardWalk ? Object.assign({}, motionState, { facing: 1, transit: cardWalk }) : motionState;
+
+    // The underground Kandy travels wearing its own gait. Which scene it is
+    // standing in decides which leg of the trip applies to it. Asleep or still
+    // an egg, it stays outside — the grotto is still open to visit, just
+    // without Kandy there to greet them.
+    function grottoCreature(surface) {
+      if (kandyStationary) return null;
+      var creature = creatureSvg(h, shown, 64);
+      var walk = grottoTransitClass(grottoTransit, surface, grottoSide);
+      if (!walk) return creature;
+      return h("div", { className: walk }, h("div", { className: gaitFor(shown.archetype || 0).cls }, creature));
+    }
+
+    React.useEffect(
+      function () {
+        if (resolvedGrottoView === "hub" && returnToGrottoDoorRef.current) {
+          var focusKey = hubDoorFocusKey(tokenGrottoModel.rooms, returnToGrottoDoorRef.current);
+          returnToGrottoDoorRef.current = null;
+          var restoredDoor = focusKey ? focusGrottoDoor(grottoPanelRef.current, focusKey) : false;
+          if (restoredDoor) {
+            return;
+          }
+        }
+        if (grottoView && grottoPanelRef.current && grottoPanelRef.current.focus) {
+          grottoPanelRef.current.focus();
+          return;
+        }
+        if (!grottoView && returnToGrottoEntryRef.current) {
+          returnToGrottoEntryRef.current = false;
+          if (grottoEntryRef.current && grottoEntryRef.current.focus) grottoEntryRef.current.focus();
+        }
+      },
+      [resolvedGrottoView],
+    );
+
     var shown = data || EGG_PLACEHOLDER;
     // While celebrating, the FACE is joyful regardless of prior mood — it
     // just got fed. face_mood only: the mood badge keeps showing the
@@ -6591,9 +8608,12 @@ function makeKandyWidget(host) {
     if (celebration) shown = Object.assign({}, shown, { face_mood: "elated" });
     // The chip portrait sleeps too: closed eyes on the static icon while
     // the seeded schedule says it's bedtime (celebrations still play their
-    // chip hop over it — no special-casing).
+    // chip hop over it — no special-casing). The same schedule gates the
+    // grotto: Kandy doesn't wake up to walk a visitor down there.
+    var kandyAsleep = shown.level > 1 && isAsleep((shown.lineage_seed || 1) >>> 0, timeOfDay);
+    var kandyStationary = kandyStationaryFor(kandyAsleep, shown.level);
     var chipShown = shown;
-    var chipAsleep = shown.level > 1 && isAsleep((shown.lineage_seed || 1) >>> 0, timeOfDay);
+    var chipAsleep = kandyAsleep;
     if (chipAsleep) chipShown = Object.assign({}, shown, { sleep_state: "asleep" });
 
     // The chip is a real button: hover/focus gives the desktop quick-peek
@@ -6773,7 +8793,7 @@ function makeKandyWidget(host) {
             // zoom ~2.06 and the corner grip lands on the overlay
             // (dismissing the dialog on the next drag).
             className: "w-auto max-w-none sm:max-w-none p-0 gap-0 overflow-hidden rounded-2xl",
-            style: photoOpen ? { maxWidth: "420px" } : undefined,
+            style: photoOpen ? { maxWidth: "420px" } : resolvedGrottoView ? { width: "min(680px, calc(100vw - 32px))" } : undefined,
             showCloseButton: false,
           },
           photoOpen
@@ -6788,7 +8808,42 @@ function makeKandyWidget(host) {
                 showKandyCard,
                 copyPhoto,
               )
-            : h(
+            : resolvedGrottoView
+              ? resolvedGrottoView === "hub"
+                ? tokenGrottoHub(
+                    h,
+                    DialogTitle,
+                    tokenGrottoModel,
+                    grottoCreature("hub"),
+                    grottoPanelRef,
+                    openTokenRoom,
+                    backFromTokenGrotto,
+                    backFromTokenGrotto,
+                    grottoOutsideFor(
+                      shown.biome || 0,
+                      shown.level,
+                      (shown.lineage_seed || 1) >>> 0,
+                      timeOfDay,
+                      currentSeason(),
+                    ),
+                    grottoRevealKey,
+                    toggleGrottoCount,
+                  )
+                : tokenGrottoRoom(
+                    h,
+                    DialogTitle,
+                    tokenGrottoModel,
+                    resolvedGrottoView,
+                    grottoRevealKey,
+                    grottoPanelRef,
+                    backToTokenHub,
+                    backFromTokenGrotto,
+                    toggleGrottoCount,
+                    grottoCreature("room"),
+                    grottoRoomSide(grottoSide),
+                    (shown.lineage_seed || 1) >>> 0,
+                  )
+              : h(
                 React.Fragment,
                 null,
                 h(DialogTitle, { className: "sr-only" }, "Kandy"),
@@ -6805,7 +8860,7 @@ function makeKandyWidget(host) {
                   h(
                     "div",
                     { className: "kandev-kandy-dialogzoom", style: { zoom: dialogZoom } },
-                    kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech, motionState),
+                    kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech, dialogMotion),
                   ),
                   h(
                     "div",
@@ -6818,6 +8873,18 @@ function makeKandyWidget(host) {
                       },
                     },
                     photoBoothButton(h, openPhotoBooth, photoEntryRef),
+                  ),
+                  h(
+                    "div",
+                    {
+                      style: {
+                        position: "absolute",
+                        top: "8px",
+                        left: "8px",
+                        zIndex: 3,
+                      },
+                    },
+                    tokenGrottoButton(h, openTokenGrotto, grottoEntryRef),
                   ),
                   // The resize grip lives OUTSIDE the zoomed wrapper (its
                   // 16px hit area never scales) but inside the relative
@@ -6918,6 +8985,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     dayPhaseFor: dayPhaseFor,
     sleepScheduleFor: sleepScheduleFor,
     isAsleep: isAsleep,
+    kandyStationaryFor: kandyStationaryFor,
     seasonForMonth: seasonForMonth,
     seasonOverlayFor: seasonOverlayFor,
     speechLines: SPEECH,
@@ -6944,10 +9012,37 @@ window.registerKandevPlugin(PLUGIN_ID, {
     storedDialogZoom: storedDialogZoom,
     persistDialogZoom: persistDialogZoom,
     photoModelFor: photoModelFor,
+    tokenGrottoModelFor: tokenGrottoModelFor,
+    tokenCountBigInt: tokenCountBigInt,
+    formatTokenExact: formatTokenExact,
+    formatTokenCompact: formatTokenCompact,
+    tokenPileScale: tokenPileScale,
+    tokenGrottoVisiblePileName: tokenGrottoVisiblePileName,
+    tokenGrottoPileLabelTransform: tokenGrottoPileLabelTransform,
+    hoardTierFor: hoardTierFor,
+    hoardStyleFor: hoardStyleFor,
+    hoardTiers: HOARD_TIERS,
+    hoardStyles: HOARD_STYLES,
+    tokenPilePlacement: tokenPilePlacement,
+    chamberPileSpots: CHAMBER_PILE_SPOTS,
+    hubDoorPlacement: hubDoorPlacement,
+    hubDoorFocusKey: hubDoorFocusKey,
+    hubDoorCap: HUB_DOOR_CAP,
+    tokenGrottoHub: tokenGrottoHub,
+    tokenGrottoRoom: tokenGrottoRoom,
+    tokenGrottoResolvedView: tokenGrottoResolvedView,
+    grottoBackdrop: grottoBackdrop,
+    grottoOutsideFor: grottoOutsideFor,
+    skyWashFor: skyWashFor,
+    chamberBackdrop: chamberBackdrop,
+    grottoTransitClass: grottoTransitClass,
+    grottoRoomSide: grottoRoomSide,
+    focusGrottoDoor: focusGrottoDoor,
     photoExportPlan: photoExportPlan,
     photoPaletteFor: photoPaletteFor,
     photoPortraitSvg: photoPortraitSvg,
     photoBoothButton: photoBoothButton,
+    tokenGrottoButton: tokenGrottoButton,
     photoBoothPanel: photoBoothPanel,
     renderPhotoPng: renderPhotoPng,
     copyPhotoBlob: copyPhotoBlob,
