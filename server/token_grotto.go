@@ -107,7 +107,16 @@ func isTokenUsageEvent(eventType string) bool {
 	return strings.HasPrefix(eventType, tokenUsageEventPrefix) && len(eventType) > len(tokenUsageEventPrefix)
 }
 
+// observeTokenUsage folds one usage event into the aggregate grotto.
+//
+// grottoMu makes this a single writer: the grotto is a read-modify-write
+// against Host state and concurrent observers would clobber each other's
+// totals. It is NOT p.mu — the in-memory ledger stays available throughout,
+// and the webhook read path only ever TryLocks this (presentTokenGrotto), so
+// serializing observations here cannot stall the UI poll.
 func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) {
+	p.grottoMu.Lock()
+	defer p.grottoMu.Unlock()
 	// Token history follows Kandy lineage. Persist a sealed zero-XP Kandy
 	// before its first usage observation so a process restart cannot mint a
 	// different salt and orphan the separate grotto row. This persistence is
@@ -155,8 +164,8 @@ func (p *plugin) observeTokenUsage(ctx context.Context, event *pluginsdk.Event) 
 }
 
 func (p *plugin) ensureTokenGrottoLineage(ctx context.Context) (*ledger, bool) {
-	kandy := p.loadLedger(ctx)
-	if kandy == nil || kandy.transient {
+	kandy, cached := p.ledgerSnapshot(ctx)
+	if !cached {
 		// A failed Host read yields a temporary ledger that must never become
 		// the persisted lineage if a later read happens to succeed.
 		return kandy, false
@@ -165,7 +174,7 @@ func (p *plugin) ensureTokenGrottoLineage(ctx context.Context) (*ledger, bool) {
 	if host == nil {
 		return kandy, false
 	}
-	stored, found, err := host.GetState(ctx, stateScope, "", stateKey)
+	stored, found, err := p.getState(ctx, host, stateKey)
 	if err != nil {
 		log.Printf("kandy: checking token grotto lineage: %v", err)
 		return kandy, false
@@ -173,19 +182,18 @@ func (p *plugin) ensureTokenGrottoLineage(ctx context.Context) (*ledger, bool) {
 	if found && ledgerFromMap(stored).Salt == kandy.Salt {
 		return kandy, true
 	}
-	key, _, err := p.ensureSealKey(ctx, host)
-	if err != nil {
-		log.Printf("kandy: seal key unavailable, skipping token grotto lineage persist: %v", err)
+	// The Kandy exists only in memory so far. Route the write through the one
+	// stateKey writer rather than issuing a SetState from here — two writers
+	// would race an XP award against this lineage persist and one of them
+	// would lose. This is also the only caller that must KNOW the salt reached
+	// disk before attributing token history to it, hence the explicit check.
+	version := p.markLedgerDirty()
+	p.persistLedger(version)
+	if !p.ledgerReachedDisk(version) {
+		log.Printf("kandy: token grotto lineage not persisted; skipping this observation")
 		return kandy, false
 	}
-	copy := *kandy
-	sealLedger(&copy, key)
-	if err := host.SetState(ctx, stateScope, "", stateKey, ledgerToMap(&copy)); err != nil {
-		log.Printf("kandy: persisting token grotto lineage: %v", err)
-		return kandy, false
-	}
-	p.cached = &copy
-	return p.cached, true
+	return kandy, true
 }
 
 func normalizeTokenUsage(event *pluginsdk.Event) (observedTokenUsage, bool) {
@@ -400,9 +408,31 @@ func addDecimal(current string, delta *big.Int) string {
 	return value.Add(value, delta).String()
 }
 
-func (p *plugin) loadTokenGrotto(ctx context.Context, lineage string) (*tokenGrottoLedger, error) {
+// cachedTokenGrotto returns the in-memory grotto when it matches lineage.
+// The returned pointer is treated as immutable: writers mutate a clone and
+// swap it in (see observeTokenUsage), so readers may hold it after releasing
+// the lock.
+func (p *plugin) cachedTokenGrotto(lineage string) *tokenGrottoLedger {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	if p.grottoCached != nil && p.grottoCached.Lineage == lineage {
-		return p.grottoCached, nil
+		return p.grottoCached
+	}
+	return nil
+}
+
+func (p *plugin) publishTokenGrotto(grotto *tokenGrottoLedger) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.grottoCached = grotto
+}
+
+// loadTokenGrotto reads the aggregate through Host state on first use.
+// Callers hold grottoMu (observeTokenUsage takes it, presentTokenGrotto
+// TryLocks it) and MUST NOT hold p.mu — this does Host I/O.
+func (p *plugin) loadTokenGrotto(ctx context.Context, lineage string) (*tokenGrottoLedger, error) {
+	if grotto := p.cachedTokenGrotto(lineage); grotto != nil {
+		return grotto, nil
 	}
 	fresh := &tokenGrottoLedger{
 		SchemaVersion: tokenGrottoSchemaVersion,
@@ -414,19 +444,19 @@ func (p *plugin) loadTokenGrotto(ctx context.Context, lineage string) (*tokenGro
 	if host == nil {
 		return fresh, nil
 	}
-	value, found, err := host.GetState(ctx, stateScope, "", tokenGrottoStateKey)
+	value, found, err := p.getState(ctx, host, tokenGrottoStateKey)
 	if err != nil {
 		log.Printf("kandy: reading token grotto state: %v", err)
 		return nil, err
 	}
 	if !found {
-		p.grottoCached = fresh
-		return p.grottoCached, nil
+		p.publishTokenGrotto(fresh)
+		return fresh, nil
 	}
 	loaded, ok := tokenGrottoFromMap(value)
 	if !ok || loaded.SchemaVersion != tokenGrottoSchemaVersion || loaded.Lineage != lineage {
-		p.grottoCached = fresh
-		return p.grottoCached, nil
+		p.publishTokenGrotto(fresh)
+		return fresh, nil
 	}
 	key, _, err := p.ensureSealKey(ctx, host)
 	if err != nil {
@@ -435,39 +465,45 @@ func (p *plugin) loadTokenGrotto(ctx context.Context, lineage string) (*tokenGro
 	}
 	if !tokenGrottoSealValid(loaded, key) {
 		log.Printf("kandy: token grotto seal invalid; restarting token history without changing Kandy")
-		p.grottoCached = fresh
-		return p.grottoCached, nil
+		p.publishTokenGrotto(fresh)
+		return fresh, nil
 	}
 	if migrateTokenGrotto(loaded) {
 		p.persistTokenGrotto(ctx, loaded)
-		if p.grottoCached == nil {
-			p.grottoCached = loaded
+		if grotto := p.cachedTokenGrotto(lineage); grotto != nil {
+			return grotto, nil
 		}
-		return p.grottoCached, nil
+		p.publishTokenGrotto(loaded)
+		return loaded, nil
 	}
-	p.grottoCached = loaded
-	return p.grottoCached, nil
+	p.publishTokenGrotto(loaded)
+	return loaded, nil
 }
 
+// persistTokenGrotto writes the aggregate and installs it as the cache only
+// once the write lands. A failed write drops the cache instead: unlike the
+// creature ledger there is no cumulative in-memory truth to re-persist
+// later, so an unwritten observation must be re-derived from Host state on
+// the next event rather than counted twice. Callers hold grottoMu, not p.mu.
 func (p *plugin) persistTokenGrotto(ctx context.Context, grotto *tokenGrottoLedger) {
 	host := p.Host()
 	if host == nil {
-		p.grottoCached = grotto
+		p.publishTokenGrotto(grotto)
 		return
 	}
 	key, _, err := p.ensureSealKey(ctx, host)
 	if err != nil {
 		log.Printf("kandy: token grotto seal key unavailable, skipping persist: %v", err)
-		p.grottoCached = nil
+		p.publishTokenGrotto(nil)
 		return
 	}
 	sealTokenGrotto(grotto, key)
-	if err := host.SetState(ctx, stateScope, "", tokenGrottoStateKey, tokenGrottoToMap(grotto)); err != nil {
+	if err := p.setState(ctx, host, tokenGrottoStateKey, tokenGrottoToMap(grotto)); err != nil {
 		log.Printf("kandy: persisting token grotto state: %v", err)
-		p.grottoCached = nil
+		p.publishTokenGrotto(nil)
 		return
 	}
-	p.grottoCached = grotto
+	p.publishTokenGrotto(grotto)
 }
 
 func cloneTokenGrotto(grotto *tokenGrottoLedger) *tokenGrottoLedger {
@@ -501,11 +537,25 @@ func tokenGrottoFromMap(value map[string]any) (*tokenGrottoLedger, bool) {
 	return &grotto, true
 }
 
+// presentTokenGrotto builds the public grotto view. It serves from the
+// in-memory aggregate; a cold cache is filled here, but only if the grotto
+// writer is idle. A UI poll that queued behind an event's persist is exactly
+// the wedge this plugin is fixing, so a busy writer means "empty this round"
+// and the next poll (1-3s away) picks the history up.
 func (p *plugin) presentTokenGrotto(ctx context.Context, lineage uint32) tokenGrottoResponse {
 	response := tokenGrottoResponse{Status: "empty", TotalTokens: "0", Rooms: []tokenGrottoRoomResponse{}}
-	grotto, err := p.loadTokenGrotto(ctx, strconv.FormatUint(uint64(lineage), 10))
-	if err != nil {
-		return response
+	key := strconv.FormatUint(uint64(lineage), 10)
+	grotto := p.cachedTokenGrotto(key)
+	if grotto == nil {
+		if !p.grottoMu.TryLock() {
+			return response
+		}
+		loaded, err := p.loadTokenGrotto(ctx, key)
+		p.grottoMu.Unlock()
+		if err != nil {
+			return response
+		}
+		grotto = loaded
 	}
 	if grotto.ObservedSince == "" || grotto.TotalTokens == "0" {
 		if grotto.Partial {

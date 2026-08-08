@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,8 +19,14 @@ import (
 // fakeHost serves state, config, and vault secrets from memory — the only
 // Host surfaces this plugin uses. getSecretErr/setSecretErr simulate a
 // vault outage for the seal decision-table tests.
+//
+// mu makes it usable from several plugin goroutines at once (the lock
+// discipline tests hammer it); single-threaded tests still poke `state` and
+// `secrets` directly, which is why the fields stay exported to the package.
+// gate models a slow or wedged kandev — see setGate.
 type fakeHost struct {
 	pluginsdk.UnimplementedHostData
+	mu              sync.Mutex
 	config          map[string]any
 	state           map[string]map[string]any
 	secrets         map[string]string
@@ -28,6 +36,8 @@ type fakeHost struct {
 	commitStateErr  map[string]error
 	getSecretErr    error
 	setSecretErr    error
+	gate            func(context.Context) error
+	calls           atomic.Int64
 }
 
 func newFakeHost(config map[string]any) *fakeHost {
@@ -42,9 +52,35 @@ func newFakeHost(config map[string]any) *fakeHost {
 	}
 }
 
+// setGate installs a delay applied before every Host round-trip. The gate is
+// handed the plugin's call context and is expected to honour it exactly as
+// the real gRPC client does, so a bounded plugin context cuts the call short
+// instead of hanging forever.
+func (h *fakeHost) setGate(gate func(context.Context) error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.gate = gate
+}
+
+func (h *fakeHost) enter(ctx context.Context) error {
+	h.calls.Add(1)
+	h.mu.Lock()
+	gate := h.gate
+	h.mu.Unlock()
+	if gate == nil {
+		return nil
+	}
+	return gate(ctx)
+}
+
 func stateMapKey(scope, scopeID, key string) string { return scope + "|" + scopeID + "|" + key }
 
-func (h *fakeHost) GetState(_ context.Context, scope, scopeID, key string) (map[string]any, bool, error) {
+func (h *fakeHost) GetState(ctx context.Context, scope, scopeID, key string) (map[string]any, bool, error) {
+	if err := h.enter(ctx); err != nil {
+		return nil, false, err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	mapKey := stateMapKey(scope, scopeID, key)
 	if err := h.getStateErrOnce[mapKey]; err != nil {
 		delete(h.getStateErrOnce, mapKey)
@@ -56,7 +92,12 @@ func (h *fakeHost) GetState(_ context.Context, scope, scopeID, key string) (map[
 	value, ok := h.state[mapKey]
 	return value, ok, nil
 }
-func (h *fakeHost) SetState(_ context.Context, scope, scopeID, key string, value map[string]any) error {
+func (h *fakeHost) SetState(ctx context.Context, scope, scopeID, key string, value map[string]any) error {
+	if err := h.enter(ctx); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	mapKey := stateMapKey(scope, scopeID, key)
 	if err := h.setStateErr[mapKey]; err != nil {
 		return err
@@ -68,27 +109,44 @@ func (h *fakeHost) SetState(_ context.Context, scope, scopeID, key string, value
 	return nil
 }
 func (h *fakeHost) DeleteState(_ context.Context, scope, scopeID, key string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	delete(h.state, stateMapKey(scope, scopeID, key))
 	return nil
 }
 func (h *fakeHost) ListState(context.Context, string, string) ([]pluginsdk.StateEntry, error) {
 	return nil, nil
 }
-func (h *fakeHost) GetConfig(context.Context) (map[string]any, error) {
+func (h *fakeHost) GetConfig(ctx context.Context) (map[string]any, error) {
+	if err := h.enter(ctx); err != nil {
+		return nil, err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.config == nil {
 		return map[string]any{}, nil
 	}
 	return h.config, nil
 }
 func (h *fakeHost) RevealSecret(context.Context, string) (string, error) { return "", nil }
-func (h *fakeHost) GetSecret(_ context.Context, key string) (string, bool, error) {
+func (h *fakeHost) GetSecret(ctx context.Context, key string) (string, bool, error) {
+	if err := h.enter(ctx); err != nil {
+		return "", false, err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.getSecretErr != nil {
 		return "", false, h.getSecretErr
 	}
 	value, ok := h.secrets[key]
 	return value, ok, nil
 }
-func (h *fakeHost) SetSecret(_ context.Context, key, value string) error {
+func (h *fakeHost) SetSecret(ctx context.Context, key, value string) error {
+	if err := h.enter(ctx); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.setSecretErr != nil {
 		return h.setSecretErr
 	}
@@ -96,6 +154,8 @@ func (h *fakeHost) SetSecret(_ context.Context, key, value string) error {
 	return nil
 }
 func (h *fakeHost) DeleteSecret(_ context.Context, key string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	delete(h.secrets, key)
 	return nil
 }
@@ -107,6 +167,7 @@ func newTestPlugin(t *testing.T, host *fakeHost) *plugin {
 	p.now = func() time.Time { return time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC) }
 	p.saltFunc = func() uint32 { return 42 }
 	p.SetHost(host)
+	t.Cleanup(p.close)
 	return p
 }
 

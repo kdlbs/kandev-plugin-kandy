@@ -1,7 +1,7 @@
 .PHONY: build run test fmt vet package package-host clean
 
 BIN := bin/kandev-plugin-kandy
-VERSION := 0.12.0
+VERSION := 0.13.0
 STAGE := .build/stage
 PKG_OUT := kandev-plugin-kandy-$(VERSION).tar.gz
 
