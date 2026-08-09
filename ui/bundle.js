@@ -2585,12 +2585,97 @@ function seasonOverlayFor(season, dayPhase, phase, rand) {
   return { bg: SEASON_TINTS[season].bg, props: props };
 }
 
-// sceneFor(biome, level, lineageSeed, timeOfDay, season) — the lineage's
-// habitat at this maturity, hour, and season. Layout re-rolls only at phase
-// boundaries; the day/night layer composes on top and defaults to mid-day
-// ("day": no overlay at all), the season layer composes above THAT and
-// defaults to none, so 3- and 4-arg callers keep today's exact renders.
-function sceneFor(biome, level, seed, timeOfDay, season) {
+// sceneFor(biome, level, lineageSeed, timeOfDay, season, ancestors) — the
+// lineage's habitat at this maturity, hour, and season. Layout re-rolls only
+// at phase boundaries; the day/night layer composes on top and defaults to
+// mid-day ("day": no overlay at all), the season layer composes above THAT
+// and defaults to none, and the ancestors default to none — so 3-, 4- and
+// 5-arg callers keep today's exact renders.
+
+// ---------------------------------------------------------------------------
+// Ancestors (v0.13.0) — a kandy rests at level 100, then grows out of the
+// band and retires: the server files it away and hatches a fresh egg with new
+// DNA. The retired elders never leave. They stand at the back of every scene, drawn by the SAME
+// creatureParts the living kandy uses (portrait mode: no ground plane, no
+// effect layers, no contact shadow of their own), scaled down onto fixed
+// far-ground spots and dimmed with distance.
+//
+// Placement rules that matter:
+//   - the two NEAR spots sit clear of the wander corridor (±WANDER_MAX_PX
+//     around the centre plus the widest body), so a strolling kandy never
+//     ends up standing on top of the elder closest to the camera; the two
+//     far spots sit deeper in the scene, where the living kandy passing in
+//     front of them is the correct depth cue, not a collision;
+//   - newest elder takes the nearest, largest, least faded spot — the
+//     lineage recedes into the haze in order;
+//   - they render inside the scene svg, BEFORE the day/night and season
+//     washes, so dusk, night and snow fall over them like any other prop;
+//   - they are kandev-kandy-static: an elder never bobs, blinks or walks.
+// ---------------------------------------------------------------------------
+
+var ANCESTOR_SPOTS = [
+  { x: 26, y: 103, scale: 0.42, opacity: 0.66 },
+  { x: 214, y: 101, scale: 0.38, opacity: 0.56 },
+  { x: 57, y: 97, scale: 0.3, opacity: 0.44 },
+  { x: 186, y: 95.5, scale: 0.26, opacity: 0.36 },
+];
+
+// SCENE_W is the scene viewBox width the spots are expressed in.
+var SCENE_W = 240;
+
+// ancestorFigures renders the elders as scene props. `ancestors` is the
+// webhook's list, oldest first; anything past ANCESTOR_SPOTS.length stays in
+// the ledger but off the card (the scene has four believable back spots, and
+// a crowd would read as noise).
+//
+// bounds ({min, max} in scene units, default the full width) is the visible
+// horizontal window. The card shows the whole scene; the Photo Booth frames
+// the same viewBox into a squarer box with `slice`, which crops the sides —
+// without this the outermost elders would be sawn in half by the frame.
+function ancestorFigures(h, ancestors, bounds) {
+  if (!ancestors || !ancestors.length) return [];
+  var lo = bounds ? bounds.min : 0;
+  var hi = bounds ? bounds.max : SCENE_W;
+  var out = [];
+  var shown = Math.min(ancestors.length, ANCESTOR_SPOTS.length);
+  for (var i = 0; i < shown; i++) {
+    var a = ancestors[ancestors.length - 1 - i] || {};
+    var spot = ANCESTOR_SPOTS[i];
+    var s = spot.scale;
+    var x = lo + (spot.x / SCENE_W) * (hi - lo);
+    // The elder's DNA only. Mood is fixed "content" — a memory has no mood,
+    // and the living kandy's sadness must not spread across the treeline.
+    var figure = creatureParts(
+      h,
+      {
+        level: Math.max(Math.floor(Number(a.level) || 0), 2),
+        archetype: Math.floor(Number(a.archetype) || 0),
+        family: Math.floor(Number(a.family) || 0),
+        lineage_seed: (Math.floor(Number(a.lineage_seed) || 1) >>> 0) || 1,
+        scarred: !!a.scarred,
+        mood: "content",
+      },
+      true,
+    );
+    out.push(
+      h(
+        "g",
+        {
+          key: "ancestor" + i,
+          className: "kandev-kandy-static",
+          opacity: spot.opacity,
+          // Anchor the elder's FEET (50, 89 in creature space) on the spot.
+          transform: "translate(" + (x - 50 * s) + " " + (spot.y - 89 * s) + ") scale(" + s + ")",
+          "aria-hidden": "true",
+        },
+        figure,
+      ),
+    );
+  }
+  return out;
+}
+
+function sceneFor(biome, level, seed, timeOfDay, season, ancestors, ancestorBounds) {
   var phase = scenePhase(level);
   var b = ((biome % BIOME_BGS.length) + BIOME_BGS.length) % BIOME_BGS.length;
   var dayPhase = dayPhaseFor(timeOfDay);
@@ -2603,6 +2688,9 @@ function sceneFor(biome, level, seed, timeOfDay, season) {
     props = props.concat(stars(rand, Math.min(10 + (level - 79), 40), "#ffe9a3"));
   }
   currentDayPhase = "day";
+  // The elders join the scene's own props: behind the living kandy (which is
+  // a separate layer above this svg) and beneath every wash added below.
+  props = props.concat(ancestorFigures(h0, ancestors, ancestorBounds));
   var bg = BIOME_BGS[b][phase];
   var overlay = skyOverlayFor(dayPhase, phase);
   if (overlay) {
@@ -3028,6 +3116,79 @@ var MOOD_COLORS = {
   sad: "#60a5fa",
   gloomy: "#94a3b8",
 };
+
+// generationValue reads a webhook body's (or a remembered snapshot's)
+// lineage generation. Pre-0.13 servers omit the field entirely, and every
+// kandy is at least the first of its line.
+function generationValue(body) {
+  var n = Math.floor(Number(body && body.generation) || 0);
+  return n > 0 ? n : 1;
+}
+
+// rememberedProgress is the slice of a webhook body the widget keeps between
+// polls to decide what to celebrate.
+function rememberedProgress(body) {
+  return {
+    level: body.level,
+    award_seq: body.award_seq,
+    generation: generationValue(body),
+  };
+}
+
+// bigCelebration — level-ups and rebirths get the full treatment (large
+// sparkle burst, name highlight, the longer chip animation); a plain XP gain
+// gets the small one.
+function bigCelebration(celebration) {
+  return !!celebration && celebration.kind !== "gain";
+}
+
+// romanNumeral — generation numbering, mirroring the server's.
+function romanNumeral(n) {
+  var values = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+  var symbols = ["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"];
+  n = Math.floor(n);
+  if (!(n > 0)) return "I";
+  var out = "";
+  for (var i = 0; i < values.length; i++) {
+    while (n >= values[i]) {
+      out += symbols[i];
+      n -= values[i];
+    }
+  }
+  return out;
+}
+
+// generationSummary — the lineage marker, or null for a first-of-its-line
+// kandy ("Gen I" on an instance that has never seen a rebirth is noise).
+// It rides the progress line rather than the header: the 248px header row
+// already carries a wrapping stage name, the level pill, the mood badge and
+// the help dot, and a fifth chip pushes the whole row into overflow.
+//
+// roster names the elders standing in the scene, newest first, so the
+// background figures can be identified without a second panel.
+function generationSummary(data) {
+  var generation = Math.floor(Number(data && data.generation) || 1);
+  if (generation <= 1) return null;
+  var elders = (data && data.ancestors) || [];
+  var lines = ["Generation " + romanNumeral(generation)];
+  for (var i = elders.length - 1; i >= 0; i--) {
+    var elder = elders[i] || {};
+    lines.push(
+      "· " +
+        (elder.stage_name || "Kandy") +
+        " (Gen " +
+        romanNumeral(Math.floor(Number(elder.generation) || 1)) +
+        ") retired at Lv " +
+        Math.floor(Number(elder.level) || 100),
+    );
+  }
+  return {
+    generation: generation,
+    label: "Gen " + romanNumeral(generation),
+    roster: lines.join("\n"),
+    elders: elders.length,
+  };
+}
 
 // moodBadge — the mood indicator: a colored dot + the mood word (replaced
 // the 5-hearts meter; the word says more than a heart count did).
@@ -6246,6 +6407,11 @@ function tokenGrottoRoom(h, DialogTitle, grotto, agentType, revealedKey, panelRe
 var PHOTO_VIEWBOX = { width: 800, height: 1000 };
 var PHOTO_EXPORT = { width: 1600, height: 2000, mimeType: "image/png" };
 var PHOTO_HABITATS = ["Verdant", "Aquatic", "Alpine", "Ember"];
+// The portrait frames the 240x120 scene viewBox into a 696x516 window with
+// `slice`, so only the middle ~162 units survive the crop. Elders are placed
+// inside that window instead of the card's full width — otherwise the
+// outermost ones are sawn in half by the frame.
+var PHOTO_SCENE_BOUNDS = { min: 46, max: 194 };
 var PHOTO_MOODS = { elated: true, happy: true, content: true, bored: true, sad: true, gloomy: true };
 var PHOTO_TEMPERAMENTS = { beloved: true, content: true, neutral: true, wary: true, fearful: true };
 
@@ -6292,7 +6458,29 @@ function photoModelFor(data, timeOfDay) {
     dayPhase: dayPhase,
     habitat: PHOTO_HABITATS[biome],
     sleepState: level > 1 && isAsleep(lineageSeed, timeOfDay) ? "asleep" : null,
+    generation: Math.max(photoInt(data.generation, 1), 1),
+    ancestors: photoAncestorsFor(data.ancestors),
   };
+}
+
+// photoAncestorsFor sanitizes the elders the same way as the living kandy:
+// derived DNA and level only, bounded to what the scene can stand, so a
+// shareable portrait can never carry more than the card already shows.
+function photoAncestorsFor(ancestors) {
+  if (!ancestors || !ancestors.length) return [];
+  var out = [];
+  var start = Math.max(0, ancestors.length - ANCESTOR_SPOTS.length);
+  for (var i = start; i < ancestors.length; i++) {
+    var a = ancestors[i] || {};
+    out.push({
+      level: Math.max(photoInt(a.level, 100), 2),
+      archetype: photoInt(a.archetype, 0),
+      family: photoInt(a.family, 0),
+      lineage_seed: (photoInt(a.lineage_seed, 1) >>> 0) || 1,
+      scarred: !!a.scarred,
+    });
+  }
+  return out;
 }
 
 function photoExportPlan() {
@@ -6401,7 +6589,15 @@ function photoPortraitSvg(h, model, theme, svgRef) {
     counterfeit: model.counterfeit,
   };
   if (model.sleepState) renderData.sleep_state = model.sleepState;
-  var scene = sceneFor(model.biome, model.level, model.lineageSeed, photoPhaseHour(model.dayPhase));
+  var scene = sceneFor(
+    model.biome,
+    model.level,
+    model.lineageSeed,
+    photoPhaseHour(model.dayPhase),
+    undefined,
+    model.ancestors,
+    PHOTO_SCENE_BOUNDS,
+  );
   var stops = sceneBgStops(scene);
   var key = "kandy-photo-" + model.lineageSeed + "-" + model.level;
   var skyID = key + "-sky";
@@ -6507,6 +6703,23 @@ function photoPortraitSvg(h, model, theme, svgRef) {
       { x: 80, y: 620, fill: palette.accent, fontSize: 15, fontWeight: 750, letterSpacing: 3.2 },
       "KANDY PHOTO BOOTH",
     ),
+    // The lineage marker sits opposite the header, clear of the name and the
+    // level chip below it. Omitted for a first-of-its-line kandy.
+    model.generation > 1
+      ? h(
+          "text",
+          {
+            x: 720,
+            y: 620,
+            fill: palette.muted,
+            fontSize: 15,
+            fontWeight: 750,
+            letterSpacing: 3.2,
+            textAnchor: "end",
+          },
+          "GEN " + romanNumeral(model.generation),
+        )
+      : null,
     h(
       "text",
       {
@@ -7181,7 +7394,14 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
   if (walking && !gaitInfo.keepBob) {
     shownData = Object.assign({}, shownData, { walk_suppress_bob: true });
   }
-  var scene = sceneFor(data.biome || 0, data.level, (data.lineage_seed || 1) >>> 0, timeOfDay, season);
+  var scene = sceneFor(
+    data.biome || 0,
+    data.level,
+    (data.lineage_seed || 1) >>> 0,
+    timeOfDay,
+    season,
+    data.ancestors,
+  );
   // While walking the ambient wiggle yields (the gait wrapper is already
   // rotating); the sob-shudder class is declared after wiggle in the CSS
   // so it wins the animation shorthand when both are present.
@@ -7278,7 +7498,11 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
       ),
     );
   }
+  var lineage = generationSummary(data);
   var flavorLine = data.flavor;
+  if (celebration && celebration.kind === "rebirth") {
+    flavorLine = "It steps back into the scene. A new egg settles in the grass.";
+  }
   if (care && care.distrustFx) flavorLine = "It doesn't trust you right now.";
   else if (care && care.bonkFx) flavorLine = "Your kandy got drenched.";
   else if (care && care.sleepyFx) flavorLine = "Your kandy blinks at you sleepily.";
@@ -7351,7 +7575,7 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
         },
         positioned,
       ),
-      celebration ? burstSparkles(h, celebration.kind === "levelup") : null,
+      celebration ? burstSparkles(h, bigCelebration(celebration)) : null,
       care && care.fx ? petOverlay(h, care.fx, data, wanderX, mirrored) : null,
       care && care.bonkFx ? bonkOverlay(h, care.bonkFx, data, wanderX, mirrored) : null,
       care && care.distrustFx ? distrustOverlay(h, care.distrustFx, data, wanderX, mirrored) : null,
@@ -7376,7 +7600,7 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
         h(
           "span",
           {
-            className: celebration && celebration.kind === "levelup" ? "kandev-kandy-namehl" : "",
+            className: bigCelebration(celebration) ? "kandev-kandy-namehl" : "",
             style: { fontSize: "13px", fontWeight: 600, flex: "1 1 auto", minWidth: 0, lineHeight: 1.25 },
           },
           data.stage_name,
@@ -7435,11 +7659,19 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
           },
           h(
             "span",
-            { style: { fontSize: "10px", opacity: 0.65, fontVariantNumeric: "tabular-nums" } },
+            {
+              style: { fontSize: "10px", opacity: 0.65, fontVariantNumeric: "tabular-nums" },
+              // The elder roster hangs off this line, which is where the
+              // generation is named.
+              title: lineage ? lineage.roster : undefined,
+            },
             // progress_pct is completion WITHIN the current level — say so
             // plainly ("64% through level 12"), not "to next evolution",
             // which read as 64% remaining.
-            Math.floor(data.progress_pct) + "% through level " + data.level,
+            (lineage ? lineage.label + " · " : "") +
+              Math.floor(data.progress_pct) +
+              "% through level " +
+              data.level,
           ),
           bondHearts(h, data.temperament_band || "neutral", !!data.scarred),
         ),
@@ -7934,7 +8166,7 @@ function makeKandyWidget(host) {
         function () {
           if (mountedRef.current) setCelebration(null);
         },
-        kind === "levelup" ? 2200 : 1400,
+        kind === "gain" ? 1400 : kind === "rebirth" ? 2800 : 2200,
       );
     }
 
@@ -7948,7 +8180,11 @@ function makeKandyWidget(host) {
           if (!mountedRef.current || !body || typeof body.level !== "number") return;
           var prev = prevRef.current;
           if (prev) {
-            if (body.level > prev.level) celebrate("levelup");
+            // Rebirth first: an ascension takes the level from 100 back to 1,
+            // so the level-up check below would miss the single biggest
+            // moment in a kandy's life. The generation is what moved.
+            if (generationValue(body) > generationValue(prev)) celebrate("rebirth");
+            else if (body.level > prev.level) celebrate("levelup");
             else if (
               typeof body.award_seq === "number" &&
               typeof prev.award_seq === "number" &&
@@ -7957,7 +8193,7 @@ function makeKandyWidget(host) {
               celebrate("gain");
             }
           }
-          prevRef.current = { level: body.level, award_seq: body.award_seq };
+          prevRef.current = rememberedProgress(body);
           setData(body);
         })
         .catch(function () {
@@ -8119,7 +8355,7 @@ function makeKandyWidget(host) {
         })
         .then(function (body) {
           if (mountedRef.current && body && typeof body.level === "number") {
-            prevRef.current = { level: body.level, award_seq: body.award_seq };
+            prevRef.current = rememberedProgress(body);
             setData(body);
             if (body.refusing_pets) {
               // Bonked from elsewhere (another tab/client): mirror the
@@ -8166,7 +8402,7 @@ function makeKandyWidget(host) {
         })
         .then(function (body) {
           if (mountedRef.current && body && typeof body.level === "number") {
-            prevRef.current = { level: body.level, award_seq: body.award_seq };
+            prevRef.current = rememberedProgress(body);
             setData(body);
           }
         })
@@ -8622,7 +8858,7 @@ function makeKandyWidget(host) {
     var chipCelebrateCls = "";
     if (celebration) {
       chipCelebrateCls =
-        celebration.kind === "levelup" ? " kandev-kandy-levelup" : " kandev-kandy-celebrate";
+        bigCelebration(celebration) ? " kandev-kandy-levelup" : " kandev-kandy-celebrate";
     } else if (greetFx) {
       // The chip does its existing small hop alongside the arrival wave.
       chipCelebrateCls = " kandev-kandy-celebrate";
@@ -8950,6 +9186,14 @@ window.registerKandevPlugin(PLUGIN_ID, {
     creatureSvg: creatureSvg,
     creatureParts: creatureParts,
     sceneFor: sceneFor,
+    ancestorFigures: ancestorFigures,
+    ancestorSpots: ANCESTOR_SPOTS,
+    generationSummary: generationSummary,
+    generationValue: generationValue,
+    rememberedProgress: rememberedProgress,
+    bigCelebration: bigCelebration,
+    romanNumeral: romanNumeral,
+    photoAncestorsFor: photoAncestorsFor,
     growthForLevel: growthForLevel,
     kandyCard: kandyCard,
     petOverlay: petOverlay,

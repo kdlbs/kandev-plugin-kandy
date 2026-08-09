@@ -48,21 +48,38 @@ const (
 	// sealVersion tags the canonical serialization. Bump it when the
 	// sealed field list changes so old signatures can be migrated
 	// deliberately instead of rejected as tampering.
-	sealVersion = 1
+	//
+	// v1 -> v2 (0.13.0) added the rebirth fields (generation, ancestors,
+	// reborn_at). canonicalLedgerStringV keeps every older scheme verbatim
+	// so an untouched v1 ledger still verifies; verifyLoadedLedger then
+	// re-seals it at the current version. Never edit an old scheme's field
+	// list — that would turn every existing install into a counterfeit.
+	sealVersion = 2
 
 	// secretKeyLedgerHMAC is the vault key holding the hex-encoded
 	// 32-byte HMAC key. Its existence is the "sealing has begun" marker.
 	secretKeyLedgerHMAC = "ledger-hmac-key"
 )
 
-// canonicalLedgerString serializes every sealed ledger field in a FIXED,
+// canonicalLedgerString serializes the ledger under the CURRENT scheme.
+func canonicalLedgerString(l *ledger) string {
+	return canonicalLedgerStringV(l, sealVersion)
+}
+
+// canonicalLedgerStringV serializes every sealed ledger field in a FIXED,
 // explicitly ordered list — never map iteration — so the same ledger always
 // yields the same bytes. The signature itself is excluded; counterfeit IS
 // included, so clearing the mark in the DB invalidates the signature (and
 // the resulting rebirth sets it right back).
-func canonicalLedgerString(l *ledger) string {
+//
+// version selects the scheme, so a signature written by an older plugin can
+// still be verified against the bytes that plugin actually signed. The
+// leading sealv pair uses that same version rather than l.Sealv: a ledger
+// being sealed at v2 has not been stamped yet, and one being verified at its
+// stored version agrees with it by construction.
+func canonicalLedgerStringV(l *ledger, version int) string {
 	pairs := []string{
-		"sealv=" + strconv.Itoa(l.Sealv),
+		"sealv=" + strconv.Itoa(version),
 		"xp=" + strconv.FormatFloat(l.XP, 'g', -1, 64),
 		"messages=" + strconv.FormatInt(l.Messages, 10),
 		"turns=" + strconv.FormatInt(l.Turns, 10),
@@ -82,29 +99,55 @@ func canonicalLedgerString(l *ledger) string {
 		"last_passive_heal_at=" + l.LastPassiveHealAt,
 		"counterfeit=" + strconv.FormatBool(l.Counterfeit),
 	}
+	if version >= 2 {
+		// The rebirth ledger (0.13.0). Ancestors are sealed field by field:
+		// forging an elder is exactly as detectable as forging XP.
+		pairs = append(pairs,
+			"generation="+strconv.Itoa(l.Generation),
+			"home_salt="+strconv.FormatUint(uint64(l.HomeSalt), 10),
+			"reborn_at="+l.RebornAt,
+			"ancestors="+strconv.Itoa(len(l.Ancestors)),
+		)
+		for i, a := range l.Ancestors {
+			pairs = append(pairs, "ancestor"+strconv.Itoa(i)+"="+strings.Join([]string{
+				strconv.FormatUint(uint64(a.Salt), 10),
+				strconv.Itoa(a.Level),
+				a.BornAt,
+				a.RetiredAt,
+				strconv.FormatBool(a.Scarred),
+			}, ","))
+		}
+	}
 	return strings.Join(pairs, "\n")
 }
 
-// ledgerSig computes the hex HMAC-SHA256 over the canonical serialization.
-func ledgerSig(l *ledger, key []byte) string {
+// ledgerSig computes the hex HMAC-SHA256 over the canonical serialization
+// under the given scheme version.
+func ledgerSig(l *ledger, key []byte, version int) string {
 	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(canonicalLedgerString(l)))
+	mac.Write([]byte(canonicalLedgerStringV(l, version)))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // sealLedger stamps the current seal version and signature in place.
 func sealLedger(l *ledger, key []byte) {
 	l.Sealv = sealVersion
-	l.Sig = ledgerSig(l, key)
+	l.Sig = ledgerSig(l, key, sealVersion)
 }
 
 // sealValid reports whether the ledger's stored signature matches its
-// canonical content under key. A missing signature is never valid.
+// canonical content under key, verified against the scheme the signature was
+// written under. A missing signature — or one claiming a scheme this build
+// does not know — is never valid.
 func sealValid(l *ledger, key []byte) bool {
 	if l.Sig == "" {
 		return false
 	}
-	return hmac.Equal([]byte(l.Sig), []byte(ledgerSig(l, key)))
+	version := l.Sealv
+	if version < 1 || version > sealVersion {
+		return false
+	}
+	return hmac.Equal([]byte(l.Sig), []byte(ledgerSig(l, key, version)))
 }
 
 // ensureSealKey returns the HMAC key, fetching it from the vault on first
@@ -202,6 +245,16 @@ func (p *plugin) verifyLoadedLedger(ctx context.Context, host pluginsdk.Host, l 
 		return l, true
 	}
 	if sealValid(l, key) {
+		if l.Sealv < sealVersion {
+			// MIGRATION: the signature is genuine but was written under an
+			// older scheme. Re-seal it at the current one so the fields that
+			// scheme did not cover start being protected from now on.
+			migrateSealedLedger(l)
+			sealLedger(l, key)
+			if err := p.setState(ctx, host, stateKey, ledgerToMap(l)); err != nil {
+				log.Printf("kandy: persisting migrated seal: %v", err)
+			}
+		}
 		return l, true
 	}
 	// TAMPERED: the row was modified outside the plugin. Counterfeit
@@ -214,6 +267,21 @@ func (p *plugin) verifyLoadedLedger(ctx context.Context, host pluginsdk.Host, l 
 	}
 	log.Printf("kandy: ledger seal invalid — tampered state detected; rebirthing as a counterfeit (the mark is permanent)")
 	return reborn, true
+}
+
+// migrateSealedLedger drops fields a genuinely-signed OLD ledger could not
+// legitimately carry, because its scheme did not sign them: a v1 signature
+// covers everything except the rebirth fields, so anything sitting in them
+// was written by something other than this plugin. Clearing them closes the
+// one-load window in which a raw DB edit could smuggle a fabricated lineage
+// past the upgrade — an honest v1 ledger has them empty already.
+func migrateSealedLedger(l *ledger) {
+	if l.Sealv < 2 {
+		l.Generation = 0
+		l.Ancestors = nil
+		l.RebornAt = ""
+		l.HomeSalt = 0
+	}
 }
 
 // counterfeitRebirth builds the fresh-but-marked egg served after tamper

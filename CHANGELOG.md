@@ -2,6 +2,36 @@
 
 ## [0.13.0] - 2026-08-09
 
+### Added
+
+- **The cycle.** Level 100 is now the top of the arc rather than the point
+  where the designed band simply runs out. A kandy that reaches it **rests
+  there**, fully grown, for a whole level's worth of XP (~53k, about a month
+  at the measured pace) — two and a half years of raising it earn a victory
+  lap. What happens when it grows past even that is left for you to find out
+  in your own instance; this entry deliberately does not spoil it. Nothing is
+  lost when it happens, and no progression gets faster or slower.
+- The state and behaviour it relies on, for operators and reviewers:
+  - the ledger gains a small sealed lineage record (a generation counter, a
+    capped list of at most 8 retired creatures, and the salt that pins the
+    scene's biome to the lineage rather than to one creature);
+  - XP, the level curve and the XP recipe are completely unchanged — no
+    prestige multiplier, no carried head start, no scaling by generation;
+  - the Token Grotto is keyed by lineage, so a lineage change starts a new
+    one, as its "history follows the lineage" rule already documented;
+  - care state is unaffected by any of this: pets and bonks still never
+    touch XP, and so can never trigger the transition.
+- `genlineage` dev subcommand: walks a lineage through the whole arc and emits
+  the real webhook payloads, for offline rendering.
+
+### Changed
+
+- Ledger seal bumped to v2 for the new fields. A genuine v1 signature is
+  verified against the v1 scheme and re-sealed at v2 on first load — existing
+  installs migrate silently and are never mistaken for tampering. Lineage
+  fields found on a v1 ledger are dropped rather than adopted, since a v1
+  signature never covered them.
+
 ### Fixed
 
 - Kandy can no longer go unresponsive and wedge the Kandev host. Every handler

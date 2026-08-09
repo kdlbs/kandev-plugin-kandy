@@ -371,3 +371,54 @@ explicitly adapter/model breakdowns; provider breakdown remains unavailable
 until Kandev adds a typed field. A monotonic per-model recency ordinal may be
 stored for the fixed floor presentation; it is aggregate UI metadata, not a
 timestamp or per-event history.
+
+## 14. The cycle — rebirth at level 100 (v0.13.0)
+
+Level 100 was the last designed level of the awesomeness band; past it only
+the mythic naming ladder continued. It now **closes the arc instead**. Level
+100 itself is a **resting place**: the creature stays there, finished, for a
+full level's worth of XP (~53k, about a month) — the payoff for ~2.5 years of
+raising it, and the only time its level-100 effect tier (`burst`) is ever on
+screen. The award that would carry it to `ascendLevel` (101, a level nothing
+ever occupies) retires it and lays a fresh egg.
+
+**Server (`applyRebirth`, called only from `awardXP`).** The retiring creature
+is appended to `ancestors` (salt, level, born/retired stamps, scarred), the
+list trimmed to `maxAncestors` (8) oldest-first, and the ledger re-seeded: new
+random salt, `generation++`, `created_at`/`reborn_at` = now, counters zeroed.
+Deliberate carry-over rules, each with a reason:
+
+| Field | Crosses? | Why |
+|---|---|---|
+| XP above `thresholdXP(101)` | yes | no shipped work is swallowed by the tipping-over award |
+| `award_seq`, `last_award_at` | yes | the egg was laid by work that just landed — it starts fed |
+| biome (`home_salt`) | yes | the elders stand in this scene; the place cannot swap under them |
+| temperament | halved | the bond is with the keeper; a new creature has only heard about you |
+| `counterfeit` | yes | the tamper mark is permanent and outlives every lineage |
+| archetype / palette / style | no | new DNA is the point |
+| `scarred`, activity counters | no | a scar is on a body, and this is a new one |
+
+The loop is bounded by `maxRebirthsPerAward` (only `?debug_grant` can cross
+several bands at once) and parks at the top of the band rather than spinning.
+Elders are recorded at `bandMax`, never at `ascendLevel` — nothing renders as
+level 101. Care actions (pet/bonk/passive heal) never touch XP and so can never
+trigger an ascension. The Token Grotto is keyed by salt, so a new generation
+digs a fresh one — the documented "history follows the lineage" rule.
+
+**Seal.** `sealVersion` 2 adds generation, home_salt, reborn_at and every
+ancestor field. `canonicalLedgerStringV` keeps the v1 field list verbatim, so
+a genuine v1 signature still verifies and is re-sealed at v2 on first load.
+Rebirth fields present on a v1 ledger are dropped during migration: a v1
+signature never covered them, so anything in them came from outside the
+plugin.
+
+**Presentation.** The webhook adds `generation`, `reborn_at` and `ancestors[]`
+(derived DNA only — the raw salt never crosses the boundary, for the dead as
+for the living). The UI stands up to four elders on fixed far-ground spots,
+newest nearest, dimmed with depth, injected into the scene *before* the
+day/night and season washes so weather falls over them. The generation rides
+the progress line (`Gen III · 64% through level 70`) rather than the header —
+a fifth header chip overflows the 248px card — with the elder roster on its
+title. The widget celebrates on a `generation` increase, because a rebirth
+takes the level *down* from 100 to 1 and the level-up check would miss the
+single biggest moment in a kandy's life.

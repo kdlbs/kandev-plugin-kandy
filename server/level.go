@@ -41,9 +41,19 @@ const (
 	levelK = 5100.0
 	levelB = 1.0545
 
-	// bandMax is the last level of the designed dull->awesome arc; beyond
-	// it the infinite prestige ladder (names, celestial scenes) continues.
+	// bandMax is the last level of the designed dull->awesome arc, and the
+	// creature's resting place: a kandy that reaches 100 STAYS there, in its
+	// final form, for a full level's worth of XP (~53k, about a month at the
+	// measured pace). Two and a half years of growth deserve to be looked at.
 	bandMax = 100
+
+	// ascendLevel is the level no kandy ever occupies. The award that would
+	// carry it past the band closes the arc instead: the creature retires
+	// into the scene background as an ancestor and a fresh egg with new DNA
+	// takes its place (see applyRebirth). Levels beyond bandMax are therefore
+	// unreachable in normal play; the mythic-ladder naming below stays as the
+	// fallback for a ledger that somehow carries more XP than one band.
+	ascendLevel = bandMax + 1
 
 	numArchetypes = 10 // body silhouettes (per-lineage identity)
 	numFamilies   = 12 // palette families (per-lineage identity)
@@ -235,7 +245,7 @@ var growthFlags = map[string]int{
 	"stardiadem":    85,
 	"lightpillars":  91,
 	"constellation": 97,
-	"burst":         100,
+	"burst":         bandMax,
 }
 
 func countUnlocked(levels []int, level int) int {
@@ -360,6 +370,25 @@ func stageName(salt uint32, level int) string {
 		name += " " + romanNumeral(gen+1)
 	}
 	return name
+}
+
+// generationLabel names the lineage's current generation. The first
+// generation is nameless — a kandy only becomes "Gen II" once there is an
+// elder standing behind it.
+func generationLabel(generation int) string {
+	if generation <= 1 {
+		return ""
+	}
+	return "Gen " + romanNumeral(generation)
+}
+
+// eggFlavor is the status line for an egg. The first egg of a lineage is
+// alone; every later one is watched by the elders in the background.
+func eggFlavor(generation int) string {
+	if generation <= 1 {
+		return "The egg is warm. Keep working."
+	}
+	return "A new egg. The elders watch from the treeline."
 }
 
 // romanNumeral covers the generations any real instance could ever reach.
