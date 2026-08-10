@@ -1,7 +1,5 @@
 # Changelog
 
-## [0.13.0] - 2026-08-09
-
 ### Added
 
 - **The cycle.** Level 100 is now the top of the arc rather than the point
@@ -24,7 +22,7 @@
 - `genlineage` dev subcommand: walks a lineage through the whole arc and emits
   the real webhook payloads, for offline rendering.
 
-### Changed
+### Security
 
 - Ledger seal bumped to v2 for the new fields. A genuine v1 signature is
   verified against the v1 scheme and re-sealed at v2 on first load — existing
