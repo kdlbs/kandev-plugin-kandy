@@ -40,6 +40,13 @@ func fullLedger() *ledger {
 		LastPetEffectAt:   "2026-07-26T00:00:00Z",
 		LastPassiveHealAt: "2026-07-25T00:00:00Z",
 		Counterfeit:       false,
+		Generation:        3,
+		HomeSalt:          991,
+		RebornAt:          "2026-07-10T00:00:00Z",
+		Ancestors: []ancestorRecord{
+			{Salt: 11, Level: 100, BornAt: "2026-01-01T00:00:00Z", RetiredAt: "2026-04-01T00:00:00Z"},
+			{Salt: 12, Level: 100, BornAt: "2026-04-01T00:00:00Z", RetiredAt: "2026-07-10T00:00:00Z", Scarred: true},
+		},
 	}
 }
 
@@ -96,6 +103,15 @@ func TestSeal_EveryFieldChangesTheSig(t *testing.T) {
 		"last_pet_effect_at":   func(l *ledger) { l.LastPetEffectAt = "" },
 		"last_passive_heal_at": func(l *ledger) { l.LastPassiveHealAt = "" },
 		"counterfeit":          func(l *ledger) { l.Counterfeit = true },
+		"generation":           func(l *ledger) { l.Generation++ },
+		"home_salt":            func(l *ledger) { l.HomeSalt++ },
+		"reborn_at":            func(l *ledger) { l.RebornAt = "" },
+		"ancestor_count":       func(l *ledger) { l.Ancestors = l.Ancestors[:1] },
+		"ancestor_salt":        func(l *ledger) { l.Ancestors[0].Salt++ },
+		"ancestor_level":       func(l *ledger) { l.Ancestors[1].Level = 42 },
+		"ancestor_born_at":     func(l *ledger) { l.Ancestors[0].BornAt = "" },
+		"ancestor_retired_at":  func(l *ledger) { l.Ancestors[1].RetiredAt = "" },
+		"ancestor_scarred":     func(l *ledger) { l.Ancestors[1].Scarred = false },
 	}
 	for field, mutate := range mutations {
 		l := fullLedger()

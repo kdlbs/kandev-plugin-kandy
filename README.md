@@ -46,6 +46,11 @@ an egg. It never stops.
   heartbreaking. It greets you when you open its card, notices when you've
   been gone a while, has opinions about 2am deploys, and occasionally talks
   in its sleep.
+- **The cycle**: **level 100** is the top of the arc, and your kandy rests
+  there — fully grown, in its final form, for a whole level's worth of work.
+  What happens when it finally outgrows even that is the one thing this
+  README will not tell you. It takes about two and a half years to find out,
+  and nothing is lost when you do.
 - **How XP works**: it's a secret. The recipe lives server-side and the UI is
   never told the breakdown — your kandy simply reacts to how much real work
   flows through the instance.
@@ -61,7 +66,8 @@ At night, it sleeps:
 ![Fast asleep](https://raw.githubusercontent.com/kdlbs/kandev-plugin-kandy/a228250c2914897a58182fe4e502dc39a6303559/night-light.png)
 
 What it grows into — the species your install rolls, the places it lives,
-what it looks like months from now — is yours to find out. Ship and see.
+what it looks like months from now, and what waits at the end of the arc —
+is yours to find out. Ship and see.
 
 ## Install
 

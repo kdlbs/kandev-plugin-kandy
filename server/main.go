@@ -20,5 +20,14 @@ func main() {
 		}
 		return
 	}
+	// Dev/demo path: walk a lineage through its rebirths and emit the real
+	// webhook payloads for each sampled level.
+	if len(os.Args) > 1 && os.Args[1] == "genlineage" {
+		if err := genLineage(os.Stdout, os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		return
+	}
 	pluginsdk.Serve(newPlugin())
 }

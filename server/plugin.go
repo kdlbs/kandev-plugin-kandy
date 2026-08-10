@@ -69,6 +69,18 @@ const (
 	// overflow the math even if mashed repeatedly.
 	debugGrantMax = int64(1_000_000_000)
 
+	// maxAncestors bounds the retired-elder list kept in state. The UI only
+	// stands a handful of them in the scene; the cap keeps the ledger row
+	// small no matter how many centuries of work land on this instance.
+	// Oldest are dropped first — the recent lineage is the visible one.
+	maxAncestors = 8
+
+	// maxRebirthsPerAward bounds applyRebirth's loop. Real awards are worth
+	// at most xpAgentCompleted, so one crossing per award is the ceiling in
+	// practice; the loop only exists because ?debug_grant can hand over a
+	// billion XP at once, and a bound is cheaper than trusting the caller.
+	maxRebirthsPerAward = 8
+
 	// hostCallTimeout bounds EVERY Host round-trip. kandev delivers events,
 	// polls the webhook and health-checks the plugin over one gRPC
 	// connection, so an unbounded Host call is the difference between "one
@@ -134,12 +146,53 @@ type ledger struct {
 	Sig         string `json:"sig,omitempty"`
 	Counterfeit bool   `json:"counterfeit,omitempty"`
 
+	// Rebirth (v0.13.0, see applyRebirth): growing past the band retires the
+	// creature into Ancestors and lays a fresh egg with new DNA. Generation
+	// counts the eggs this lineage has laid — 0 on pre-0.13 state, read
+	// everywhere through generationOf as 1. RebornAt (RFC3339) stamps the
+	// current egg's ascension so the UI can play it exactly once.
+	Generation int              `json:"generation,omitempty"`
+	Ancestors  []ancestorRecord `json:"ancestors,omitempty"`
+	RebornAt   string           `json:"reborn_at,omitempty"`
+	// HomeSalt fixes the BIOME for the whole lineage. The creature's own DNA
+	// (archetype, palette, style picks) is re-rolled on every rebirth, but
+	// the place is not: the elders stand in this scene, and a habitat that
+	// swapped out from under them would break the illusion. Zero means "not
+	// recorded yet" — read through homeSaltOf, which falls back to Salt, so
+	// pre-0.13 state and first-generation kandys are unaffected.
+	HomeSalt uint32 `json:"home_salt,omitempty"`
+
 	// transient marks a ledger that is NOT the persisted truth: a stand-in
 	// served while the Host broker is still connecting or after a state
 	// read failed. Unexported, so it never reaches JSON, the seal, or
 	// Host state. Mood must not read a transient ledger's timestamps as
 	// real activity — see sinceLastAward.
 	transient bool
+}
+
+// ancestorRecord is one retired kandy, kept forever (up to maxAncestors) so
+// it can stand in the scene background. Only its DNA salt and the few
+// presentation facts the background figure needs are stored — no XP, no
+// counters, no care history.
+type ancestorRecord struct {
+	Salt      uint32 `json:"salt"`
+	Level     int    `json:"level"`
+	BornAt    string `json:"born_at,omitempty"`
+	RetiredAt string `json:"retired_at,omitempty"`
+	Scarred   bool   `json:"scarred,omitempty"`
+}
+
+// ancestorView is an ancestor as the UI sees it: derived DNA only. The raw
+// salt never crosses this boundary, exactly like the living kandy's.
+type ancestorView struct {
+	Level       int    `json:"level"`
+	Archetype   int    `json:"archetype"`
+	Family      int    `json:"family"`
+	LineageSeed uint32 `json:"lineage_seed"`
+	StageName   string `json:"stage_name"`
+	Generation  int    `json:"generation"`
+	Scarred     bool   `json:"scarred"`
+	RetiredAt   string `json:"retired_at,omitempty"`
 }
 
 // kandyResponse is everything the UI is allowed to know. Archetype,
@@ -172,6 +225,13 @@ type kandyResponse struct {
 	Flavor       string              `json:"flavor"`
 	AliveSince   string              `json:"alive_since"`
 	TokenGrotto  tokenGrottoResponse `json:"token_grotto"`
+	// Generation is 1 for a first-of-its-line kandy and rises with every
+	// rebirth; Ancestors are the retired elders, oldest first, that the UI
+	// stands in the scene background. RebornAt stamps the current egg so the
+	// UI plays the ascension once and never again.
+	Generation int            `json:"generation"`
+	Ancestors  []ancestorView `json:"ancestors,omitempty"`
+	RebornAt   string         `json:"reborn_at,omitempty"`
 }
 
 type plugin struct {
@@ -514,13 +574,137 @@ func (p *plugin) awaitLedgerVersion(version int64) {
 }
 
 // awardXP is mutateLedger plus the per-award bookkeeping (sequence bump +
-// last-award timestamp for the mood).
+// last-award timestamp for the mood), and the one place a rebirth can start:
+// only real growth closes the band, never a pet, a bonk or a passive heal.
 func (p *plugin) awardXP(ctx context.Context, apply func(*ledger)) *ledger {
 	return p.mutateLedger(ctx, func(l *ledger) {
 		apply(l)
 		l.AwardSeq++
 		l.LastAwardAt = p.now().UTC().Format(time.RFC3339)
+		p.applyRebirth(l)
 	})
+}
+
+// generationOf reads the lineage generation, treating pre-0.13 state (no
+// field) as the first generation. Every reader goes through this.
+func generationOf(l *ledger) int {
+	if l.Generation < 1 {
+		return 1
+	}
+	return l.Generation
+}
+
+// homeSaltOf returns the salt the lineage's BIOME is derived from: the
+// founder's, once one has been recorded, otherwise the living creature's.
+func homeSaltOf(l *ledger) uint32 {
+	if l.HomeSalt != 0 {
+		return l.HomeSalt
+	}
+	return l.Salt
+}
+
+// applyRebirth closes the arc. Level bandMax (100) is a RESTING PLACE, not a
+// trigger: a kandy that gets there stays there, fully grown, for a whole
+// level's worth of XP — roughly a month of real work, after two and a half
+// years of raising it. The award that would carry it past the band is the one
+// that ascends it: the grown creature is filed into Ancestors — where the UI
+// stands it in the scene background, at its final size, forever — and a fresh
+// egg with new DNA takes its place.
+//
+// What crosses the rebirth, and why:
+//
+//   - XP: only the band is spent (xp -= thresholdXP(ascendLevel)). The
+//     overflow carries into the egg, so no shipped work is ever swallowed by
+//     the moment the ledger happens to tip over.
+//   - Temperament: HALVED, not cleared. The bond is with the keeper, not the
+//     body — a new creature has heard about you, but only second-hand.
+//   - Scarred: cleared. A scar is on a body, and this is a new one. The
+//     ancestor keeps its scar and wears it in the background.
+//   - Counterfeit: untouched. The mark is permanent and outlives every
+//     lineage, exactly as the tamper rebirth (seal.go) promises.
+//   - LastAwardAt / AwardSeq / the care timestamps: untouched. The egg was
+//     laid by work that just landed, so it starts elated, and no pet or bonk
+//     rate-limit window is reset by ascending.
+//
+// Counters restart with the creature. The Token Grotto is keyed by salt, so
+// the new lineage digs its own — the deliberate "token history follows the
+// lineage" rule the grotto already documents.
+//
+// Called under p.mu from awardXP's mutation; pure bookkeeping, no I/O.
+func (p *plugin) applyRebirth(l *ledger) {
+	for n := 0; levelForXP(l.XP) >= ascendLevel; n++ {
+		if n >= maxRebirthsPerAward {
+			// Only reachable through ?debug_grant handing over more XP than
+			// several full bands. Park on the last level of the band rather
+			// than spinning: the next award lands normally.
+			l.XP = math.Nextafter(thresholdXP(ascendLevel), 0)
+			return
+		}
+		now := p.now().UTC().Format(time.RFC3339)
+		l.Ancestors = append(l.Ancestors, ancestorRecord{
+			Salt: l.Salt,
+			// The elder is remembered at the last level it wore, not at the
+			// level that ascended it — nothing ever renders as ascendLevel.
+			Level:     bandMax,
+			BornAt:    l.CreatedAt,
+			RetiredAt: now,
+			Scarred:   l.Scarred,
+		})
+		if len(l.Ancestors) > maxAncestors {
+			l.Ancestors = append([]ancestorRecord(nil), l.Ancestors[len(l.Ancestors)-maxAncestors:]...)
+		}
+		l.XP -= thresholdXP(ascendLevel)
+		if l.XP < 0 {
+			l.XP = 0
+		}
+		if l.HomeSalt == 0 {
+			// First ascension: the founder's salt becomes the lineage's home,
+			// so every later generation hatches into the same biome.
+			l.HomeSalt = l.Salt
+		}
+		l.Salt = p.saltFunc()
+		l.Generation = generationOf(l) + 1
+		l.CreatedAt = now
+		l.RebornAt = now
+		l.Messages = 0
+		l.Turns = 0
+		l.AgentRuns = 0
+		l.Temperament = clampTemperament(l.Temperament / 2)
+		l.Scarred = false
+	}
+}
+
+// presentAncestors converts stored elders into the DNA-only view the UI
+// renders, oldest first. Generation numbers them: the first ancestor was
+// generation 1, and the living kandy is generationOf(l).
+func presentAncestors(l *ledger) []ancestorView {
+	if len(l.Ancestors) == 0 {
+		return nil
+	}
+	// The list is capped, so the oldest kept elder is not necessarily
+	// generation 1 — count back from the living generation instead.
+	first := generationOf(l) - len(l.Ancestors)
+	if first < 1 {
+		first = 1 // only reachable from an inconsistent (tampered) ledger
+	}
+	out := make([]ancestorView, 0, len(l.Ancestors))
+	for i, a := range l.Ancestors {
+		level := a.Level
+		if level < 1 {
+			level = bandMax
+		}
+		out = append(out, ancestorView{
+			Level:       level,
+			Archetype:   archetypeForLineage(a.Salt),
+			Family:      paletteFamilyForLineage(a.Salt),
+			LineageSeed: lineageSeed(a.Salt),
+			StageName:   stageName(a.Salt, level),
+			Generation:  first + i,
+			Scarred:     a.Scarred,
+			RetiredAt:   a.RetiredAt,
+		})
+	}
+	return out
 }
 
 // OnEvent feeds the kandy. It always returns nil — kandev retries
@@ -799,7 +983,11 @@ func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) kandyResp
 		sinceAward = *idleOverride
 	}
 	mood := moodFor(sinceAward)
+	generation := generationOf(l)
 	flavor := flavorText(l.Salt, level, mood)
+	if level <= 1 {
+		flavor = eggFlavor(generation)
+	}
 	// A recent petting lifts the displayed mood one tier (capped at happy)
 	// — presentational only; the base mood keeps decaying from
 	// last_award_at underneath.
@@ -839,7 +1027,7 @@ func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) kandyResp
 		Stage:           stageForLevel(level),
 		Archetype:       archetypeForLineage(l.Salt),
 		Family:          paletteFamilyForLineage(l.Salt),
-		Biome:           biomeForLineage(l.Salt),
+		Biome:           biomeForLineage(homeSaltOf(l)),
 		LineageSeed:     lineageSeed(l.Salt),
 		StageName:       stageName(l.Salt, level),
 		ProgressPct:     roundDownToTenth(progressPct(l.XP)),
@@ -853,6 +1041,9 @@ func (p *plugin) presentLedger(l *ledger, idleOverride *time.Duration) kandyResp
 		RefusingPets:    p.within(l.LastBonkedAt, distrustWindow),
 		Flavor:          flavor,
 		AliveSince:      l.CreatedAt,
+		Generation:      generation,
+		Ancestors:       presentAncestors(l),
+		RebornAt:        l.RebornAt,
 	}
 }
 

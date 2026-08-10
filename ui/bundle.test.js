@@ -137,11 +137,13 @@ test("photo model allowlists visible presentation fields and categorical tempera
   );
 
   assert.deepEqual(Object.keys(model).sort(), [
+    "ancestors",
     "archetype",
     "biome",
     "counterfeit",
     "dayPhase",
     "family",
+    "generation",
     "habitat",
     "level",
     "lineageSeed",
@@ -3677,4 +3679,216 @@ test("gaze: pupils track the pointer, scaled by how much it trusts you", () => {
   // Closed eyes cannot follow anything: an asleep card renders no pupils.
   const asleep = render.kandyCard(jsx, sampleKandy({ archetype: 8, level: 40 }), null, null, 23.9);
   assert.equal(collectPupils(asleep).length, 0, "asleep: nothing to track with");
+});
+
+// --- rebirth: the elders in the background (v0.13.0) -----------------------
+
+function sampleAncestor(overrides = {}) {
+  return Object.assign(
+    {
+      level: 100,
+      archetype: 1,
+      family: 2,
+      lineage_seed: 4242,
+      stage_name: "Empyrean Willow",
+      generation: 1,
+      scarred: false,
+    },
+    overrides,
+  );
+}
+
+function ancestorGroups(node) {
+  const found = [];
+  visit(node, (n) => {
+    const key = n.props && n.props.key;
+    if (typeof key === "string" && key.startsWith("ancestor")) found.push(n);
+  });
+  return found;
+}
+
+test("ancestors: absent by default, so every existing caller renders identically", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const plain = render.sceneFor(0, 24, 5150, 13, "winter");
+  assert.equal(
+    JSON.stringify(render.sceneFor(0, 24, 5150, 13, "winter", undefined)),
+    JSON.stringify(plain),
+  );
+  assert.equal(JSON.stringify(render.sceneFor(0, 24, 5150, 13, "winter", [])), JSON.stringify(plain));
+  assert.equal(ancestorGroups(plain.props).length, 0);
+  assert.equal(render.ancestorFigures(jsx, null).length, 0);
+  assert.equal(render.ancestorFigures(jsx, []).length, 0);
+});
+
+test("ancestors: newest elder stands nearest, and the scene caps the crowd", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const spots = render.ancestorSpots;
+  // Oldest first, exactly as the webhook sends them.
+  const elders = [1, 2, 3, 4, 5, 6].map((g) =>
+    sampleAncestor({ generation: g, lineage_seed: 1000 + g, archetype: g % 10 }),
+  );
+
+  const figures = render.ancestorFigures(jsx, elders);
+  assert.equal(figures.length, spots.length, "only as many elders as there are spots");
+
+  // The newest elder (generation 6) takes spot 0: nearest, largest, least
+  // faded. Opacity and scale then fall away with depth.
+  const scaleOf = (n) => Number(/scale\(([\d.]+)\)/.exec(n.props.transform)[1]);
+  for (let i = 1; i < figures.length; i++) {
+    assert.ok(figures[i].props.opacity < figures[i - 1].props.opacity, `spot ${i} is fainter`);
+    assert.ok(scaleOf(figures[i]) < scaleOf(figures[i - 1]), `spot ${i} is smaller`);
+  }
+  // Spot 0 must be the LAST entry of the list (the most recently retired).
+  // A narrower frame (the Photo Booth crops the scene's sides) pulls the
+  // elders inward instead of letting the frame saw them in half.
+  const framed = render.ancestorFigures(jsx, elders, { min: 46, max: 194 });
+  const xOf = (n) => Number(/translate\(([-\d.]+) /.exec(n.props.transform)[1]);
+  assert.ok(xOf(framed[0]) > xOf(figures[0]), "the left elder moves inward");
+  assert.ok(xOf(framed[1]) < xOf(figures[1]), "the right elder moves inward");
+
+  const newestAlone = render.ancestorFigures(jsx, [elders[5]]);
+  assert.equal(
+    JSON.stringify(newestAlone[0]),
+    JSON.stringify(figures[0]),
+    "spot 0 renders the newest elder",
+  );
+});
+
+test("ancestors: static, dimmed, and never in the living kandy's way", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const figures = render.ancestorFigures(jsx, [sampleAncestor(), sampleAncestor({ generation: 2 })]);
+  for (const figure of figures) {
+    assert.equal(figure.props.className, "kandev-kandy-static", "an elder never bobs or blinks");
+    assert.ok(figure.props.opacity > 0 && figure.props.opacity < 1, "dimmed by distance");
+    assert.equal(figure.props["aria-hidden"], "true");
+  }
+  // The two NEAR spots sit clear of the wander corridor: the living kandy
+  // strolls ±35px around the 124px-wide centre of a 248px card, which is
+  // scene x 63..177 before its own body is counted.
+  const spots = render.ancestorSpots;
+  assert.ok(spots[0].x < 63 && spots[1].x > 177, "near elders are out of the walking lane");
+  for (const spot of spots) {
+    assert.ok(spot.x > 0 && spot.x < 240, "every elder stands inside the frame");
+    assert.ok(spot.y > 88 && spot.y < 110, "and on the ground, not in the sky");
+  }
+});
+
+test("ancestors: drawn into the scene under the night and season washes", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const elders = [sampleAncestor()];
+  const night = render.sceneFor(0, 24, 5150, 23, "winter", elders);
+  const props = night.props;
+  const flat = [];
+  visit(props, (n) => flat.push(n));
+  const elderIndex = flat.findIndex((n) => String((n.props && n.props.key) || "").startsWith("ancestor"));
+  const washIndex = flat.findIndex((n) => String((n.props && n.props.key) || "").indexOf("wash") >= 0);
+  assert.ok(elderIndex >= 0, "the elder is a scene prop");
+  assert.ok(washIndex > elderIndex, "the night wash paints over the elder, not under it");
+});
+
+test("ancestors: the card names the generation and lists the elders", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+
+  // A first-of-its-line kandy says nothing about generations.
+  const alone = render.kandyCard(jsx, sampleKandy({ mood: "content" }), null, null, 13);
+  assert.equal(textContent(alone).includes("Gen "), false);
+  assert.equal(render.generationSummary(sampleKandy()), null);
+  assert.equal(render.generationSummary(sampleKandy({ generation: 1 })), null);
+
+  const data = sampleKandy({
+    mood: "content",
+    generation: 3,
+    ancestors: [
+      sampleAncestor({ generation: 1, stage_name: "Eternal Blip" }),
+      sampleAncestor({ generation: 2, stage_name: "Astral Chonk" }),
+    ],
+  });
+  const summary = render.generationSummary(data);
+  assert.equal(summary.label, "Gen III");
+  assert.equal(summary.elders, 2);
+  // Newest elder first in the roster.
+  assert.ok(summary.roster.indexOf("Astral Chonk") < summary.roster.indexOf("Eternal Blip"));
+  assert.ok(summary.roster.includes("retired at Lv 100"));
+
+  const card = render.kandyCard(jsx, data, null, null, 13);
+  assert.ok(textContent(card).includes("Gen III · 64% through level 12"));
+  const rostered = findNode(card, (n) => n.props && n.props.title === summary.roster);
+  assert.ok(rostered, "the roster hangs off the progress line");
+  // The header row stays at four children: a fifth chip overflows 248px.
+  const header = findNode(
+    card,
+    (n) =>
+      n.props &&
+      n.props.style &&
+      n.props.style.display === "flex" &&
+      n.props.style.alignItems === "center" &&
+      textContent(n).includes("Lv 12"),
+  );
+  assert.equal(header.props.children.filter(Boolean).length, 4);
+});
+
+test("rebirth: the widget celebrates a generation change, not a level drop", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  const value = render.generationValue;
+  assert.equal(value({}), 1, "pre-0.13 servers omit the field");
+  assert.equal(value({ generation: 0 }), 1);
+  assert.equal(value({ generation: 4 }), 4);
+
+  const before = render.rememberedProgress({ level: 99, award_seq: 12, generation: 1 });
+  const after = render.rememberedProgress({ level: 1, award_seq: 13, generation: 2 });
+  assert.equal(JSON.stringify(before), JSON.stringify({ level: 99, award_seq: 12, generation: 1 }));
+  assert.ok(
+    value(after) > value(before),
+    "ascension is visible even though the level went DOWN 99 -> 1",
+  );
+  assert.ok(after.level < before.level, "a level-up check alone would miss it");
+
+  // Rebirth gets the full-size celebration and its own flavor line.
+  assert.equal(render.bigCelebration({ kind: "rebirth" }), true);
+  assert.equal(render.bigCelebration({ kind: "levelup" }), true);
+  assert.equal(render.bigCelebration({ kind: "gain" }), false);
+  assert.equal(render.bigCelebration(null), false);
+  const card = render.kandyCard(
+    jsx,
+    sampleKandy({ level: 1, generation: 2, mood: "elated", flavor: "server line" }),
+    { kind: "rebirth" },
+    null,
+    13,
+  );
+  assert.ok(textContent(card).includes("A new egg settles in the grass."));
+});
+
+test("rebirth: roman numerals, and the portrait carries the lineage", () => {
+  const render = loadBundle().plugin.__render;
+  render.setJsx(jsx);
+  assert.equal(render.romanNumeral(1), "I");
+  assert.equal(render.romanNumeral(4), "IV");
+  assert.equal(render.romanNumeral(14), "XIV");
+  assert.equal(render.romanNumeral(0), "I", "never blank");
+
+  const elders = [1, 2, 3, 4, 5].map((g) => sampleAncestor({ generation: g }));
+  const trimmed = render.photoAncestorsFor(elders);
+  assert.equal(trimmed.length, render.ancestorSpots.length, "bounded like the card");
+  assert.equal(
+    Object.keys(trimmed[0]).sort().join(","),
+    "archetype,family,level,lineage_seed,scarred",
+  );
+  assert.equal(render.photoAncestorsFor(undefined).length, 0);
+
+  const model = render.photoModelFor(sampleKandy({ generation: 5, ancestors: elders }), 13);
+  assert.equal(model.generation, 5);
+  assert.equal(model.ancestors.length, render.ancestorSpots.length);
+  const portrait = render.photoPortraitSvg(jsx, model, "light");
+  assert.ok(textContent(portrait).includes("GEN V"));
+  assert.ok(ancestorGroups(portrait).length > 0, "the elders stand in the portrait scene too");
+
+  const solo = render.photoModelFor(sampleKandy(), 13);
+  assert.equal(solo.generation, 1);
+  assert.equal(textContent(render.photoPortraitSvg(jsx, solo, "light")).includes("GEN"), false);
 });
