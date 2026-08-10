@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.0] - 2026-08-10
+
+### Changed
+
+- chore(release): park the version on the prerelease convention (a89f5a1)
+- feat: the arc closes at the top of the band, and begins again (#18) (a6586ee)
+- fix: never hold the plugin lock across a host RPC (#17) (8c1da93)
+
+
 ### Added
 
 - **The cycle.** Level 100 is now the top of the arc rather than the point
