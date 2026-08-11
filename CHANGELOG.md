@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1] - 2026-08-11
+
+### Changed
+
+- fix(ui): keep Kandy visible after Token Grotto walk-in (#19) (503a3a1)
+
+
 ## [0.13.0] - 2026-08-10
 
 ### Changed
