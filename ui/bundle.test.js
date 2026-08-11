@@ -402,12 +402,14 @@ test("the hub renders its empty state instead of a door grid when there are no c
   const hub = render.tokenGrottoHub(jsx, "DialogTitle", model, { type: "kandy" }, { current: null }, () => {}, () => {}, () => {});
 
   const empty = findNode(hub, (node) => node.props && node.props.className === "kandev-kandy-grotto-empty");
-  assert.ok(empty, "renders the empty-state block instead of a door grid");
-  assert.match(textContent(hub), /No chambers yet\./);
-  assert.match(textContent(hub), /Kandy is listening\./);
-  // Kandy still stands in the empty cave to greet the visitor.
-  assert.ok(findNode(empty, (node) => node.type === "kandy"), "the creature renders inside the empty state");
-  // Nothing to open: nothing wired up as a door.
+  assert.ok(empty, "renders the empty shore instead of a door grid");
+  assert.equal(empty.props["aria-label"], "No chambers yet");
+  assert.doesNotMatch(textContent(hub), /No chambers yet\./);
+  assert.doesNotMatch(textContent(hub), /Kandy is listening\./);
+  assert.equal(findNode(empty, (node) => node.props && /grotto-empty-(copy|door)/.test(node.props.className || "")), null);
+  const emptyKandy = findNode(empty, (node) => node.props && node.props.className === "kandev-kandy-grotto-kandy");
+  assert.ok(emptyKandy, "empty hub docks Kandy in the floor stacking row");
+  assert.ok(findNode(emptyKandy, (node) => node.type === "kandy"), "the creature renders inside the floor row");
   assert.equal(findNode(hub, (node) => node.props && node.props["data-grotto-agent"]), null);
 });
 
@@ -1358,17 +1360,21 @@ test("Kandy walks between the surface and the grotto instead of the panel slidin
   assert.match(css, /\.kandev-kandy-grotto-room-scene \.kandev-kandy-grotto-kandy\{margin-top:auto\}/);
   assert.match(css, /\.kandev-kandy-grotto-kandy\.is-left\{justify-content:flex-start;padding-left:18px\}/);
   assert.match(css, /\.kandev-kandy-grotto-kandy\.is-right\{justify-content:flex-end;padding-right:18px\}/);
+  // Above backdrop/stage after the walk class clears; not over pile hits.
+  assert.match(css, /\.kandev-kandy-grotto-kandy\{position:relative;z-index:2;pointer-events:none;/);
   assert.match(css, /\.kandev-kandy-walkin-shore\{animation:kandev-kandy-walkin-shore \.76s/);
   assert.match(css, /\.kandev-kandy-walkin-side\{animation:kandev-kandy-walkin-side \.7s/);
-  // The chamber walk-in is flat. Any vertical component would start Kandy below
-  // the floor of a scene that clips, hiding the walk it is supposed to show.
+  // Flat chamber walk-in: a vertical drop starts below the clipped floor.
   assert.match(css, /@keyframes kandev-kandy-walkin-floor\{0%\{transform:translateX\(-96px\);opacity:0\}/);
   assert.match(css, /@keyframes kandev-kandy-walkin-floor-right\{0%\{transform:translateX\(96px\);opacity:0\}/);
-  // The walk only reads if its travel stays within the wall inset plus the
-  // creature's width; anything longer runs out of frame in a clipped scene.
+  assert.match(css, /@keyframes kandev-kandy-walkin-floor\{[^"]*100%\{transform:translateX\(0\);opacity:1\}/);
+  assert.match(css, /@keyframes kandev-kandy-walkin-floor-right\{[^"]*100%\{transform:translateX\(0\);opacity:1\}/);
+  assert.match(css, /@keyframes kandev-kandy-walkoff\{[^"]*100%\{transform:translateX\(190px\);opacity:0\}/);
+  assert.match(css, /\.kandev-kandy-walkin-floor\{animation:kandev-kandy-walkin-floor \.9s linear both\}/);
+  assert.match(css, /\.kandev-kandy-walkin-floor-right\{animation:kandev-kandy-walkin-floor-right \.9s linear both\}/);
+  // Travel stays within the wall inset plus creature width, or the clipped
+  // scene ends the trip off-screen.
   assert.ok(96 <= 18 + 64 + 24, "chamber walk-in travel stays inside the visible run");
-  assert.match(css, /\.kandev-kandy-walkin-floor\{animation:kandev-kandy-walkin-floor \.9s/);
-  assert.match(css, /\.kandev-kandy-walkin-floor-right\{animation:kandev-kandy-walkin-floor-right \.9s/);
   assert.doesNotMatch(css, /@keyframes kandev-kandy-walkin-floor(?:-right)?\{[^}]*translate\(/);
   assert.match(
     css,
@@ -1539,6 +1545,12 @@ test("the grotto paints an inline cave behind every scene", () => {
   // Content rides above the backdrop.
   assert.match(css, /\.kandev-kandy-grotto-hub\{position:relative;z-index:1/);
   assert.match(css, /\.kandev-kandy-grotto-room\{position:relative;z-index:1/);
+  // Room Kandy sits above backdrop/stage; empty hub uses the same shore dock.
+  assert.match(css, /\.kandev-kandy-grotto-kandy\{position:relative;z-index:2;pointer-events:none;/);
+  assert.match(css, /\.kandev-kandy-token-stage\{position:absolute;inset:0;z-index:1/);
+  assert.match(css, /\.kandev-kandy-grotto-backdrop\{position:absolute;inset:0;z-index:0/);
+  assert.match(css, /\.kandev-kandy-grotto-empty\{position:relative;z-index:1;flex:1[^}]*justify-content:flex-end/);
+  assert.doesNotMatch(css, /kandev-kandy-grotto-empty-(?:copy|door)/);
 
   const backdrop = render.grottoBackdrop(jsx);
   assert.equal(backdrop.type, "svg");
@@ -1582,7 +1594,7 @@ test("the grotto paints an inline cave behind every scene", () => {
   assert.match(css, /\.kandev-kandy-grotto-subtitle\{[^}]*color:var\(--grotto-ink-dim\)/);
   assert.match(css, /\.kandev-kandy-grotto-door\{[^}]*color:var\(--grotto-ink\)/);
   assert.match(css, /\.kandev-kandy-token-pile-compact\{fill:var\(--grotto-ink-dim\)/);
-  assert.match(css, /\.kandev-kandy-grotto-empty\{[^}]*color:var\(--grotto-ink-dim\)/);
+  assert.match(css, /\.kandev-kandy-grotto-empty-msg\{[^}]*color:var\(--grotto-ink-dim\)/);
 });
 
 test("the cave mouth looks out on the lineage's own habitat, at its own hour", () => {

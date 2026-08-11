@@ -2771,7 +2771,10 @@ var KANDY_CSS =
   ".kandev-kandy-grotto-scene{position:relative;isolation:isolate;overflow:hidden;display:flex;flex-direction:column;min-height:340px;padding:18px;box-sizing:border-box;background:#0d1418}" +
   ".kandev-kandy-grotto-backdrop{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;pointer-events:none}" +
   ".kandev-kandy-token-stage{position:absolute;inset:0;z-index:1;width:100%;height:100%;display:block;pointer-events:none;overflow:visible}" +
-  ".kandev-kandy-grotto-hub{position:relative;z-index:1;flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(70px,auto) minmax(0,1fr);gap:14px 24px;align-content:start}.kandev-kandy-grotto-kandy{display:flex;align-items:flex-end;justify-content:center;min-height:72px}.kandev-kandy-grotto-room-scene .kandev-kandy-grotto-kandy{margin-top:auto}.kandev-kandy-grotto-kandy.is-left{justify-content:flex-start;padding-left:18px}.kandev-kandy-grotto-kandy.is-right{justify-content:flex-end;padding-right:18px}.kandev-kandy-grotto-kandy svg{filter:drop-shadow(0 8px 8px rgba(0,0,0,.24))}" +
+  // Room Kandy is a scene sibling of the absolute floor art — without its own
+  // stack it sinks under the backdrop once the walk class (and its transform)
+  // clears. pointer-events:none keeps the full-width row off pile hit targets.
+  ".kandev-kandy-grotto-hub{position:relative;z-index:1;flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(70px,auto) minmax(0,1fr);gap:14px 24px;align-content:start}.kandev-kandy-grotto-kandy{position:relative;z-index:2;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;min-height:72px}.kandev-kandy-grotto-room-scene .kandev-kandy-grotto-kandy{margin-top:auto}.kandev-kandy-grotto-kandy.is-left{justify-content:flex-start;padding-left:18px}.kandev-kandy-grotto-kandy.is-right{justify-content:flex-end;padding-right:18px}.kandev-kandy-grotto-kandy svg{filter:drop-shadow(0 8px 8px rgba(0,0,0,.24))}" +
   ".kandev-kandy-grotto-door{position:relative;min-width:0;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--grotto-edge);background:linear-gradient(180deg,rgba(20,30,34,.72),rgba(6,11,14,.82));color:var(--grotto-ink);box-shadow:inset 0 -14px 20px rgba(0,0,0,.3),0 8px 18px rgba(0,0,0,.35);cursor:pointer;text-align:left}" +
   ".kandev-kandy-grotto-door.is-left{margin-right:auto;border-radius:12px 34px 34px 12px;padding-right:16px}" +
   ".kandev-kandy-grotto-door.is-right{margin-left:auto;flex-direction:row-reverse;border-radius:34px 12px 12px 34px;padding-left:16px;text-align:right}" +
@@ -2796,7 +2799,9 @@ var KANDY_CSS =
   ".kandev-kandy-grotto-manifest-open:hover{color:#ffe4a8}" +
   ".kandev-kandy-grotto-manifest-name{min-width:0;overflow-wrap:anywhere;text-align:left}" +
   ".kandev-kandy-grotto-door-overflow.is-revealed{background:linear-gradient(180deg,rgba(255,214,150,.16),rgba(0,0,0,.26))}" +
-  ".kandev-kandy-grotto-boundary{margin:16px 0 0;color:var(--grotto-ink-dim);font-size:10px;text-align:center}.kandev-kandy-grotto-empty{min-height:270px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--grotto-ink-dim)}.kandev-kandy-grotto-empty-door{font-size:58px;line-height:1;opacity:.45}" +
+  ".kandev-kandy-grotto-boundary{margin:16px 0 0;color:var(--grotto-ink-dim);font-size:10px;text-align:center}" +
+  // Empty hub: shore dock only. Pile-less chambers use empty-msg instead.
+  ".kandev-kandy-grotto-empty{position:relative;z-index:1;flex:1;min-height:270px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}.kandev-kandy-grotto-empty-msg{flex:1;min-height:240px;display:flex;align-items:center;justify-content:center;color:var(--grotto-ink-dim);text-align:center;font-size:12px}" +
   "@media (max-width:480px){.kandev-kandy-grotto-hub{grid-template-columns:1fr;grid-template-rows:auto!important;gap:10px}.kandev-kandy-grotto-hub>*{grid-column:1!important;grid-row:auto!important}.kandev-kandy-grotto-door{margin:0!important;border-radius:14px!important}.kandev-kandy-grotto-door::after{display:none}.kandev-kandy-grotto-scene{padding:12px}.kandev-kandy-grotto-bar{gap:6px;padding:8px}.kandev-kandy-grotto-subtitle{font-size:9px}.kandev-kandy-grotto-action{padding:0 8px}}" +
   // Kandy walks between the surface and the grotto: it strolls out of frame,
   // the panel swaps while it is gone, then it walks back in — down from the
@@ -6060,11 +6065,8 @@ function tokenGrottoHub(h, DialogTitle, model, creature, panelRef, onOpenRoom, o
   if (!model.rooms.length) {
     body = h(
       "div",
-      { className: "kandev-kandy-grotto-empty" },
-      creature,
-      h("div", { className: "kandev-kandy-grotto-empty-door", "aria-hidden": "true" }, "⌂"),
-      h("strong", null, "No chambers yet."),
-      h("span", null, "Kandy is listening."),
+      { className: "kandev-kandy-grotto-empty", "aria-label": "No chambers yet" },
+      h("div", { className: "kandev-kandy-grotto-kandy" }, creature),
     );
   } else {
     var placements = hubDoorPlacement(model.rooms, HUB_DOOR_CAP);
@@ -6392,7 +6394,7 @@ function tokenGrottoRoom(h, DialogTitle, grotto, agentType, revealedKey, panelRe
       chamberBackdrop(h),
       placements.length
         ? tokenPileStage(h, room, placements, revealedKey, onToggle, (lineageSeed || 1) >>> 0)
-        : h("div", { className: "kandev-kandy-grotto-room" }, h("div", { className: "kandev-kandy-grotto-empty" }, "No model piles yet.")),
+        : h("div", { className: "kandev-kandy-grotto-room" }, h("div", { className: "kandev-kandy-grotto-empty-msg" }, "No model piles yet.")),
       merged && revealedKey === MERGED_PILE_KEY ? tokenPileManifest(h, merged) : null,
       h("div", { className: "kandev-kandy-grotto-kandy is-" + (side === "left" ? "left" : "right") }, creature),
     ),
