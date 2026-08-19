@@ -25,6 +25,10 @@ an egg. It never stops.
   exact lifetime count. A chamber floor holds ten piles: the biggest and the
   most recently used models get a spot, and anything left over is merged into
   one pile that opens into a list.
+- **Kandy Jar (optional)**: pair this instance with a shared Kandy Jar server
+  from the full Kandy dialog. Kandy publishes a deliberately small display
+  snapshot for shared rooms and leaderboards; disconnecting revokes the
+  publication and removes the local publisher credential.
 - **Moods**: it celebrates when XP lands and gets bored, sad, and eventually
   gloomy (rain cloud included) when nothing ships for days.
 - **Care**: left-click drops it a treat; right-click dumps a bucket of cold
@@ -148,8 +152,9 @@ cap because each chamber is part of Kandy's history.
 Both ledgers use domain-separated HMAC-SHA256 signatures backed by one key in
 kandev's encrypted secrets vault. Grotto corruption restarts only token history;
 it cannot counterfeit or rebirth Kandy. The browser UI uses the local clock
-only for day/night and sleep, and calls only Kandy's Kandev-hosted webhooks; it
-has no external service or analytics integration.
+only for day/night and sleep. It calls Kandy's authenticated Kandev-hosted
+webhooks and the three declared, authenticated Kandy Jar actions; it never
+contacts a Jar server directly. Kandy has no analytics integration.
 
 Kandy does not use, request, or spend LLM tokens. It observes aggregate usage
 reported by existing agent work and adds no model calls. Token count is not
@@ -179,6 +184,46 @@ lineage starts an empty grotto; rollback ignores the separate state; re-upgrade
 resumes it when lineage still matches. Uninstall removes the Kandy and ends
 its grotto history.
 
+## Kandy Jar security and operation
+
+Kandy Jar is opt-in. The plugin setting `jar_origin` defaults to
+`https://jar.kandev.ai`; operators can point it at a self-hosted server. The
+value must be an origin with no path, credentials, query, or fragment. HTTPS
+is mandatory except for HTTP on a loopback address during local development.
+The connect action never accepts an origin, and redirects are not followed.
+Kandy requires Kandev 0.89.1 or later because that release restricts this
+instance-global origin and every other plugin-management mutation to admins.
+
+Pairing uses a one-time `KJ-XXXX-XXXX-XXXX` code. Kandy generates a random
+publisher token locally and sends only its SHA-256 hash while redeeming that
+code. The plaintext token is stored only in Kandev's encrypted secrets vault;
+it is never returned to the browser, written to plugin state, or logged. The
+vault record binds the token to the exact Jar origin, so a recovery credential
+is never reused after an administrator changes servers. Ambiguous Host writes
+retain that origin-bound credential until the exact sealed state can be
+confirmed. The first verified Kandev actor to connect owns the instance-wide
+connection, and other actors cannot inspect, replace, or disconnect it.
+
+Only an explicit allowlist of appearance and public progression fields is
+published. It excludes XP, activity and care counters, raw temperament,
+timestamps, task/session IDs, prompts, messages, agent/model/provider data,
+Token Grotto usage, seals, and credentials. Ancestors are capped at eight and
+use their own smaller allowlist. Snapshot requests are capped at 16 KiB.
+
+Publishing uses a persisted revisioned outbox: an unacknowledged snapshot is
+retried byte-for-byte, later changes are coalesced, and process restart resumes
+the pending revision. The complete connection and outbox document is protected
+by a domain-separated HMAC using Kandy's vault-backed integrity key. A missing
+or invalid seal fails closed before the publisher credential is read or any
+network request is made. Unsigned state from a pre-Jar development build is not
+trusted automatically; an operator must remove that stale connection state and
+pair again.
+
+Disconnect first revokes the remote publication, then deletes the vault
+credential and local connection state. Before uninstalling the plugin,
+disconnect it (or remove the installation from the Jar server) so the public
+snapshot is explicitly revoked.
+
 ## Development
 
 Developed against a local checkout of the kandev monorepo (see the
@@ -202,5 +247,7 @@ its `checksums.txt` asset.
 
 Two aggregate JSON ledgers in kandev Host state (scope `instance`) participate
 in kandev backups, survive plugin upgrades, and are removed on uninstall.
+An optional Kandy Jar connection adds one non-secret instance-state document;
+its publisher token lives separately in Kandev's encrypted secrets vault.
 Uninstalling the plugin is, in the kindest possible terms, the end of that
 kandy's story and its Token Grotto.
