@@ -191,8 +191,9 @@ Kandy Jar is opt-in. The plugin setting `jar_origin` defaults to
 value must be an origin with no path, credentials, query, or fragment. HTTPS
 is mandatory except for HTTP on a loopback address during local development.
 The connect action never accepts an origin, and redirects are not followed.
-Kandy requires Kandev 0.89.1 or later because that release restricts this
-instance-global origin and every other plugin-management mutation to admins.
+Kandy requires Kandev 0.91.1 or later because that release restricts this
+instance-global origin, plugin-management mutations, and Jar connect/disconnect
+actions to administrators.
 
 Pairing uses a one-time `KJ-XXXX-XXXX-XXXX` code. Kandy generates a random
 publisher token locally and sends only its SHA-256 hash while redeeming that
@@ -201,8 +202,11 @@ it is never returned to the browser, written to plugin state, or logged. The
 vault record binds the token to the exact Jar origin, so a recovery credential
 is never reused after an administrator changes servers. Ambiguous Host writes
 retain that origin-bound credential until the exact sealed state can be
-confirmed. The first verified Kandev actor to connect owns the instance-wide
-connection, and other actors cannot inspect, replace, or disconnect it.
+confirmed. Kandev authorizes connection changes before invoking the plugin:
+authenticated members may inspect non-secret status, while administrators may
+connect or disconnect the instance-wide publication. The connecting actor ID is
+retained only as sealed audit metadata; it does not prevent another administrator
+from recovering the connection.
 
 Only an explicit allowlist of appearance and public progression fields is
 published. It excludes XP, activity and care counters, raw temperament,
@@ -227,7 +231,9 @@ snapshot is explicitly revoked.
 ## Development
 
 Developed against a local checkout of the kandev monorepo (see the
-`replace` directive in `go.mod`).
+`replace` directive in `go.mod`). Reproducible CI and release builds pin the
+Kandev SDK to `85abe02e26e5853f1556056155c50d790192a964`, the action-access
+security baseline intended for Kandev 0.91.1.
 
 ```sh
 make test        # Go unit tests + dependency-free UI render/clipboard tests

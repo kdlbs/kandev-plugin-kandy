@@ -1,7 +1,7 @@
 id: "kandev-plugin-kandy"
 api_version: 1
 version: "0.13.1"
-min_kandev_version: "0.89.1"
+min_kandev_version: "0.91.1"
 display_name: "Kandy"
 description: "A tiny creature that grows as your agents work — it feeds on agent runs, turns, and conversation, and evolves forever in your session top bar."
 author: "kandev"
@@ -35,12 +35,15 @@ capabilities:
 actions:
   - key: "jar.connect"
     scope: "workspace"
+    access: "admin"
     max_body_bytes: 1024
   - key: "jar.disconnect"
     scope: "workspace"
+    access: "admin"
     max_body_bytes: 1024
   - key: "jar.status"
     scope: "workspace"
+    access: "authenticated"
     max_body_bytes: 1024
 
 webhooks:

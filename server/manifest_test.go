@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,7 @@ func TestManifest_SecuresKandySurfacesAndDeclaresJarActions(t *testing.T) {
 		Actions []struct {
 			Key          string `yaml:"key"`
 			Scope        string `yaml:"scope"`
+			Access       string `yaml:"access"`
 			MaxBodyBytes int    `yaml:"max_body_bytes"`
 		} `yaml:"actions"`
 		ConfigSchema struct {
@@ -31,7 +33,7 @@ func TestManifest_SecuresKandySurfacesAndDeclaresJarActions(t *testing.T) {
 		} `yaml:"config_schema"`
 	}
 	require.NoError(t, yaml.Unmarshal(raw, &manifest))
-	require.Equal(t, "0.89.1", manifest.MinKandevVersion)
+	require.Equal(t, "0.91.1", manifest.MinKandevVersion)
 
 	accessByKey := map[string]string{}
 	for _, webhook := range manifest.Webhooks {
@@ -42,22 +44,36 @@ func TestManifest_SecuresKandySurfacesAndDeclaresJarActions(t *testing.T) {
 	}
 
 	actions := map[string]struct {
-		scope string
-		max   int
+		scope  string
+		access string
+		max    int
 	}{}
 	for _, action := range manifest.Actions {
 		actions[action.Key] = struct {
-			scope string
-			max   int
-		}{action.Scope, action.MaxBodyBytes}
+			scope  string
+			access string
+			max    int
+		}{action.Scope, action.Access, action.MaxBodyBytes}
 	}
 	for _, key := range []string{"jar.connect", "jar.disconnect", "jar.status"} {
 		require.Equal(t, "workspace", actions[key].scope, key)
 		require.Equal(t, 1024, actions[key].max, key)
 	}
+	require.Equal(t, "admin", actions["jar.connect"].access)
+	require.Equal(t, "admin", actions["jar.disconnect"].access)
+	require.Equal(t, "authenticated", actions["jar.status"].access)
 
 	jarOrigin, ok := manifest.ConfigSchema.Properties["jar_origin"]
 	require.True(t, ok)
 	require.Equal(t, "string", jarOrigin.Type)
 	require.Equal(t, "https://jar.kandev.ai", jarOrigin.Default)
+}
+
+func TestBuildAndReleasePinTheSecureKandevSDKRevision(t *testing.T) {
+	const revision = "85abe02e26e5853f1556056155c50d790192a964"
+	for _, path := range []string{"../.github/workflows/build.yml", "../.github/workflows/release.yml"} {
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, 1, strings.Count(string(raw), "ref: "+revision), path)
+	}
 }
