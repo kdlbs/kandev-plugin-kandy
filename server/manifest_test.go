@@ -70,7 +70,7 @@ func TestManifest_SecuresKandySurfacesAndDeclaresJarActions(t *testing.T) {
 }
 
 func TestBuildAndReleasePinTheSecureKandevSDKRevision(t *testing.T) {
-	const revision = "85abe02e26e5853f1556056155c50d790192a964"
+	const revision = "9f5ffd70b9265bdf07e3a2448af363b162525bb0"
 	for _, path := range []string{"../.github/workflows/build.yml", "../.github/workflows/release.yml"} {
 		raw, err := os.ReadFile(path)
 		require.NoError(t, err)
