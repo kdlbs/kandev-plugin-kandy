@@ -164,6 +164,7 @@ func (h *fakeHost) EmitEvent(context.Context, string, map[string]any) error { re
 func newTestPlugin(t *testing.T, host *fakeHost) *plugin {
 	t.Helper()
 	p := newPlugin()
+	p.skipJarResumeProbe = true
 	p.now = func() time.Time { return time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC) }
 	p.saltFunc = func() uint32 { return 42 }
 	p.SetHost(host)
@@ -316,6 +317,30 @@ func TestWebhook_UnknownKey(t *testing.T) {
 		&pluginsdk.WebhookRequest{WebhookKey: "nope", Method: "GET"})
 	require.NoError(t, err)
 	require.Equal(t, int32(404), resp.Status)
+}
+
+func TestWebhook_EnforcesDeclaredMethods(t *testing.T) {
+	p := newTestPlugin(t, newFakeHost(nil))
+
+	for _, tc := range []struct {
+		key    string
+		method string
+		allow  string
+	}{
+		{key: webhookKeyKandy, method: "POST", allow: "GET"},
+		{key: webhookKeyPet, method: "GET", allow: "POST"},
+		{key: webhookKeyBonk, method: "GET", allow: "POST"},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			resp, err := p.HandleWebhook(context.Background(), &pluginsdk.WebhookRequest{
+				WebhookKey: tc.key,
+				Method:     tc.method,
+			})
+			require.NoError(t, err)
+			require.Equal(t, int32(405), resp.Status)
+			require.Equal(t, tc.allow, resp.Headers["Allow"])
+		})
+	}
 }
 
 func TestDebugGrant_RequiresDebugConfig(t *testing.T) {
@@ -510,6 +535,7 @@ func TestMood_TransientLedgerNeverClaimsJustFed(t *testing.T) {
 	host := newFakeHost(nil)
 	host.getStateErr[stateMapKey(stateScope, "", stateKey)] = errors.New("state store unavailable")
 	p2 := newPlugin()
+	p2.skipJarResumeProbe = true
 	p2.now = func() time.Time { return time.Date(2026, 8, 5, 7, 16, 0, 0, time.UTC) }
 	p2.saltFunc = func() uint32 { return 42 }
 	p2.SetHost(host)
@@ -549,6 +575,7 @@ func TestMood_PersistedLedgerReportsRealIdleAcrossRestart(t *testing.T) {
 		{time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC), "gloomy"},  // >1 week
 	} {
 		p := newPlugin()
+		p.skipJarResumeProbe = true
 		p.now = func() time.Time { return tc.at }
 		p.saltFunc = func() uint32 { return 42 }
 		p.SetHost(host)
@@ -566,6 +593,7 @@ func TestMood_PreV6LedgerStillFallsBackToUpdatedAt(t *testing.T) {
 		UpdatedAt: "2026-08-05T07:10:00Z", // "fed" 6 minutes ago
 	})
 	p := newPlugin()
+	p.skipJarResumeProbe = true
 	p.now = func() time.Time { return time.Date(2026, 8, 5, 7, 16, 0, 0, time.UTC) }
 	p.saltFunc = func() uint32 { return 42 }
 	p.SetHost(host)

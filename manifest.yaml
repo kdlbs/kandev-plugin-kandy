@@ -1,7 +1,7 @@
 id: "kandev-plugin-kandy"
 api_version: 1
 version: "0.13.1"
-min_kandev_version: "0.83.0"
+min_kandev_version: "0.91.1"
 display_name: "Kandy"
 description: "A tiny creature that grows as your agents work — it feeds on agent runs, turns, and conversation, and evolves forever in your session top bar."
 author: "kandev"
@@ -32,16 +32,48 @@ capabilities:
     - "message.added"
     - "session_prompt_usage.updated.*"
 
+actions:
+  - key: "jar.connect"
+    scope: "workspace"
+    access: "admin"
+    max_body_bytes: 1024
+  - key: "jar.disconnect"
+    scope: "workspace"
+    access: "admin"
+    max_body_bytes: 1024
+  - key: "jar.status"
+    scope: "workspace"
+    access: "authenticated"
+    max_body_bytes: 1024
+
 webhooks:
   - key: "kandy"
     description: "Current kandy presentation and aggregate observed-token grotto as JSON (GET; dev-only ?debug_grant=<n> when debug config is on)"
     method: "GET"
+    access: "authenticated"
   - key: "pet"
     description: "Pet the kandy (POST): stamps last_petted_at, which briefly lifts the displayed mood and slowly warms its temperament. Never grants XP. Refused for 60s after a bonk."
     method: "POST"
+    access: "authenticated"
   - key: "bonk"
     description: "Bonk the kandy with a bucket of cold water (POST): darkens its persistent temperament (rate-limited), drops the displayed mood for 30min and makes it refuse pets for 60s. Never touches XP."
     method: "POST"
+    access: "authenticated"
+
+config_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    jar_origin:
+      type: string
+      title: "Kandy Jar origin"
+      description: "Administrator-managed Kandy Jar server origin. HTTPS is required except for localhost development."
+      default: "https://jar.kandev.ai"
+    debug:
+      type: boolean
+      title: "Debug mode"
+      description: "Enable local presentation demo controls."
+      default: false
 
 ui:
   bundle: "/ui/bundle.js"

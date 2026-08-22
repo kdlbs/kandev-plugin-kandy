@@ -2072,7 +2072,119 @@ test("clipboard failures distinguish blocked and unsupported copies", () => {
   assert.equal(render.photoCopyFailureStatus(new Error("failed"), { isSecureContext: true }), "error");
 });
 
-test("widget includes dialog-only Photo Booth and token grotto entries", () => {
+test("Kandy Jar actions stay workspace-scoped and never forward an origin", async () => {
+  const render = loadBundle().plugin.__render;
+  const calls = [];
+  const host = {
+    api: {
+      invokeAction(key, input) {
+        calls.push({ key, input });
+        return Promise.resolve({ connected: key === "jar.connect" });
+      },
+    },
+  };
+
+  await render.invokeKandyJarAction(host, "jar.connect", "workspace-a", {
+    pairing_code: "  kj-abcd-efgh-kjmn  ",
+    origin: "https://attacker.invalid",
+    publisher_token: "must-not-leave-the-ui",
+  });
+  await render.invokeKandyJarAction(host, "jar.status", "workspace-a", {
+    origin: "https://attacker.invalid",
+  });
+  await render.invokeKandyJarAction(host, "jar.disconnect", "workspace-a", {
+    publisher_token: "must-not-leave-the-ui",
+  });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    {
+      key: "jar.connect",
+      input: {
+        workspaceId: "workspace-a",
+        body: { pairing_code: "KJ-ABCD-EFGH-KJMN" },
+      },
+    },
+    { key: "jar.status", input: { workspaceId: "workspace-a" } },
+    { key: "jar.disconnect", input: { workspaceId: "workspace-a" } },
+  ]);
+  assert.equal(JSON.stringify(calls).includes("attacker"), false);
+  assert.equal(JSON.stringify(calls).includes("must-not-leave"), false);
+
+  await assert.rejects(
+    render.invokeKandyJarAction(host, "jar.status", "", {}),
+    /workspace/i,
+  );
+  await assert.rejects(
+    render.invokeKandyJarAction(host, "jar.erase", "workspace-a", {}),
+    /action/i,
+  );
+  assert.equal(calls.length, 3, "invalid requests never reach the host action API");
+});
+
+test("Kandy Jar panel is accessible and displays only safe connection metadata", () => {
+  const render = loadBundle().plugin.__render;
+  const handlers = {
+    onBack() {},
+    onPairingCodeChange() {},
+    onConnect() {},
+    onRefresh() {},
+    onRequestDisconnect() {},
+    onCancelDisconnect() {},
+    onDisconnect() {},
+  };
+  const disconnected = render.kandyJarPanel(jsx, "DialogTitle", {
+    workspaceId: "workspace-a",
+    status: { connected: false },
+    pairingCode: "",
+    busy: null,
+    message: "",
+    confirmDisconnect: false,
+  }, handlers);
+  const label = findNode(disconnected, (node) => node.type === "label");
+  const input = findNode(
+    disconnected,
+    (node) => node.type === "input" && node.props.id === "kandev-kandy-jar-pairing-code",
+  );
+  const connect = findNode(
+    disconnected,
+    (node) => node.type === "button" && textContent(node).includes("Connect"),
+  );
+  assert.equal(label.props.htmlFor, input.props.id);
+  assert.equal(input.props.autoComplete, "off");
+  assert.equal(input.props.spellCheck, false);
+  assert.equal(input.props.maxLength, 17);
+  assert.equal(connect.props.style.minHeight, "40px");
+
+  const connected = render.kandyJarPanel(jsx, "DialogTitle", {
+    workspaceId: "workspace-a",
+    status: {
+      connected: true,
+      origin: "https://jar.kandev.ai",
+      installationId: "11111111-2222-4333-8444-555555555555",
+      ackedRevision: 7,
+      pendingRevision: 8,
+      publicationPending: true,
+      publisherToken: "kjp_v1_must-never-render",
+    },
+    pairingCode: "",
+    busy: null,
+    message: "Snapshot queued.",
+    confirmDisconnect: false,
+  }, handlers);
+  const statusRegion = findNode(connected, (node) => node.props && node.props.role === "status");
+  const disconnect = findNode(
+    connected,
+    (node) => node.type === "button" && textContent(node).includes("Disconnect"),
+  );
+  assert.ok(statusRegion);
+  assert.equal(statusRegion.props["aria-live"], "polite");
+  assert.equal(disconnect.props.style.minHeight, "40px");
+  assert.match(textContent(connected), /jar\.kandev\.ai/);
+  assert.match(textContent(connected), /Revision 7/);
+  assert.equal(textContent(connected).includes("must-never-render"), false);
+});
+
+test("widget includes dialog-only Photo Booth, token grotto, and Kandy Jar entries", () => {
   const cleanups = [];
   const React = {
     Fragment: "Fragment",
@@ -2115,7 +2227,7 @@ test("widget includes dialog-only Photo Booth and token grotto entries", () => {
     },
   );
 
-  const tree = Widget();
+  const tree = Widget({ slotProps: { workspaceId: "workspace-a" } });
   const dialog = findNode(tree, (node) => node.type === "DialogContent");
   const tooltip = findNode(tree, (node) => node.type === "TooltipContent");
   const dialogEntry = findNode(
@@ -2147,6 +2259,14 @@ test("widget includes dialog-only Photo Booth and token grotto entries", () => {
     tooltip,
     (node) => node.type === "button" && node.props["aria-label"] === "Show me your Token Grotto",
   );
+  const jarButton = findNode(
+    dialog,
+    (node) => node.type === "button" && node.props["aria-label"] === "Open Kandy Jar",
+  );
+  const tooltipJarButton = findNode(
+    tooltip,
+    (node) => node.type === "button" && node.props["aria-label"] === "Open Kandy Jar",
+  );
 
   assert.ok(dialogEntry, "dialog positions Photo Booth at the top right");
   assert.ok(dialogButton, "dialog exposes the camera control");
@@ -2164,6 +2284,9 @@ test("widget includes dialog-only Photo Booth and token grotto entries", () => {
   assert.ok(grottoButton, "full dialog exposes the token-grotto entrance");
   assert.equal(grottoButton.props.type, "button");
   assert.equal(tooltipGrottoButton, null, "hover preview remains action-free");
+  assert.ok(jarButton, "full dialog exposes the Kandy Jar connection panel");
+  assert.equal(jarButton.props.style.minHeight, "40px");
+  assert.equal(tooltipJarButton, null, "hover preview never exposes server actions");
 
   cleanups.forEach((cleanup) => cleanup && cleanup());
   runtime.plugin.destroy();

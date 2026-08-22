@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Optional Kandy Jar pairing with administrator-only connect/disconnect,
+  authenticated status, and a compact connection panel in the Kandy dialog.
+- A frozen, privacy-limited public Kandy snapshot and durable revisioned
+  publisher outbox with bounded retries and restart recovery.
+
+### Security
+
+- Authenticate all Kandy webhooks and enforce their declared HTTP methods.
+- Keep the random Jar publisher token exclusively in Kandev's encrypted vault,
+  authorize instance connection changes through the Host, reject redirects and
+  request-supplied origins, and require HTTPS outside loopback development.
+- Require the first Kandev security release that admin-gates global plugin
+  configuration, lifecycle changes, and declared administrator-only actions.
+- Seal the complete Jar connection and publication outbox with a
+  domain-separated vault-backed HMAC, failing closed before credential access
+  or network activity when persisted state is unsigned or altered.
+- Bind recovery credentials to the exact Jar origin and retain them across
+  ambiguous Host writes instead of risking a committed state without its only
+  usable publisher authority.
+- Revoke remote publication before deleting local connection data.
+
 ## [0.13.1] - 2026-08-11
 
 ### Changed

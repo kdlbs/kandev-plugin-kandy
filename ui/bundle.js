@@ -6903,6 +6903,470 @@ function tokenGrottoButton(h, onOpen, buttonRef) {
   );
 }
 
+var KANDY_JAR_PAIRING_CODE = /^KJ-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
+
+function kandyJarIcon(h) {
+  return h(
+    "svg",
+    {
+      width: 18,
+      height: 18,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      "aria-hidden": "true",
+      "data-icon": "kandy-jar",
+    },
+    h("path", {
+      d: "M7 4.5h10M7.75 7h8.5l1.25 2.2v8.55A2.25 2.25 0 0 1 15.25 20h-6.5a2.25 2.25 0 0 1-2.25-2.25V9.2L7.75 7Z",
+      stroke: "currentColor",
+      strokeWidth: 1.55,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+    }),
+    h("circle", { cx: 9.2, cy: 13, r: 1.25, fill: "#f59e0b" }),
+    h("circle", { cx: 13.9, cy: 11.4, r: 1.15, fill: "#ec4899" }),
+    h("circle", { cx: 12.2, cy: 16.1, r: 1.3, fill: "#22c55e" }),
+  );
+}
+
+function kandyJarButton(h, onOpen, buttonRef) {
+  return h(
+    "button",
+    {
+      type: "button",
+      ref: buttonRef,
+      "aria-label": "Open Kandy Jar",
+      title: "Kandy Jar",
+      className: "kandev-kandy-control",
+      onPointerDown: stopPhotoControlEvent,
+      onContextMenu: stopPhotoControlEvent,
+      onClick: function (event) {
+        stopPhotoControlEvent(event);
+        onOpen();
+      },
+      style: {
+        width: "40px",
+        height: "40px",
+        minWidth: "40px",
+        minHeight: "40px",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 0,
+        border: "none",
+        borderRadius: "10px",
+        background: "color-mix(in oklch,var(--background) 86%,transparent)",
+        color: "inherit",
+        boxShadow:
+          "0 0 0 1px color-mix(in oklch,var(--foreground) 7%,transparent),0 1px 4px rgba(0,0,0,0.08)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+        cursor: "pointer",
+      },
+    },
+    kandyJarIcon(h),
+  );
+}
+
+function normalizedKandyJarPairingCode(raw) {
+  return typeof raw === "string" ? raw.trim().toUpperCase() : "";
+}
+
+// Action inputs are built from scratch. In particular, the server origin is
+// configuration-only and can never be smuggled in from UI state or a caller.
+function invokeKandyJarAction(host, action, workspaceId, body) {
+  var workspace = typeof workspaceId === "string" ? workspaceId.trim() : "";
+  if (!workspace) return Promise.reject(new Error("A workspace is required."));
+  if (action !== "jar.connect" && action !== "jar.status" && action !== "jar.disconnect") {
+    return Promise.reject(new Error("Unknown Kandy Jar action."));
+  }
+  if (!host || !host.api || typeof host.api.invokeAction !== "function") {
+    return Promise.reject(new Error("Kandy Jar actions are unavailable."));
+  }
+  var input = { workspaceId: workspace };
+  if (action === "jar.connect") {
+    var pairingCode = normalizedKandyJarPairingCode(body && body.pairing_code);
+    if (!KANDY_JAR_PAIRING_CODE.test(pairingCode)) {
+      return Promise.reject(new Error("The pairing code is invalid."));
+    }
+    input.body = { pairing_code: pairingCode };
+  }
+  return Promise.resolve(host.api.invokeAction(action, input));
+}
+
+function boundedKandyJarText(value, maxLength) {
+  if (typeof value !== "string" || !value || value.length > maxLength) return "";
+  return value;
+}
+
+function safeKandyJarRevision(value) {
+  return typeof value === "number" && isFinite(value) && value >= 0 &&
+    Math.floor(value) === value && value <= 9007199254740991
+    ? value
+    : 0;
+}
+
+function kandyJarStatusModelFor(value) {
+  var source = value && typeof value === "object" ? value : {};
+  return {
+    connected: source.connected === true,
+    origin: boundedKandyJarText(source.origin, 2048),
+    installationId: boundedKandyJarText(source.installation_id || source.installationId, 64),
+    ackedRevision: safeKandyJarRevision(
+      source.acked_revision === undefined ? source.ackedRevision : source.acked_revision,
+    ),
+    pendingRevision: safeKandyJarRevision(
+      source.pending_revision === undefined ? source.pendingRevision : source.pending_revision,
+    ),
+    publicationPending:
+      source.publication_pending === true || source.publicationPending === true,
+  };
+}
+
+function kandyJarPanelButton(h, label, onPress, options) {
+  var opts = options || {};
+  var disabled = !!opts.disabled;
+  var primary = opts.tone === "primary";
+  var destructive = opts.tone === "destructive";
+  var background = primary ? "var(--primary)" : destructive ? "var(--destructive)" : "var(--muted)";
+  var color = primary
+    ? "var(--primary-foreground)"
+    : destructive
+      ? "var(--destructive-foreground,white)"
+      : "inherit";
+  return h(
+    "button",
+    {
+      type: "button",
+      disabled: disabled,
+      "aria-busy": opts.busy ? "true" : undefined,
+      className: "kandev-kandy-control",
+      onClick: function (event) {
+        stopPhotoControlEvent(event);
+        if (!disabled && typeof onPress === "function") onPress();
+      },
+      style: {
+        minHeight: "40px",
+        minWidth: opts.compact ? "40px" : "84px",
+        flex: opts.grow ? "1 1 auto" : "0 0 auto",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "7px",
+        padding: "0 13px",
+        border: "none",
+        borderRadius: "10px",
+        background: background,
+        color: color,
+        boxShadow: primary || destructive
+          ? "0 1px 2px rgba(0,0,0,0.12),0 0 0 1px color-mix(in oklch," + background + " 78%,black)"
+          : "0 0 0 1px color-mix(in oklch,var(--foreground) 8%,transparent)",
+        cursor: disabled || opts.busy ? "wait" : "pointer",
+        opacity: disabled ? 0.66 : 1,
+        fontSize: "12px",
+        fontWeight: 650,
+        WebkitFontSmoothing: "antialiased",
+      },
+    },
+    opts.icon || null,
+    label,
+  );
+}
+
+function kandyJarMetadataRow(h, label, value, numeric) {
+  return h(
+    "div",
+    {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "112px minmax(0,1fr)",
+        alignItems: "baseline",
+        gap: "10px",
+        padding: "8px 0",
+        borderBottom: "1px solid color-mix(in oklch,var(--foreground) 7%,transparent)",
+      },
+    },
+    h("span", { style: { fontSize: "11px", opacity: 0.58 } }, label),
+    h(
+      "span",
+      {
+        style: {
+          minWidth: 0,
+          overflowWrap: "anywhere",
+          fontSize: "11px",
+          fontWeight: 620,
+          fontVariantNumeric: numeric ? "tabular-nums" : undefined,
+        },
+      },
+      value,
+    ),
+  );
+}
+
+function kandyJarPanel(h, DialogTitle, model, handlers) {
+  var view = model || {};
+  var actions = handlers || {};
+  var status = kandyJarStatusModelFor(view.status);
+  var workspaceAvailable = typeof view.workspaceId === "string" && !!view.workspaceId.trim();
+  var pairingCode = typeof view.pairingCode === "string" ? view.pairingCode : "";
+  var normalizedCode = normalizedKandyJarPairingCode(pairingCode);
+  var connecting = view.busy === "connect";
+  var refreshing = view.busy === "status";
+  var disconnecting = view.busy === "disconnect";
+  var busy = connecting || refreshing || disconnecting;
+  var message = boundedKandyJarText(view.message, 240);
+
+  var body;
+  if (status.connected) {
+    body = h(
+      "div",
+      null,
+      h(
+        "div",
+        {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            marginBottom: "12px",
+            padding: "10px 12px",
+            borderRadius: "12px",
+            background: "color-mix(in oklch,#22c55e 10%,var(--background))",
+            boxShadow: "0 0 0 1px color-mix(in oklch,#22c55e 24%,transparent)",
+          },
+        },
+        h("span", {
+          "aria-hidden": "true",
+          style: { width: "8px", height: "8px", borderRadius: "999px", background: "#22c55e" },
+        }),
+        h("span", { style: { fontSize: "12px", fontWeight: 700 } }, "Connected"),
+        status.publicationPending
+          ? h("span", { style: { marginLeft: "auto", fontSize: "10px", opacity: 0.62 } }, "Sync queued")
+          : null,
+      ),
+      h(
+        "div",
+        {
+          style: {
+            padding: "0 12px",
+            borderRadius: "12px",
+            background: "color-mix(in oklch,var(--muted) 62%,transparent)",
+            boxShadow: "0 0 0 1px color-mix(in oklch,var(--foreground) 7%,transparent)",
+          },
+        },
+        kandyJarMetadataRow(h, "Server", status.origin || "Configured server"),
+        kandyJarMetadataRow(h, "Installation", status.installationId || "Connected"),
+        kandyJarMetadataRow(h, "Revision", String(status.ackedRevision), true),
+        status.publicationPending
+          ? kandyJarMetadataRow(h, "Queued revision", String(status.pendingRevision), true)
+          : null,
+      ),
+      view.confirmDisconnect
+        ? h(
+            "div",
+            {
+              role: "alert",
+              style: {
+                marginTop: "12px",
+                padding: "12px",
+                borderRadius: "12px",
+                background: "color-mix(in oklch,var(--destructive) 8%,var(--background))",
+                boxShadow: "0 0 0 1px color-mix(in oklch,var(--destructive) 22%,transparent)",
+              },
+            },
+            h("strong", { style: { display: "block", fontSize: "12px" } }, "Disconnect this Kandy?"),
+            h(
+              "p",
+              { style: { margin: "4px 0 10px", fontSize: "11px", lineHeight: 1.45, opacity: 0.72, textWrap: "pretty" } },
+              "Its public snapshot is revoked and this workspace forgets the connection.",
+            ),
+            h(
+              "div",
+              { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+              kandyJarPanelButton(h, "Keep connected", actions.onCancelDisconnect, { disabled: busy, grow: true }),
+              kandyJarPanelButton(
+                h,
+                disconnecting ? "Disconnecting…" : "Disconnect now",
+                actions.onDisconnect,
+                { tone: "destructive", disabled: busy, busy: disconnecting, grow: true },
+              ),
+            ),
+          )
+        : null,
+    );
+  } else {
+    body = h(
+      "div",
+      null,
+      h(
+        "div",
+        {
+          style: {
+            padding: "12px",
+            borderRadius: "12px",
+            background: "color-mix(in oklch,var(--muted) 62%,transparent)",
+            boxShadow: "0 0 0 1px color-mix(in oklch,var(--foreground) 7%,transparent)",
+          },
+        },
+        h(
+          "label",
+          {
+            htmlFor: "kandev-kandy-jar-pairing-code",
+            style: { display: "block", marginBottom: "7px", fontSize: "11px", fontWeight: 700 },
+          },
+          "Pairing code",
+        ),
+        h("input", {
+          id: "kandev-kandy-jar-pairing-code",
+          type: "text",
+          value: pairingCode,
+          maxLength: 17,
+          autoComplete: "off",
+          autoCapitalize: "characters",
+          spellCheck: false,
+          placeholder: "KJ-XXXX-XXXX-XXXX",
+          disabled: !workspaceAvailable || busy,
+          "aria-describedby": "kandev-kandy-jar-pairing-help",
+          onChange: function (event) {
+            if (typeof actions.onPairingCodeChange === "function") {
+              actions.onPairingCodeChange(event && event.target ? event.target.value : "");
+            }
+          },
+          style: {
+            width: "100%",
+            minHeight: "40px",
+            boxSizing: "border-box",
+            padding: "0 11px",
+            border: "1px solid color-mix(in oklch,var(--foreground) 14%,transparent)",
+            borderRadius: "9px",
+            outline: "none",
+            background: "var(--background)",
+            color: "inherit",
+            fontFamily: "ui-monospace,SFMono-Regular,Menlo,monospace",
+            fontSize: "12px",
+            fontWeight: 650,
+            letterSpacing: "0.025em",
+          },
+        }),
+        h(
+          "p",
+          {
+            id: "kandev-kandy-jar-pairing-help",
+            style: { margin: "7px 0 0", fontSize: "10px", lineHeight: 1.45, opacity: 0.58, textWrap: "pretty" },
+          },
+          workspaceAvailable
+            ? "Create a one-time code in Kandy Jar, then enter it here. The server address comes only from plugin settings."
+            : "Open Kandy from a workspace before connecting to a server.",
+        ),
+      ),
+    );
+  }
+
+  var footerActions = [
+    kandyJarPanelButton(h, "Back", actions.onBack, {
+      icon: backIcon(h),
+      disabled: busy,
+      compact: true,
+    }),
+    kandyJarPanelButton(h, refreshing ? "Checking…" : "Refresh", actions.onRefresh, {
+      disabled: !workspaceAvailable || busy,
+      busy: refreshing,
+    }),
+  ];
+  if (status.connected && !view.confirmDisconnect) {
+    footerActions.push(
+      kandyJarPanelButton(h, "Disconnect", actions.onRequestDisconnect, {
+        tone: "destructive",
+        disabled: busy,
+        grow: true,
+      }),
+    );
+  } else if (!status.connected) {
+    footerActions.push(
+      kandyJarPanelButton(h, connecting ? "Connecting…" : "Connect", actions.onConnect, {
+        tone: "primary",
+        disabled: !workspaceAvailable || busy || !KANDY_JAR_PAIRING_CODE.test(normalizedCode),
+        busy: connecting,
+        grow: true,
+      }),
+    );
+  }
+
+  return h(
+    "div",
+    {
+      tabIndex: -1,
+      ref: view.panelRef,
+      role: "region",
+      "aria-label": "Kandy Jar connection",
+      style: {
+        width: "min(420px, calc(100vw - 32px))",
+        padding: "18px",
+        WebkitFontSmoothing: "antialiased",
+      },
+    },
+    h(
+      "div",
+      { style: { display: "flex", alignItems: "flex-start", gap: "11px", padding: "0 1px 14px" } },
+      h(
+        "div",
+        {
+          "aria-hidden": "true",
+          style: {
+            width: "36px",
+            height: "36px",
+            flex: "0 0 36px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "11px",
+            background: "color-mix(in oklch,var(--primary) 11%,var(--background))",
+            color: "var(--primary)",
+            boxShadow: "0 0 0 1px color-mix(in oklch,var(--primary) 18%,transparent)",
+          },
+        },
+        kandyJarIcon(h),
+      ),
+      h(
+        "div",
+        { style: { minWidth: 0 } },
+        h(
+          DialogTitle,
+          { style: { fontSize: "16px", fontWeight: 720, lineHeight: 1.25, textWrap: "balance" } },
+          "Kandy Jar",
+        ),
+        h(
+          "p",
+          { style: { margin: "4px 0 0", fontSize: "11px", lineHeight: 1.45, opacity: 0.64, textWrap: "pretty" } },
+          "Publish this Kandy's safe display snapshot to a shared Jar.",
+        ),
+      ),
+    ),
+    body,
+    h(
+      "div",
+      { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", paddingTop: "14px" } },
+      footerActions,
+    ),
+    h(
+      "div",
+      {
+        role: "status",
+        "aria-live": "polite",
+        style: {
+          minHeight: "17px",
+          padding: "8px 2px 0",
+          fontSize: "10px",
+          lineHeight: 1.4,
+          opacity: message ? 0.72 : 0.52,
+          textWrap: "pretty",
+        },
+      },
+      message || (refreshing ? "Checking connection…" : "Publisher credentials stay in Kandev's encrypted vault."),
+    ),
+  );
+}
+
 function renderPhotoPng(svgNode, suppliedEnv) {
   return new Promise(function (resolve, reject) {
     if (!svgNode) {
@@ -7785,7 +8249,9 @@ function makeKandyWidget(host) {
   var DialogContent = ui.DialogContent;
   var DialogTitle = ui.DialogTitle;
 
-  return function KandyWidget() {
+  return function KandyWidget(props) {
+    var slotProps = props && props.slotProps ? props.slotProps : {};
+    var workspaceId = typeof slotProps.workspaceId === "string" ? slotProps.workspaceId : "";
     var stateHook = React.useState(null);
     var data = stateHook[0];
     var setData = stateHook[1];
@@ -7798,6 +8264,24 @@ function makeKandyWidget(host) {
     var grottoViewHook = React.useState(null);
     var grottoView = grottoViewHook[0];
     var setGrottoView = grottoViewHook[1];
+    var jarOpenHook = React.useState(false);
+    var jarOpen = jarOpenHook[0];
+    var setJarOpen = jarOpenHook[1];
+    var jarStatusHook = React.useState(null);
+    var jarStatus = jarStatusHook[0];
+    var setJarStatus = jarStatusHook[1];
+    var jarPairingHook = React.useState("");
+    var jarPairingCode = jarPairingHook[0];
+    var setJarPairingCode = jarPairingHook[1];
+    var jarBusyHook = React.useState(null);
+    var jarBusy = jarBusyHook[0];
+    var setJarBusy = jarBusyHook[1];
+    var jarMessageHook = React.useState("");
+    var jarMessage = jarMessageHook[0];
+    var setJarMessage = jarMessageHook[1];
+    var jarConfirmHook = React.useState(false);
+    var jarConfirmDisconnect = jarConfirmHook[0];
+    var setJarConfirmDisconnect = jarConfirmHook[1];
     var grottoRevealHook = React.useState(null);
     var grottoRevealKey = grottoRevealHook[0];
     var setGrottoRevealKey = grottoRevealHook[1];
@@ -7886,6 +8370,9 @@ function makeKandyWidget(host) {
     var returnToPhotoEntryRef = React.useRef(false);
     var grottoPanelRef = React.useRef(null);
     var grottoEntryRef = React.useRef(null);
+    var jarPanelRef = React.useRef(null);
+    var jarEntryRef = React.useRef(null);
+    var returnToJarEntryRef = React.useRef(false);
     var returnToGrottoEntryRef = React.useRef(false);
     var returnToGrottoDoorRef = React.useRef(null);
     var grottoWalkTimerRef = React.useRef(null);
@@ -8601,6 +9088,8 @@ function makeKandyWidget(host) {
       clearGrottoWalk();
       setGrottoView(null);
       setGrottoRevealKey(null);
+      setJarOpen(false);
+      setJarConfirmDisconnect(false);
       returnToPhotoEntryRef.current = true;
       clearPreparedPhoto();
       setPhotoTheme(currentPhotoTheme());
@@ -8619,6 +9108,8 @@ function makeKandyWidget(host) {
       clearPreparedPhoto();
       setPhotoStatus("idle");
       setPhotoOpen(false);
+      setJarOpen(false);
+      setJarConfirmDisconnect(false);
       returnToGrottoEntryRef.current = true;
       setGrottoRevealKey(null);
       // The dialog opens first so Kandy has a surface to walk off of. There is
@@ -8628,6 +9119,88 @@ function makeKandyWidget(host) {
       walkBetweenScenes("depart-surface", "arrive-hub", function () {
         setGrottoView("hub");
       });
+    }
+
+    function loadKandyJarStatus() {
+      if (!workspaceId) {
+        setJarBusy(null);
+        setJarStatus({ connected: false });
+        setJarMessage("Open Kandy from a workspace before checking its Jar connection.");
+        return Promise.resolve();
+      }
+      setJarBusy("status");
+      setJarMessage("");
+      return invokeKandyJarAction(host, "jar.status", workspaceId)
+        .then(function (response) {
+          if (!mountedRef.current) return;
+          setJarStatus(kandyJarStatusModelFor(response));
+          setJarBusy(null);
+          setJarMessage("");
+        })
+        .catch(function () {
+          if (!mountedRef.current) return;
+          setJarBusy(null);
+          setJarMessage("Could not check the Kandy Jar connection. Try again.");
+        });
+    }
+
+    function openKandyJar() {
+      clearGrottoWalk();
+      clearPreparedPhoto();
+      setPhotoStatus("idle");
+      setPhotoOpen(false);
+      setGrottoView(null);
+      setGrottoRevealKey(null);
+      setJarConfirmDisconnect(false);
+      returnToJarEntryRef.current = true;
+      setJarOpen(true);
+      setDialogOpen(true);
+      loadKandyJarStatus();
+    }
+
+    function backFromKandyJar() {
+      setJarOpen(false);
+      setJarBusy(null);
+      setJarMessage("");
+      setJarConfirmDisconnect(false);
+    }
+
+    function connectKandyJar() {
+      setJarBusy("connect");
+      setJarMessage("");
+      invokeKandyJarAction(host, "jar.connect", workspaceId, {
+        pairing_code: jarPairingCode,
+      })
+        .then(function (response) {
+          if (!mountedRef.current) return;
+          setJarStatus(kandyJarStatusModelFor(response));
+          setJarPairingCode("");
+          setJarBusy(null);
+          setJarMessage("Connected. The first safe Kandy snapshot is queued for publishing.");
+        })
+        .catch(function () {
+          if (!mountedRef.current) return;
+          setJarBusy(null);
+          setJarMessage("Could not connect. Check the one-time pairing code and try again.");
+        });
+    }
+
+    function disconnectKandyJar() {
+      setJarBusy("disconnect");
+      setJarMessage("");
+      invokeKandyJarAction(host, "jar.disconnect", workspaceId)
+        .then(function (response) {
+          if (!mountedRef.current) return;
+          setJarStatus(kandyJarStatusModelFor(response));
+          setJarBusy(null);
+          setJarConfirmDisconnect(false);
+          setJarMessage("Disconnected. This Kandy's public snapshot was revoked.");
+        })
+        .catch(function () {
+          if (!mountedRef.current) return;
+          setJarBusy(null);
+          setJarMessage("Could not disconnect safely. The connection was kept so you can retry.");
+        });
     }
 
     function openTokenRoom(agentType, side) {
@@ -8733,9 +9306,14 @@ function makeKandyWidget(host) {
         setPhotoOpen(false);
         setPhotoStatus("idle");
         returnToGrottoEntryRef.current = false;
+        returnToJarEntryRef.current = false;
         returnToGrottoDoorRef.current = null;
         setGrottoRevealKey(null);
         setGrottoView(null);
+        setJarOpen(false);
+        setJarBusy(null);
+        setJarMessage("");
+        setJarConfirmDisconnect(false);
       }
     }
 
@@ -8796,6 +9374,31 @@ function makeKandyWidget(host) {
         }
       },
       [photoOpen],
+    );
+
+    React.useEffect(
+      function () {
+        if (jarOpen) {
+          if (jarPanelRef.current && jarPanelRef.current.focus) jarPanelRef.current.focus();
+          return;
+        }
+        if (returnToJarEntryRef.current) {
+          returnToJarEntryRef.current = false;
+          if (jarEntryRef.current && jarEntryRef.current.focus) jarEntryRef.current.focus();
+        }
+      },
+      [jarOpen],
+    );
+
+    React.useEffect(
+      function () {
+        setJarStatus(null);
+        setJarPairingCode("");
+        setJarMessage("");
+        setJarConfirmDisconnect(false);
+        if (jarOpen) loadKandyJarStatus();
+      },
+      [workspaceId],
     );
 
     var tokenGrottoModel = tokenGrottoModelFor(data || EGG_PLACEHOLDER);
@@ -8888,6 +9491,9 @@ function makeKandyWidget(host) {
           returnToPhotoEntryRef.current = false;
           setPhotoOpen(false);
           setPhotoStatus("idle");
+          returnToJarEntryRef.current = false;
+          setJarOpen(false);
+          setJarConfirmDisconnect(false);
           setDialogOpen(true);
           // The dialog always greets on open (arrival gets the hop too).
           greetOnOpen();
@@ -9031,11 +9637,47 @@ function makeKandyWidget(host) {
             // zoom ~2.06 and the corner grip lands on the overlay
             // (dismissing the dialog on the next drag).
             className: "w-auto max-w-none sm:max-w-none p-0 gap-0 overflow-hidden rounded-2xl",
-            style: photoOpen ? { maxWidth: "420px" } : resolvedGrottoView ? { width: "min(680px, calc(100vw - 32px))" } : undefined,
+            style: jarOpen
+              ? { maxWidth: "440px" }
+              : photoOpen
+                ? { maxWidth: "420px" }
+                : resolvedGrottoView
+                  ? { width: "min(680px, calc(100vw - 32px))" }
+                  : undefined,
             showCloseButton: false,
           },
-          photoOpen
-            ? photoBoothPanel(
+          jarOpen
+            ? kandyJarPanel(
+                h,
+                DialogTitle,
+                {
+                  workspaceId: workspaceId,
+                  status: jarStatus,
+                  pairingCode: jarPairingCode,
+                  busy: jarBusy,
+                  message: jarMessage,
+                  confirmDisconnect: jarConfirmDisconnect,
+                  panelRef: jarPanelRef,
+                },
+                {
+                  onBack: backFromKandyJar,
+                  onPairingCodeChange: function (value) {
+                    setJarPairingCode(typeof value === "string" ? value.toUpperCase().slice(0, 17) : "");
+                  },
+                  onConnect: connectKandyJar,
+                  onRefresh: loadKandyJarStatus,
+                  onRequestDisconnect: function () {
+                    setJarConfirmDisconnect(true);
+                    setJarMessage("");
+                  },
+                  onCancelDisconnect: function () {
+                    setJarConfirmDisconnect(false);
+                  },
+                  onDisconnect: disconnectKandyJar,
+                },
+              )
+            : photoOpen
+              ? photoBoothPanel(
                 h,
                 DialogTitle,
                 photoModel,
@@ -9045,9 +9687,9 @@ function makeKandyWidget(host) {
                 photoStatus,
                 showKandyCard,
                 copyPhoto,
-              )
-            : resolvedGrottoView
-              ? resolvedGrottoView === "hub"
+                )
+              : resolvedGrottoView
+                ? resolvedGrottoView === "hub"
                 ? tokenGrottoHub(
                     h,
                     DialogTitle,
@@ -9081,7 +9723,7 @@ function makeKandyWidget(host) {
                     grottoRoomSide(grottoSide),
                     (shown.lineage_seed || 1) >>> 0,
                   )
-              : h(
+                : h(
                 React.Fragment,
                 null,
                 h(DialogTitle, { className: "sr-only" }, "Kandy"),
@@ -9123,6 +9765,19 @@ function makeKandyWidget(host) {
                       },
                     },
                     tokenGrottoButton(h, openTokenGrotto, grottoEntryRef),
+                  ),
+                  h(
+                    "div",
+                    {
+                      style: {
+                        position: "absolute",
+                        top: "8px",
+                        left: "50%",
+                        zIndex: 3,
+                        transform: "translateX(-50%)",
+                      },
+                    },
+                    kandyJarButton(h, openKandyJar, jarEntryRef),
                   ),
                   // The resize grip lives OUTSIDE the zoomed wrapper (its
                   // 16px hit area never scales) but inside the relative
@@ -9289,6 +9944,10 @@ window.registerKandevPlugin(PLUGIN_ID, {
     photoPortraitSvg: photoPortraitSvg,
     photoBoothButton: photoBoothButton,
     tokenGrottoButton: tokenGrottoButton,
+    kandyJarButton: kandyJarButton,
+    invokeKandyJarAction: invokeKandyJarAction,
+    kandyJarStatusModelFor: kandyJarStatusModelFor,
+    kandyJarPanel: kandyJarPanel,
     photoBoothPanel: photoBoothPanel,
     renderPhotoPng: renderPhotoPng,
     copyPhotoBlob: copyPhotoBlob,

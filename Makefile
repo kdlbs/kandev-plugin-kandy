@@ -4,6 +4,7 @@ BIN := bin/kandev-plugin-kandy
 VERSION := 0.13.1
 STAGE := .build/stage
 PKG_OUT := kandev-plugin-kandy-$(VERSION).tar.gz
+KANDEV_BACKEND := ../kandev/apps/backend
 
 build:
 	mkdir -p bin
@@ -33,7 +34,7 @@ package:
 	GOOS=darwin  GOARCH=amd64 go build -o $(STAGE)/server/plugin-darwin-amd64      ./server
 	GOOS=darwin  GOARCH=arm64 go build -o $(STAGE)/server/plugin-darwin-arm64      ./server
 	GOOS=windows GOARCH=amd64 go build -o $(STAGE)/server/plugin-windows-amd64.exe ./server
-	go run github.com/kandev/kandev/cmd/plugin-pack -dir $(STAGE) -out $(PKG_OUT)
+	go -C "$(KANDEV_BACKEND)" run ./cmd/plugin-pack -dir "$(abspath $(STAGE))" -out "$(abspath $(PKG_OUT))"
 	rm -rf $(STAGE)
 	@echo "Wrote $(PKG_OUT)"
 
@@ -44,7 +45,7 @@ package-host:
 	cp README.md $(STAGE)/README.md
 	cp ui/bundle.js $(STAGE)/ui/bundle.js
 	go build -o $(STAGE)/server/plugin-$$(go env GOOS)-$$(go env GOARCH)$$(go env GOEXE) ./server
-	go run github.com/kandev/kandev/cmd/plugin-pack -dir $(STAGE) -out $(PKG_OUT) -platform-only
+	go -C "$(KANDEV_BACKEND)" run ./cmd/plugin-pack -dir "$(abspath $(STAGE))" -out "$(abspath $(PKG_OUT))" -platform-only
 	rm -rf $(STAGE)
 	@echo "Wrote $(PKG_OUT)"
 
