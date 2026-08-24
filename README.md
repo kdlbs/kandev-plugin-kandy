@@ -232,7 +232,7 @@ snapshot is explicitly revoked.
 
 Developed against a local checkout of the kandev monorepo (see the
 `replace` directive in `go.mod`). Reproducible CI and release builds pin the
-Kandev SDK to `9f5ffd70b9265bdf07e3a2448af363b162525bb0`, the refreshed action-access
+Kandev SDK to `72da5d93b9c9480596792a753b31e3955501e972`, the refreshed action-access
 security baseline intended for Kandev 0.91.1.
 
 ```sh
