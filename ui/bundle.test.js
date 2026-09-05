@@ -3446,6 +3446,69 @@ test("kandyCard motion wiring: wander layer, facing flip, gait class, tracked hi
   assert.equal(parseFloat(bubbleAt(30).props.style.right), 248 - cRight.x - 26);
   const cLeft = render.bonkContactFor(data, -30);
   assert.equal(parseFloat(bubbleAt(-30).props.style.left), cLeft.x - 26);
+
+  // The widget threads a stable callback ref through motion.wanderRef so the
+  // leg timer can move this node imperatively (no per-frame re-render). When
+  // supplied it lands on the wander layer; omitted, it is simply undefined.
+  const refFn = () => {};
+  const withRef = render.kandyCard(jsx, data, null, care, 13, undefined, null, {
+    x: 0, facing: 1, walking: false, cry: 0, wanderRef: refFn,
+  });
+  assert.equal(findWander(withRef).props.ref, refFn, "motion.wanderRef lands on the wander layer");
+  assert.equal(findWander(idle).props.ref, undefined, "no ref when the caller omits wanderRef");
+});
+
+test("wander position is driven imperatively via a stable, self-syncing node ref", async () => {
+  const host = makeRerenderableWidget();
+  // level 1 (egg) is deterministically stationary, so the card renders with
+  // no dependence on the probabilistic stroll gate or the wall clock.
+  const kandyData = sampleKandy({ level: 1 });
+
+  const runtime = loadBundle();
+  runtime.plugin.initialize(
+    { registerComponent: host.registerComponent, registerWsHandler() {} },
+    {
+      React: host.React,
+      api: {
+        fetch() {
+          return Promise.resolve({ json: () => Promise.resolve(kandyData) });
+        },
+      },
+      jsx,
+      ui: {
+        Dialog: "Dialog",
+        DialogContent: "DialogContent",
+        DialogTitle: "DialogTitle",
+        Tooltip: "Tooltip",
+        TooltipContent: "TooltipContent",
+        TooltipTrigger: "TooltipTrigger",
+      },
+    },
+  );
+
+  host.render(); // mount: kicks off the fetch
+  for (let i = 0; i < 10; i++) await Promise.resolve(); // let the fetch chain settle
+  let tree = host.render(); // now reflects the fetched data
+
+  const findWanderNode = (t) => findNode(t, (n) => n.props && n.props.className === "kandev-kandy-wander");
+  const wander = findWanderNode(tree);
+  assert.ok(wander, "the card exposes the wander layer");
+  const ref = wander.props.ref;
+  assert.equal(typeof ref, "function", "the wander layer carries a callback ref");
+
+  // Registering a node syncs it to the current position immediately, so a
+  // card mounting mid-stroll never flashes the stale boundary x.
+  const node = { style: {} };
+  const cleanup = ref(node);
+  assert.equal(node.style.transform, "translateX(0px)", "the ref seeds the node position on attach");
+  assert.equal(typeof cleanup, "function", "the ref returns an unregister cleanup");
+
+  // The ref identity is stable across renders, so React never detaches and
+  // reattaches the node between commits (which is what caused the churn).
+  tree = host.render();
+  assert.equal(findWanderNode(tree).props.ref, ref, "the wander ref is stable across renders");
+
+  cleanup(); // unregisters without throwing
 });
 
 test("kandyCard cry wiring: sob + tears only when stationary, awake, undisturbed", () => {
