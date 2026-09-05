@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0] - 2026-09-05
+
+### Changed
+
+- perf(ui): drive Kandy wander position imperatively to stop idle re-render loop (#22) (230d949)
+
+
 ## [0.13.1] - 2026-08-11
 
 ### Changed
