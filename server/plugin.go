@@ -272,6 +272,21 @@ type plugin struct {
 	grottoMu sync.Mutex
 	// sealMu serializes the one-time vault fetch of the HMAC key.
 	sealMu sync.Mutex
+	// jarMu serializes the instance-wide Kandy Jar connection. The action
+	// surface is workspace-scoped for host authorization, but exactly one
+	// actor owns the publisher credential for this plugin instance.
+	jarMu sync.Mutex
+	// jarQueueMu protects only the latest desired projection. It stays
+	// separate from jarMu so activity delivery never waits on Jar HTTP.
+	jarQueueMu    sync.Mutex
+	jarQueued     *jarKandy
+	jarSignal     chan struct{}
+	jarStop       chan struct{}
+	jarWorkerOnce sync.Once
+	// skipJarResumeProbe is a test-only lifecycle seam. Production leaves it
+	// false; fixtures that mutate their in-memory Host after SetHost suppress
+	// the concurrent startup read and exercise resume in its dedicated test.
+	skipJarResumeProbe bool
 
 	// Seams injected for tests; production values set in newPlugin.
 	now         func() time.Time
@@ -287,14 +302,37 @@ func newPlugin() *plugin {
 		writeRound:  make(chan struct{}),
 		writeSignal: make(chan struct{}, 1),
 		writeStop:   make(chan struct{}),
+		jarSignal:   make(chan struct{}, 1),
+		jarStop:     make(chan struct{}),
 	}
+}
+
+// SetHost keeps the SDK's normal broker injection and also resumes a durable
+// Jar outbox after a plugin process restart. The probe is detached and
+// bounded; Host injection itself must never wait on state storage or network.
+func (p *plugin) SetHost(host pluginsdk.Host) {
+	p.UnimplementedPlugin.SetHost(host)
+	if host == nil || p.skipJarResumeProbe {
+		return
+	}
+	go func() {
+		p.jarMu.Lock()
+		state, found, err := p.loadJarConnection(context.Background(), host)
+		p.jarMu.Unlock()
+		if err == nil && found && !state.Revoked {
+			p.signalJarPublisher()
+		}
+	}()
 }
 
 // close stops the writer goroutine. Production never calls it — the plugin
 // lives as long as the process — but tests do, so a package run does not
 // accumulate one parked goroutine per plugin.
 func (p *plugin) close() {
-	p.stopOnce.Do(func() { close(p.writeStop) })
+	p.stopOnce.Do(func() {
+		close(p.writeStop)
+		close(p.jarStop)
+	})
 }
 
 // boundedContext derives a Host-call context from ctx that always expires,
@@ -723,10 +761,11 @@ func (p *plugin) OnEvent(ctx context.Context, e *pluginsdk.Event) error {
 	if delta <= 0 {
 		return nil
 	}
-	p.awardXP(ctx, func(l *ledger) {
+	l := p.awardXP(ctx, func(l *ledger) {
 		l.XP += delta
 		apply(l)
 	})
+	p.queueJarForLedger(l)
 	return nil
 }
 
@@ -750,13 +789,22 @@ func xpForEvent(e *pluginsdk.Event) (float64, func(*ledger)) {
 
 func (p *plugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookRequest) (*pluginsdk.WebhookResponse, error) {
 	if req.WebhookKey == webhookKeyPet {
+		if req.Method != "POST" {
+			return methodNotAllowedResponse("POST"), nil
+		}
 		return p.handlePet(ctx), nil
 	}
 	if req.WebhookKey == webhookKeyBonk {
+		if req.Method != "POST" {
+			return methodNotAllowedResponse("POST"), nil
+		}
 		return p.handleBonk(ctx), nil
 	}
 	if req.WebhookKey != webhookKeyKandy {
 		return jsonResponse(404, []byte(`{"error":"unknown webhook"}`)), nil
+	}
+	if req.Method != "GET" {
+		return methodNotAllowedResponse("GET"), nil
 	}
 	query, err := url.ParseQuery(req.Query)
 	if err != nil {
@@ -823,6 +871,7 @@ func (p *plugin) handlePet(ctx context.Context) *pluginsdk.WebhookResponse {
 		l.Temperament = clampTemperament(l.Temperament + gain)
 		l.LastPetEffectAt = p.now().UTC().Format(time.RFC3339)
 	})
+	p.queueJarForLedger(l)
 	view := p.presentKandy(ctx, l, nil)
 	return presentResponse(view)
 }
@@ -846,6 +895,7 @@ func (p *plugin) handleBonk(ctx context.Context) *pluginsdk.WebhookResponse {
 		l.LastBonkedAt = p.now().UTC().Format(time.RFC3339)
 		l.LastPettedAt = "" // a bonk cancels any active pet lift
 	})
+	p.queueJarForLedger(l)
 	view := p.presentKandy(ctx, l, nil)
 	view.Flavor = "Your kandy got drenched."
 	return presentResponse(view)
@@ -877,7 +927,8 @@ func (p *plugin) applyDebugGrant(ctx context.Context, grant string) *pluginsdk.W
 	if err != nil || n <= 0 || n > debugGrantMax {
 		return jsonResponse(400, []byte(`{"error":"debug_grant must be an integer in 1..1000000000"}`))
 	}
-	p.awardXP(ctx, func(l *ledger) { l.XP += float64(n) })
+	l := p.awardXP(ctx, func(l *ledger) { l.XP += float64(n) })
+	p.queueJarForLedger(l)
 	return nil
 }
 
@@ -928,14 +979,18 @@ func (p *plugin) healPassively(ctx context.Context) {
 	}
 	p.mu.Lock()
 	healed := passiveHealUpdate(p.cached, p.now().UTC())
+	var snapshot *ledger
 	if healed {
 		p.cached.UpdatedAt = p.now().UTC().Format(time.RFC3339)
 		p.ledgerVersion++
+		copied := *p.cached
+		snapshot = &copied
 	}
 	version := p.ledgerVersion
 	p.mu.Unlock()
 	if healed {
 		p.persistLedger(version)
+		p.queueJarForLedger(snapshot)
 	}
 }
 
@@ -1084,4 +1139,10 @@ func jsonResponse(status int32, body []byte) *pluginsdk.WebhookResponse {
 		},
 		Body: body,
 	}
+}
+
+func methodNotAllowedResponse(allow string) *pluginsdk.WebhookResponse {
+	resp := jsonResponse(405, []byte(`{"error":"method not allowed"}`))
+	resp.Headers["Allow"] = allow
+	return resp
 }
