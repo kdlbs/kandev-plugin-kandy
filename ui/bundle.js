@@ -7487,6 +7487,11 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
       "div",
       {
         className: "kandev-kandy-wander",
+        // motion.wanderRef (when supplied) lets the widget drive the leg
+        // position straight on this node, so a stroll does not re-render the
+        // whole mascot tree ~25x/s. Legacy callers omit it and keep the
+        // pure, state-only transform below.
+        ref: motion.wanderRef,
         style: { transform: "translateX(" + wanderX + "px)" },
       },
       h(
@@ -7943,6 +7948,28 @@ function makeKandyWidget(host) {
     var cryEndTimerRef = React.useRef(null);
     var chainTimerRef = React.useRef(null);
     var lookTimerRef = React.useRef(null);
+    // Wander perf: during a leg only x changes, so it is pushed straight to
+    // the DOM (translateX on the wander wrapper) instead of re-rendering the
+    // whole mascot tree ~25x/s. React state still mirrors motion at leg
+    // boundaries (start/end, facing, cry). wanderNodesRef holds the live
+    // wander nodes; wanderRefCb (a stable callback ref) registers them on
+    // mount and, via the returned cleanup, unregisters them on unmount.
+    var wanderNodesRef = React.useRef(null);
+    if (!wanderNodesRef.current) {
+      var wanderRegistry = { nodes: new Set() };
+      wanderRegistry.cb = function (node) {
+        if (!node) return undefined;
+        wanderRegistry.nodes.add(node);
+        // A card mounting mid-leg must not flash the stale boundary x.
+        var live = motionRef.current;
+        node.style.transform = "translateX(" + ((live && live.x) || 0) + "px)";
+        return function () {
+          wanderRegistry.nodes.delete(node);
+        };
+      };
+      wanderNodesRef.current = wanderRegistry;
+    }
+    var wanderRefCb = wanderNodesRef.current.cb;
     // liveRef mirrors the latest render values for the interval callbacks
     // (the mount-effect closures would otherwise see mount-time state).
     var liveRef = React.useRef({});
@@ -7974,6 +8001,16 @@ function makeKandyWidget(host) {
         facing: m.facing,
         walking: !!m.leg,
         cry: m.cryUntil > Date.now() ? m.crySeq : 0,
+      });
+    }
+
+    // applyWanderX: the imperative half of publishMotion. Writes just the
+    // leg position onto every live wander node, with no React render.
+    function applyWanderX(x) {
+      var reg = wanderNodesRef.current;
+      if (!reg) return;
+      reg.nodes.forEach(function (node) {
+        if (node && node.style) node.style.transform = "translateX(" + x + "px)";
       });
     }
 
@@ -8019,8 +8056,13 @@ function makeKandyWidget(host) {
           }
           // v0.8.1: chained journeys — after a brief pause, amble on.
           if (m.chainLeft > 0) scheduleChainLeg();
+          // Leg boundary: mirror walking=false and the final x into React.
+          publishMotion();
+          return;
         }
-        publishMotion();
+        // Mid-leg: only x moves. Push it straight to the wander node(s)
+        // instead of re-rendering the whole mascot tree.
+        applyWanderX(m.x);
       }, WANDER_FRAME_MS);
     }
 
@@ -8739,6 +8781,15 @@ function makeKandyWidget(host) {
       }
     }
 
+    // Keep the imperative wander position correct across renders triggered
+    // by anything other than the leg timer (data refresh, clock tick). After
+    // each commit this reasserts the live x while a leg is in flight, so the
+    // node never flashes back to the last boundary value.
+    (React.useLayoutEffect || React.useEffect)(function () {
+      var m = motionRef.current;
+      if (m && m.leg) applyWanderX(m.x);
+    });
+
     React.useEffect(function () {
       mountedRef.current = true;
       load();
@@ -8802,7 +8853,13 @@ function makeKandyWidget(host) {
     var resolvedGrottoView = tokenGrottoResolvedView(tokenGrottoModel, grottoView);
     // The dialog card walks; the hover card never does.
     var cardWalk = grottoTransitClass(grottoTransit, "card");
-    var dialogMotion = cardWalk ? Object.assign({}, motionState, { facing: 1, transit: cardWalk }) : motionState;
+    // Both cards carry the stable wander ref so the leg timer can move them
+    // imperatively; the dialog card additionally faces right and wears its
+    // grotto transit gait while walking between scenes.
+    var chipMotion = Object.assign({}, motionState, { wanderRef: wanderRefCb });
+    var dialogMotion = cardWalk
+      ? Object.assign({}, motionState, { facing: 1, transit: cardWalk, wanderRef: wanderRefCb })
+      : Object.assign({}, motionState, { wanderRef: wanderRefCb });
 
     // The underground Kandy travels wearing its own gait. Which scene it is
     // standing in decides which leg of the trip applies to it. Asleep or still
@@ -9015,7 +9072,7 @@ function makeKandyWidget(host) {
           // Same care wiring as the dialog: the hover card is a first-class
           // surface — treat and bucket work here too. (Both cards are never
           // mounted at once: the dialog's overlay blocks chip hover.)
-          kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech, motionState),
+          kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech, chipMotion),
         ),
       ),
       h(
