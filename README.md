@@ -218,10 +218,49 @@ make package
 Use Go 1.26.0 and Node 24. The hand-written `ui/bundle.js` has no build step
 or frontend dependencies. `make test` runs Go tests, UI interaction tests,
 and positive and negative package/release verifier checks. `make smoke-package`
-builds a host package and opens the packaged UI bundle in a disposable Chrome
-fixture; it checks the Action and older-host paths on desktop and phone sizes,
-including keyboard, touch, focus, and reduced motion. The fixture exercises
-the package contract and does not replace validation in a released Kandev host.
+opens the packaged UI bundle in a disposable Chrome fixture. It checks the
+Action and older-host paths on desktop and phone sizes. It exercises the
+package contract but does not replace validation in a Kandev host.
+
+For host integration, `scripts/smoke-real-host.mjs` launches a disposable
+Kandev backend, installs the built package through Settings, and tests the
+actual chat top bar and phone control with fake agent data. The SDK-pin host
+also has a phone plugin menu; v0.83.0 predates that menu, so its phone check
+uses the legacy top-bar button. Both checks require a 44px touch target. The
+script also checks hover/focus preview, Enter/Space and touch activation,
+reduced motion, and one registration after disable/re-enable. It writes
+`result.json`, measured control geometry, host logs, and screenshots to each
+artifacts directory. Run it on Node 24 after building the two host revisions
+and installing the locked web dependencies and Playwright Chromium:
+
+```sh
+mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
+SMOKE_ROOT="$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/kandy-host-smoke.XXXXXX")"
+HOST_ROOT="$SMOKE_ROOT/hosts/kandev"
+mkdir -p "$SMOKE_ROOT/hosts"
+git clone https://github.com/kdlbs/kandev.git "$HOST_ROOT"
+git -C "$HOST_ROOT" checkout --detach 570600439036e81f8e9e1c63f15c4abce8a6c846
+git -C "$HOST_ROOT" worktree add --detach "$SMOKE_ROOT/hosts/kandev-min" v0.83.0
+
+for checkout in "$HOST_ROOT" "$SMOKE_ROOT/hosts/kandev-min"; do
+  (cd "$checkout/apps" && corepack enable && pnpm install --frozen-lockfile)
+  (cd "$checkout/apps/web" && pnpm exec playwright install chromium)
+  (cd "$checkout" && make build)
+done
+
+mkdir -p "$SMOKE_ROOT/runtime"
+VERSION="$(sed -n 's/^VERSION := //p' Makefile)"
+PACKAGE="kandev-plugin-kandy-$VERSION.tar.gz"
+make package-host
+TMPDIR="$SMOKE_ROOT/runtime" node scripts/smoke-real-host.mjs \
+  "$HOST_ROOT" "$PACKAGE" action 18431 "$SMOKE_ROOT/action"
+TMPDIR="$SMOKE_ROOT/runtime" node scripts/smoke-real-host.mjs \
+  "$SMOKE_ROOT/hosts/kandev-min" "$PACKAGE" legacy 18432 "$SMOKE_ROOT/minimum"
+```
+
+Use an available pair of ports. The smoke host uses isolated home and database
+directories and deletes them when each run ends. Screenshots and JSON
+measurements remain in the artifacts directories under `SMOKE_ROOT`.
 
 ## Automation and releases
 

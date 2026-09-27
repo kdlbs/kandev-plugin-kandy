@@ -3043,6 +3043,28 @@ function removeStyles() {
 // Hover card + top-bar widget.
 // ---------------------------------------------------------------------------
 
+var KANDY_ACTION_TRANSLATIONS = {
+  en: {
+    topbarActionAwake: "Kandy: level {{level}} {{stageName}}, {{mood}}",
+    topbarActionAsleep: "Kandy: level {{level}} {{stageName}}, {{mood}}, sleeping",
+  },
+};
+
+function kandyTopbarLabel(translate, shown, asleep) {
+  var level = shown.level;
+  var stageName = shown.stage_name;
+  var mood = shown.mood || "content";
+  var fallback = "Kandy: level " + level + " " + stageName + ", " + mood + (asleep ? ", sleeping" : "");
+  if (typeof translate !== "function") return fallback;
+
+  var key = asleep ? "topbarActionAsleep" : "topbarActionAwake";
+  var label = translate(key, {
+    defaultValue: fallback,
+    values: { level: level, stageName: stageName, mood: mood },
+  });
+  return typeof label === "string" && label && label !== key ? label : fallback;
+}
+
 function kandyTopbarAction(h, ui, options) {
   var Action = ui && ui.Action;
   var chipClass = "";
@@ -3058,16 +3080,9 @@ function kandyTopbarAction(h, ui, options) {
       className: "kandev-kandy-widget-art" + (chipClass ? " " + chipClass : ""),
       "aria-hidden": "true",
     },
-    creatureSvg(h, options.chipShown, Action ? 16 : 22, "", true),
+    creatureSvg(h, options.chipShown, Action ? 16 : 22, Action ? "size-4" : "", true),
   );
-  var label =
-    "Kandy: level " +
-    options.shown.level +
-    " " +
-    options.shown.stage_name +
-    ", " +
-    (options.shown.mood || "content") +
-    (options.chipAsleep ? ", sleeping" : "");
+  var label = kandyTopbarLabel(options.translate, options.shown, options.chipAsleep);
 
   if (Action) {
     return h(Action, {
@@ -7847,6 +7862,9 @@ function makeKandyWidget(host) {
   var DialogTitle = ui.DialogTitle;
 
   return function KandyWidget() {
+    var translation =
+      host.i18n && typeof host.i18n.useTranslation === "function" ? host.i18n.useTranslation() : null;
+    var translate = translation && translation.t;
     var stateHook = React.useState(null);
     var data = stateHook[0];
     var setData = stateHook[1];
@@ -8973,6 +8991,7 @@ function makeKandyWidget(host) {
       shown: shown,
       chipShown: chipShown,
       chipAsleep: chipAsleep,
+      translate: translate,
       celebration: celebration,
       greetFx: greetFx,
       onLoad: load,
@@ -9255,6 +9274,9 @@ window.registerKandevPlugin(PLUGIN_ID, {
   initialize: function (registry, host) {
     h0 = host.jsx;
     injectStyles();
+    if (typeof registry.registerTranslations === "function") {
+      registry.registerTranslations(KANDY_ACTION_TRANSLATIONS);
+    }
     registry.registerComponent("chat-top-bar", makeKandyWidget(host));
     // Live updates: refetch when work happens, instead of waiting for the
     // backstop poll (or a page reload).
@@ -9290,6 +9312,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     growthForLevel: growthForLevel,
     kandyCard: kandyCard,
     kandyTopbarAction: kandyTopbarAction,
+    kandyTopbarLabel: kandyTopbarLabel,
     petOverlay: petOverlay,
     bonkOverlay: bonkOverlay,
     distrustOverlay: distrustOverlay,

@@ -162,15 +162,28 @@ function renderTopbarWidget(options = {}) {
       },
     },
   };
+  if (options.translation) {
+    host.i18n = {
+      useTranslation() {
+        return { t: options.translation };
+      },
+    };
+  }
   const registry = {
     registerComponent(slot, component) {
       registrations.push({ slot, component });
     },
     registerWsHandler() {},
   };
+  let translations = null;
+  if (options.withTranslations) {
+    registry.registerTranslations = (catalogs) => {
+      translations = catalogs;
+    };
+  }
   plugin.initialize(registry, host);
   const tree = harness.render(registrations[0].component);
-  return { document, fetchCalls, harness, plugin, registrations, tree, ui };
+  return { document, fetchCalls, harness, plugin, registrations, translations, tree, ui };
 }
 
 function sampleKandy(overrides = {}) {
@@ -1550,6 +1563,7 @@ test("chat topbar uses host Action with one decorative creature inside the host 
   assert.equal(icon.props.children.type, "svg");
   assert.equal(icon.props.children.props.width, 16);
   assert.equal(icon.props.children.props.height, 16);
+  assert.match(icon.props.children.props.className, /\bsize-4\b/);
   assert.equal(icon.props.children.props["aria-hidden"], "true");
 
   const css = document.getElementById("kandev-kandy-style").textContent;
@@ -1570,6 +1584,47 @@ test("chat topbar falls back to the native control and keeps its legacy target",
   assert.equal(trigger.props["aria-label"], "Kandy: level 1 Egg, content");
   assert.equal(trigger.props.children.type, "span");
   assert.equal(trigger.props.children.props.children.props.width, 22);
+});
+
+test("chat topbar registers English catalog and uses host-localized accessible copy", () => {
+  const calls = [];
+  const { tree, translations, ui } = renderTopbarWidget({
+    withAction: true,
+    withTranslations: true,
+    translation(key, options) {
+      calls.push([key, options]);
+      const prefix = key === "topbarActionAsleep" ? "Localized sleeping" : "Localized awake";
+      return `${prefix}: level ${options.values.level} ${options.values.stageName}, ${options.values.mood}`;
+    },
+  });
+  const action = findNode(tree, (node) => node.type === ui.Action);
+  assert.equal(action.props.label, "Localized awake: level 1 Egg, content");
+  assert.deepEqual(Object.keys(translations).sort(), ["en"]);
+  assert.equal(translations.en.topbarActionAwake, "Kandy: level {{level}} {{stageName}}, {{mood}}");
+  assert.equal(
+    translations.en.topbarActionAsleep,
+    "Kandy: level {{level}} {{stageName}}, {{mood}}, sleeping",
+  );
+  assert.equal(calls[0][0], "topbarActionAwake");
+  assert.equal(calls[0][1].values.level, 1);
+  assert.equal(calls[0][1].values.stageName, "Egg");
+  assert.equal(calls[0][1].values.mood, "content");
+  assert.equal(calls[0][1].defaultValue, "Kandy: level 1 Egg, content");
+
+  const label = loadBundle().plugin.__render.kandyTopbarLabel;
+  const sleeping = label(
+    (key, options) => {
+      assert.equal(key, "topbarActionAsleep");
+      return `Dormant Kandy level ${options.values.level} ${options.values.stageName}, ${options.values.mood}`;
+    },
+    { level: 8, stage_name: "Cloud Sporeling", mood: "calm" },
+    true,
+  );
+  assert.equal(sleeping, "Dormant Kandy level 8 Cloud Sporeling, calm");
+  assert.equal(
+    label(null, { level: 8, stage_name: "Cloud Sporeling", mood: "calm" }, true),
+    "Kandy: level 8 Cloud Sporeling, calm, sleeping",
+  );
 });
 
 test("topbar hover, focus, and activation keep the preview, data fetch, and dialog path", async () => {
