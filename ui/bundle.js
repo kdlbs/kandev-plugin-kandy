@@ -2722,11 +2722,11 @@ function sceneFor(biome, level, seed, timeOfDay, season, ancestors, ancestorBoun
 // ---------------------------------------------------------------------------
 
 var KANDY_CSS =
-  // The host's chat topbar uses 28px controls on desktop and 44px touch
-  // targets on phones. The ID selector keeps this plugin-owned geometry
-  // authoritative over the utility classes on the shared host button.
-  "#kandev-kandy-widget{width:28px;height:28px}" +
-  "@media (max-width:639px){#kandev-kandy-widget{width:44px;height:44px}}" +
+  // Older hosts without ui.Action use the original button shell. Current
+  // hosts own the action dimensions and icon box in the chat top bar.
+  "#kandev-kandy-widget.kandev-kandy-widget-legacy{width:28px;height:28px}" +
+  "@media (max-width:639px){#kandev-kandy-widget.kandev-kandy-widget-legacy{width:44px;height:44px}}" +
+  ".kandev-kandy-widget-art{position:relative;display:inline-flex;align-items:center;justify-content:center}" +
   // The shared TooltipContent always renders a small rotated-square arrow
   // (a direct span child wrapping an svg). On our full-bleed scene card it
   // reads as a stray floating square — hide it. :has() keeps the OTHER
@@ -3042,6 +3042,62 @@ function removeStyles() {
 // ---------------------------------------------------------------------------
 // Hover card + top-bar widget.
 // ---------------------------------------------------------------------------
+
+function kandyTopbarAction(h, ui, options) {
+  var Action = ui && ui.Action;
+  var chipClass = "";
+  if (options.celebration) {
+    chipClass = bigCelebration(options.celebration) ? "kandev-kandy-levelup" : "kandev-kandy-celebrate";
+  } else if (options.greetFx) {
+    chipClass = "kandev-kandy-celebrate";
+  }
+
+  var icon = h(
+    "span",
+    {
+      className: "kandev-kandy-widget-art" + (chipClass ? " " + chipClass : ""),
+      "aria-hidden": "true",
+    },
+    creatureSvg(h, options.chipShown, Action ? 16 : 22, "", true),
+  );
+  var label =
+    "Kandy: level " +
+    options.shown.level +
+    " " +
+    options.shown.stage_name +
+    ", " +
+    (options.shown.mood || "content") +
+    (options.chipAsleep ? ", sleeping" : "");
+
+  if (Action) {
+    return h(Action, {
+      id: "kandev-kandy-widget",
+      label: label,
+      icon: icon,
+      // The Kandy card is the rich preview. Do not add a second, short host
+      // tooltip around the same trigger.
+      tooltip: "",
+      onMouseEnter: options.onLoad,
+      onFocus: options.onLoad,
+      onClick: options.onOpen,
+    });
+  }
+
+  return h(
+    "button",
+    {
+      id: "kandev-kandy-widget",
+      type: "button",
+      className:
+        "kandev-kandy-widget-legacy relative h-7 w-7 flex items-center justify-center cursor-pointer rounded-md border border-border/60 bg-muted/30 hover:bg-muted/60",
+      "aria-label": label,
+      onMouseEnter: options.onLoad,
+      onFocus: options.onLoad,
+      onClick: options.onOpen,
+    },
+    icon,
+  );
+}
 
 var EGG_PLACEHOLDER = {
   level: 1,
@@ -8911,47 +8967,25 @@ function makeKandyWidget(host) {
     var chipAsleep = kandyAsleep;
     if (chipAsleep) chipShown = Object.assign({}, shown, { sleep_state: "asleep" });
 
-    // The chip is a real button: hover/focus gives the desktop quick-peek
-    // tooltip, tap/click opens the same card as a dialog (touch devices
-    // have no hover, so the dialog is the mobile path).
-    var chipCelebrateCls = "";
-    if (celebration) {
-      chipCelebrateCls =
-        bigCelebration(celebration) ? " kandev-kandy-levelup" : " kandev-kandy-celebrate";
-    } else if (greetFx) {
-      // The chip does its existing small hop alongside the arrival wave.
-      chipCelebrateCls = " kandev-kandy-celebrate";
-    }
-    var trigger = h(
-      "button",
-      {
-        id: "kandev-kandy-widget",
-        type: "button",
-        className:
-          "relative h-7 w-7 flex items-center justify-center cursor-pointer rounded-md border border-border/60 bg-muted/30 hover:bg-muted/60" +
-          chipCelebrateCls,
-        "aria-label":
-          "Kandy: level " +
-          shown.level +
-          " " +
-          shown.stage_name +
-          ", " +
-          (shown.mood || "content") +
-          (chipAsleep ? ", sleeping" : ""),
-        onMouseEnter: load,
-        onFocus: load,
-        onClick: function () {
-          load();
-          returnToPhotoEntryRef.current = false;
-          setPhotoOpen(false);
-          setPhotoStatus("idle");
-          setDialogOpen(true);
-          // The dialog always greets on open (arrival gets the hop too).
-          greetOnOpen();
-        },
+    // Hover/focus keeps the desktop quick peek warm; clicking, tapping, or
+    // using the keyboard opens the same card as a dialog on every surface.
+    var trigger = kandyTopbarAction(h, ui, {
+      shown: shown,
+      chipShown: chipShown,
+      chipAsleep: chipAsleep,
+      celebration: celebration,
+      greetFx: greetFx,
+      onLoad: load,
+      onOpen: function () {
+        load();
+        returnToPhotoEntryRef.current = false;
+        setPhotoOpen(false);
+        setPhotoStatus("idle");
+        setDialogOpen(true);
+        // The dialog always greets on open (arrival gets the hop too).
+        greetOnOpen();
       },
-      creatureSvg(h, chipShown, 22, "", true),
-    );
+    });
 
     // Shared interaction wiring for BOTH card surfaces (hover preview and
     // click dialog): treat on click, bucket on right-click, plus the fx
@@ -9255,6 +9289,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
     photoAncestorsFor: photoAncestorsFor,
     growthForLevel: growthForLevel,
     kandyCard: kandyCard,
+    kandyTopbarAction: kandyTopbarAction,
     petOverlay: petOverlay,
     bonkOverlay: bonkOverlay,
     distrustOverlay: distrustOverlay,

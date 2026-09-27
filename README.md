@@ -75,6 +75,17 @@ Build a package (`make package-host` for your platform, `make package` for
 all platforms) and install the tarball via **Settings > Plugins > Install**
 or `POST /api/plugins/install`.
 
+The manifest requires Kandev 0.83.0 or newer. It declares instance state,
+encrypted host secrets, and event subscriptions. Kandy has no setup form and
+does not ask for provider credentials. The host `Action` is optional at
+runtime: newer hosts use it for the top-bar control, while older supported
+hosts keep the native-button fallback. The source SDK pin below identifies the
+build contract; it does not change the runtime minimum.
+
+The package includes binaries for Linux amd64/arm64, macOS amd64/arm64, and
+Windows amd64. `make package-host` builds only for the current machine;
+`make package` builds every declared platform.
+
 ## How it works and what it reads
 
 Kandy is a visual, instance-wide companion. It does not call an agent, read a
@@ -181,22 +192,60 @@ its grotto history.
 
 ## Development
 
-Developed against a local checkout of the kandev monorepo (see the
-`replace` directive in `go.mod`).
+Kandy uses the Go SDK from a private sibling checkout of the Kandev monorepo.
+`.kandev-sdk-ref` pins that source to
+`570600439036e81f8e9e1c63f15c4abce8a6c846`, which contains the additive
+`host.ui.Action` API. The Go `replace` path expects the plugin and Kandev
+checkouts to be siblings:
 
 ```sh
-make test        # Go unit tests + dependency-free UI render/clipboard tests
-make fmt vet     # gofmt + go vet
+mkdir plugin-work && cd plugin-work
+git clone https://github.com/kdlbs/kandev.git kandev
+git clone https://github.com/kdlbs/kandev-plugin-kandy.git kandev-plugin-kandy
+git -C kandev checkout "$(cat kandev-plugin-kandy/.kandev-sdk-ref)"
+cd kandev-plugin-kandy
+
+go mod tidy
+git diff --exit-code -- go.mod go.sum
+make check-format
+make vet
+make test
+make build
 make package-host
+make package
 ```
+
+Use Go 1.26.0 and Node 24. The hand-written `ui/bundle.js` has no build step
+or frontend dependencies. `make test` runs Go tests, UI interaction tests,
+and positive and negative package/release verifier checks. `make smoke-package`
+builds a host package and opens the packaged UI bundle in a disposable Chrome
+fixture; it checks the Action and older-host paths on desktop and phone sizes,
+including keyboard, touch, focus, and reduced motion. The fixture exercises
+the package contract and does not replace validation in a released Kandev host.
 
 ## Automation and releases
 
 Pull requests to `master` run separate verification and packaging workflows.
-They check module tidiness, formatting, `go vet`, tests, a host build, and a
-cross-platform package build. Pushing a `v*` tag verifies the plugin, builds
-the all-platform package, and publishes a GitHub Release with the package and
-its `checksums.txt` asset.
+They pin the Kandev source checkout, check module tidiness and formatting, run
+`go vet` and tests, and build and verify the host-only and all-platform
+packages. Package verification checks the manifest identity and version,
+declared binaries, exact file inventory, and every SHA-256 checksum.
+
+The `release` workflow runs from `master`. It validates the candidate, runs
+backend and UI checks, and verifies the package before it pushes release
+metadata or a tag. A pushed `v*` tag passes through the same checks before the
+workflow publishes a GitHub Release with the package and `checksums.txt`.
+Prerelease versions remain valid in both the manifest/Makefile match and tag
+validation.
+
+## Troubleshooting
+
+- If `go test` cannot resolve `github.com/kandev/kandev`, check that the host
+  checkout is beside the plugin and is at `.kandev-sdk-ref`.
+- If packaging reports a missing runtime executable, check that the build
+  platform is declared in `manifest.yaml`, then run `make clean` and retry.
+- `make smoke-package` requires Chrome or Chromium. Set `CHROME_BIN` if the
+  browser executable is not named `google-chrome`.
 
 ## State
 
@@ -204,3 +253,8 @@ Two aggregate JSON ledgers in kandev Host state (scope `instance`) participate
 in kandev backups, survive plugin upgrades, and are removed on uninstall.
 Uninstalling the plugin is, in the kindest possible terms, the end of that
 kandy's story and its Token Grotto.
+
+## License
+
+This repository has no license file or declared GitHub license. The manifest's
+author field gives attribution; it does not grant reuse rights.
