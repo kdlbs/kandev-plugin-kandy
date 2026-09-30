@@ -103,6 +103,89 @@ function findNode(root, predicate) {
   return found;
 }
 
+function makeHookHarness() {
+  let index = 0;
+  const slots = [];
+  const stateUpdates = [];
+  const React = {
+    Fragment: "react.fragment",
+    useState(initialValue) {
+      const slot = index++;
+      if (!slots[slot]) {
+        slots[slot] = {
+          kind: "state",
+          value: typeof initialValue === "function" ? initialValue() : initialValue,
+        };
+      }
+      return [slots[slot].value, (value) => stateUpdates.push([slot, value])];
+    },
+    useRef(initialValue) {
+      const slot = index++;
+      if (!slots[slot]) slots[slot] = { kind: "ref", value: { current: initialValue } };
+      return slots[slot].value;
+    },
+    useEffect() {},
+    useLayoutEffect() {},
+  };
+  return {
+    React,
+    stateUpdates,
+    render(component) {
+      index = 0;
+      return component();
+    },
+  };
+}
+
+function renderTopbarWidget(options = {}) {
+  const { document, plugin } = loadBundle();
+  const harness = makeHookHarness();
+  const ui = {
+    Tooltip: "host.Tooltip",
+    TooltipTrigger: "host.TooltipTrigger",
+    TooltipContent: "host.TooltipContent",
+    Dialog: "host.Dialog",
+    DialogContent: "host.DialogContent",
+    DialogTitle: "host.DialogTitle",
+  };
+  if (options.withAction) ui.Action = function HostAction() {};
+  const fetchCalls = [];
+  const registrations = [];
+  const host = {
+    React: harness.React,
+    jsx,
+    ui,
+    api: {
+      fetch(path) {
+        fetchCalls.push(path);
+        return Promise.resolve({ json: () => Promise.resolve(sampleKandy()) });
+      },
+    },
+  };
+  if (options.translation) {
+    host.i18n = {
+      useTranslation() {
+        return { t: options.translation };
+      },
+    };
+  }
+  const registry = {
+    registerComponent(slot, component) {
+      registrations.push({ slot, component });
+    },
+    registerWsHandler() {},
+  };
+  let translations = null;
+  if (options.withTranslations) {
+    registry.registerTranslations = (catalogs) => {
+      translations = catalogs;
+    };
+  }
+  plugin.initialize(registry, host);
+  const tree = harness.render(registrations[0].component);
+  return { document, fetchCalls, harness, plugin, registrations, translations, tree, ui };
+}
+
 function sampleKandy(overrides = {}) {
   return Object.assign(
     {
@@ -1458,23 +1541,134 @@ test("token grotto resolves removed chambers to hub and subscribes to live usage
   assert.ok(actions.includes("session.prompt_usage"));
 });
 
-test("chat topbar control uses desktop and phone geometry", () => {
-  const { document, plugin } = loadBundle();
-  plugin.initialize(
-    {
-      registerComponent() {},
-      registerWsHandler() {},
-    },
-    { jsx, ui: {} },
-  );
+test("chat topbar uses host Action with one decorative creature inside the host glyph", () => {
+  const { document, tree, ui } = renderTopbarWidget({ withAction: true });
+  const wrapper = findNode(tree, (node) => node.type === ui.TooltipTrigger);
+  const action = wrapper.props.children;
+  assert.equal(action.type, ui.Action);
+  assert.equal(action.props.id, "kandev-kandy-widget");
+  assert.equal(action.props.label, "Kandy: level 1 Egg, content");
+  assert.equal(action.props.tooltip, "");
+  assert.equal(typeof action.props.onMouseEnter, "function");
+  assert.equal(typeof action.props.onFocus, "function");
+  assert.equal(typeof action.props.onClick, "function");
+  assert.equal("className" in action.props, false);
+  assert.equal("style" in action.props, false);
+  assert.equal("size" in action.props, false);
+  assert.equal(action.props.children, undefined);
 
-  const style = document.getElementById("kandev-kandy-style");
-  assert.ok(style);
-  assert.match(style.textContent, /#kandev-kandy-widget[^}]*width:28px[^}]*height:28px/);
+  const icon = action.props.icon;
+  assert.equal(icon.type, "span");
+  assert.equal(icon.props["aria-hidden"], "true");
+  assert.equal(icon.props.children.type, "svg");
+  assert.equal(icon.props.children.props.width, 16);
+  assert.equal(icon.props.children.props.height, 16);
+  assert.match(icon.props.children.props.className, /\bsize-4\b/);
+  assert.equal(icon.props.children.props["aria-hidden"], "true");
+
+  const css = document.getElementById("kandev-kandy-style").textContent;
+  assert.doesNotMatch(css, /#kandev-kandy-widget\{[^}]*width/);
+  assert.match(css, /#kandev-kandy-widget\.kandev-kandy-widget-legacy\{width:28px;height:28px\}/);
   assert.match(
-    style.textContent,
-    /@media \(max-width:639px\)\{#kandev-kandy-widget[^}]*width:44px[^}]*height:44px/,
+    css,
+    /@media \(max-width:639px\)\{#kandev-kandy-widget\.kandev-kandy-widget-legacy\{width:44px;height:44px\}/,
   );
+});
+
+test("chat topbar falls back to the native control and keeps its legacy target", () => {
+  const { tree } = renderTopbarWidget();
+  const trigger = findNode(tree, (node) => node.type === "host.TooltipTrigger").props.children;
+  assert.equal(trigger.type, "button");
+  assert.equal(trigger.props.type, "button");
+  assert.match(trigger.props.className, /kandev-kandy-widget-legacy/);
+  assert.equal(trigger.props["aria-label"], "Kandy: level 1 Egg, content");
+  assert.equal(trigger.props.children.type, "span");
+  assert.equal(trigger.props.children.props.children.props.width, 22);
+});
+
+test("chat topbar registers English catalog and uses host-localized accessible copy", () => {
+  const calls = [];
+  const { tree, translations, ui } = renderTopbarWidget({
+    withAction: true,
+    withTranslations: true,
+    translation(key, options) {
+      calls.push([key, options]);
+      const prefix = key === "topbarActionAsleep" ? "Localized sleeping" : "Localized awake";
+      return `${prefix}: level ${options.values.level} ${options.values.stageName}, ${options.values.mood}`;
+    },
+  });
+  const action = findNode(tree, (node) => node.type === ui.Action);
+  assert.equal(action.props.label, "Localized awake: level 1 Egg, content");
+  assert.deepEqual(Object.keys(translations).sort(), ["en"]);
+  assert.equal(translations.en.topbarActionAwake, "Kandy: level {{level}} {{stageName}}, {{mood}}");
+  assert.equal(
+    translations.en.topbarActionAsleep,
+    "Kandy: level {{level}} {{stageName}}, {{mood}}, sleeping",
+  );
+  assert.equal(calls[0][0], "topbarActionAwake");
+  assert.equal(calls[0][1].values.level, 1);
+  assert.equal(calls[0][1].values.stageName, "Egg");
+  assert.equal(calls[0][1].values.mood, "content");
+  assert.equal(calls[0][1].defaultValue, "Kandy: level 1 Egg, content");
+
+  const label = loadBundle().plugin.__render.kandyTopbarLabel;
+  const sleeping = label(
+    (key, options) => {
+      assert.equal(key, "topbarActionAsleep");
+      return `Dormant Kandy level ${options.values.level} ${options.values.stageName}, ${options.values.mood}`;
+    },
+    { level: 8, stage_name: "Cloud Sporeling", mood: "calm" },
+    true,
+  );
+  assert.equal(sleeping, "Dormant Kandy level 8 Cloud Sporeling, calm");
+  assert.equal(
+    label(null, { level: 8, stage_name: "Cloud Sporeling", mood: "calm" }, true),
+    "Kandy: level 8 Cloud Sporeling, calm, sleeping",
+  );
+});
+
+test("topbar hover, focus, and activation keep the preview, data fetch, and dialog path", async () => {
+  const { fetchCalls, harness, registrations, tree, ui } = renderTopbarWidget({ withAction: true });
+  assert.equal(registrations.length, 1);
+  assert.equal(registrations[0].slot, "chat-top-bar");
+  const wrapper = findNode(tree, (node) => node.type === ui.Tooltip);
+  assert.ok(findNode(wrapper, (node) => node.type === ui.TooltipContent));
+  const action = findNode(tree, (node) => node.type === ui.Action);
+  action.props.onMouseEnter({ type: "mouseenter" });
+  action.props.onFocus({ type: "focus" });
+  action.props.onClick({ type: "click" });
+
+  assert.deepEqual(fetchCalls, ["webhooks/kandy", "webhooks/kandy", "webhooks/kandy"]);
+  assert.ok(harness.stateUpdates.some(([slot, value]) => slot === 1 && value === true));
+  await Promise.resolve();
+  await Promise.resolve();
+});
+
+test("disable and re-enable removes and restores the widget style and registration", () => {
+  const { document, plugin } = loadBundle();
+  const registrations = [];
+  const handlers = [];
+  const registry = {
+    registerComponent(slot, component) {
+      registrations.push({ slot, component });
+    },
+    registerWsHandler(action) {
+      handlers.push(action);
+    },
+  };
+  const host = { jsx, ui: {}, React: {} };
+  plugin.initialize(registry, host);
+  assert.ok(document.getElementById("kandev-kandy-style"));
+  plugin.destroy();
+  assert.equal(document.getElementById("kandev-kandy-style"), null);
+  plugin.initialize(registry, host);
+
+  assert.equal(registrations.length, 2);
+  assert.ok(registrations.every((entry) => entry.slot === "chat-top-bar"));
+  assert.notEqual(registrations[0].component, registrations[1].component);
+  assert.ok(document.getElementById("kandev-kandy-style"));
+  assert.ok(handlers.length > 0);
+  plugin.destroy();
 });
 
 test("token grotto CSS uses vertical responsive grids without paging tracks", () => {
