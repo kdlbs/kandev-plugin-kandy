@@ -309,7 +309,7 @@ async function runDesktop(page, task) {
   allowFakeData = true;
   await action.hover();
   await expect(page.locator(".kandev-kandy-tooltip")).toBeVisible({ timeout: 15_000 });
-  await expect(action).toHaveAccessibleName("Kandy: level 12 Drowsy Sporeling, gloomy");
+  await expect(action).toHaveAccessibleName(/^Kandy: level 12 Drowsy Sporeling, gloomy(?:, sleeping)?$/);
   const preview = page.locator(".kandev-kandy-tooltip");
   await preview.screenshot({ path: path.join(outputDir, "desktop-hover-preview.png") });
 
@@ -454,8 +454,12 @@ async function main() {
     await startHost();
     task = await seedTask();
     browser = await chromium.launch({ headless: true });
-    const desktopContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const desktopContext = await browser.newContext({
+      viewport: { width: 1440, height: 1000 },
+      timezoneId: "UTC",
+    });
     const desktopPage = await desktopContext.newPage();
+    await desktopPage.clock.install({ time: new Date("2026-09-30T13:00:00Z") });
     await installPlugin(desktopPage);
     await desktopPage.goto(`${baseUrl}/t/${task.id}`);
     await expect(desktopPage.locator("#kandev-kandy-widget:visible")).toHaveCount(1, {

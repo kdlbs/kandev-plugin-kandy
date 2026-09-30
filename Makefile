@@ -1,7 +1,7 @@
 .PHONY: build run test fmt check-format vet package package-host verify-package smoke-package clean package-file
 
 BIN := bin/kandev-plugin-kandy
-VERSION := 0.14.0
+VERSION := 0.14.1
 STAGE := .build/stage
 PKG_OUT := kandev-plugin-kandy-$(VERSION).tar.gz
 NODE ?= node
