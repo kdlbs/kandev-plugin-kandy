@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0] - 2026-10-05
+
+### Changed
+
+- feat: adopt host Action for Kandy top bar (#23) (a5f3c18)
+
+
 ## [0.14.1] - 2026-09-30
 
 ### Changed
