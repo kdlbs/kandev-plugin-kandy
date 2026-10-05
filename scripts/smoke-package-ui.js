@@ -223,6 +223,7 @@ async function main() {
       assert.equal(result.mobile, mobile);
       assert.equal(initial.id, "kandev-kandy-widget");
       assert.match(initial.label, /^Kandy: level 12 Drowsy Sporeling, gloomy$/);
+      assert.equal(initial.viewBox, "14 14 72 78", `${mode} artwork keeps the SVG viewBox`);
       assert.equal(initial.outerWidth, expectedWidth, `${mode} ${mobile ? "phone" : "desktop"} width`);
       assert.equal(initial.outerHeight, expectedWidth, `${mode} ${mobile ? "phone" : "desktop"} height`);
       assert.equal(initial.glyphWidth, mode === "action" ? 16 : expectedArt);

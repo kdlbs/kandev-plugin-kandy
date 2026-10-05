@@ -87,9 +87,9 @@ for executable in $executable_paths; do
 	[ -f "$package_dir/$executable" ] || fail "missing declared executable: $executable"
 done
 
-unexpected_entry=$(find "$package_dir" -mindepth 1 ! -type f ! -type d -print -quit)
-[ -z "$unexpected_entry" ] || fail "package contains a non-file entry: ${unexpected_entry#"$package_dir"/}"
-unexpected_dir=$(find "$package_dir" -mindepth 1 -type d -print | sed "s#^$package_dir/##" | awk '$0 != "server" && $0 != "ui" { print; exit }')
+unexpected_entry=$(cd "$package_dir" && find . ! -type f ! -type d -print | sed -n '1p')
+[ -z "$unexpected_entry" ] || fail "package contains a non-file entry: ${unexpected_entry#./}"
+unexpected_dir=$(cd "$package_dir" && find . -type d ! -name . -print | sed 's#^\./##' | awk '$0 != "server" && $0 != "ui" { print; exit }')
 [ -z "$unexpected_dir" ] || fail "package contains an unexpected directory: $unexpected_dir"
 
 expected_files=$(printf '%s\n' manifest.yaml README.md ui/bundle.js checksums.txt $executable_paths | LC_ALL=C sort)

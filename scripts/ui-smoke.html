@@ -147,7 +147,10 @@
                 else element.style[styleKey] = value[styleKey];
               });
             } else if (key !== "dangerouslySetInnerHTML") {
-              element.setAttribute(key.replace(/[A-Z]/g, function (letter) { return "-" + letter.toLowerCase(); }), String(value));
+              var attributeName = key === "viewBox"
+                ? key
+                : key.replace(/[A-Z]/g, function (letter) { return "-" + letter.toLowerCase(); });
+              element.setAttribute(attributeName, String(value));
             }
           });
           appendNode(element, node.props && node.props.children);
@@ -258,6 +261,7 @@
               return {
                 id: button.id,
                 label: button.getAttribute("aria-label"),
+                viewBox: icon.getAttribute("viewBox"),
                 outerWidth: outer.width,
                 outerHeight: outer.height,
                 glyphWidth: glyph.width,

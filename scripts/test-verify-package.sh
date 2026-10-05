@@ -10,16 +10,19 @@ version=$(sed -nE 's/^VERSION := ([^[:space:]]+)$/\1/p' "$repo_dir/Makefile")
 write_checksums() {
 	fixture=$1
 	(
-		cd "$fixture"
-		find . -type f ! -name checksums.txt -print | sed 's#^\./##' | LC_ALL=C sort |
+		CDPATH= cd -- "$fixture"
+		find . -type f ! -name checksums.txt -print > "$test_dir/checksum-paths.raw"
+		LC_ALL=C sort "$test_dir/checksum-paths.raw" > "$test_dir/checksum-paths"
+		: > checksums.txt
 		while IFS= read -r path; do
+			path=${path#./}
 			if command -v sha256sum >/dev/null 2>&1; then
 				sha256sum "$path"
 			else
 				shasum -a 256 "$path"
 			fi
-		done
-	) > "$fixture/checksums.txt"
+		done < "$test_dir/checksum-paths" >> checksums.txt
+	)
 }
 
 create_fixture() {
@@ -87,6 +90,12 @@ if sh "$verify_script" "$host_fixture" full >/dev/null 2>&1; then
 	printf 'expected the host-only fixture to fail full-package verification\n' >&2
 	exit 1
 fi
+
+copy_fixture missing-host-binary
+rm "$test_dir/missing-host-binary/$host_executable"
+write_checksums "$test_dir/missing-host-binary"
+expect_failure 'a missing host platform binary' "$test_dir/missing-host-binary" host "$host_platform"
+expect_failure 'an undeclared host platform' "$test_dir/valid" host unsupported-host
 
 copy_fixture missing-ui
 rm "$test_dir/missing-ui/ui/bundle.js"

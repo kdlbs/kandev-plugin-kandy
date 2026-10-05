@@ -117,7 +117,14 @@ function makeHookHarness() {
           value: typeof initialValue === "function" ? initialValue() : initialValue,
         };
       }
-      return [slots[slot].value, (value) => stateUpdates.push([slot, value])];
+      return [
+        slots[slot].value,
+        (value) => {
+          const nextValue = typeof value === "function" ? value(slots[slot].value) : value;
+          slots[slot].value = nextValue;
+          stateUpdates.push([slot, nextValue]);
+        },
+      ];
     },
     useRef(initialValue) {
       const slot = index++;
@@ -1627,7 +1634,7 @@ test("chat topbar registers English catalog and uses host-localized accessible c
   );
 });
 
-test("topbar hover, focus, and activation keep the preview, data fetch, and dialog path", async () => {
+test("topbar hover, focus, and activation keep the preview, data fetch, and dialog path", () => {
   const { fetchCalls, harness, registrations, tree, ui } = renderTopbarWidget({ withAction: true });
   assert.equal(registrations.length, 1);
   assert.equal(registrations[0].slot, "chat-top-bar");
@@ -1640,8 +1647,9 @@ test("topbar hover, focus, and activation keep the preview, data fetch, and dial
 
   assert.deepEqual(fetchCalls, ["webhooks/kandy", "webhooks/kandy", "webhooks/kandy"]);
   assert.ok(harness.stateUpdates.some(([slot, value]) => slot === 1 && value === true));
-  await Promise.resolve();
-  await Promise.resolve();
+  const rerendered = harness.render(registrations[0].component);
+  const dialog = findNode(rerendered, (node) => node.type === ui.Dialog);
+  assert.equal(dialog.props.open, true);
 });
 
 test("disable and re-enable removes and restores the widget style and registration", () => {
