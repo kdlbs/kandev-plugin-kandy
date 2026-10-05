@@ -2,7 +2,8 @@
 
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { createWriteStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -10,23 +11,47 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const PLUGIN_ID = "kandev-plugin-kandy";
 const [hostRootArg, packageArg, hostVariant, portArg, artifactsArg] = process.argv.slice(2);
+const releaseRuntimeBin = process.env.KANDEV_SMOKE_RUNTIME_BIN
+  ? path.resolve(process.env.KANDEV_SMOKE_RUNTIME_BIN)
+  : null;
+const releaseMockAgentBin = releaseRuntimeBin
+  ? path.join(path.dirname(releaseRuntimeBin), "mock-agent")
+  : null;
+const expectedHostRevision = process.env.KANDEV_SMOKE_HOST_REVISION || "";
+const expectedHostVersion = process.env.KANDEV_SMOKE_EXPECT_VERSION || "";
+const expectedHostTag = process.env.KANDEV_SMOKE_HOST_TAG || "";
+const playwrightPackageJson = process.env.KANDEV_SMOKE_PLAYWRIGHT_PACKAGE_JSON || "";
 if (!hostRootArg || !packageArg || !["action", "legacy"].includes(hostVariant) || !portArg) {
   throw new Error(
-    "usage: node scripts/smoke-real-host.mjs <host-root> <kandy-package> <action|legacy> <port> [artifacts-dir]",
+    "usage: node scripts/smoke-real-host.mjs <host-root|release-root> <kandy-package> <action|legacy> <port> [artifacts-dir]",
   );
 }
 
 const hostRoot = path.resolve(hostRootArg);
-const hostRevision = execFileSync("git", ["rev-parse", "HEAD"], {
-  cwd: hostRoot,
-  encoding: "utf8",
-}).trim();
+const hostRevision = releaseRuntimeBin
+  ? expectedHostRevision
+  : execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: hostRoot,
+      encoding: "utf8",
+    }).trim();
 const packagePath = path.resolve(packageArg);
 const port = Number(portArg);
 assert.ok(Number.isInteger(port) && port > 1024 && port < 65536, "port must be valid");
-assert.ok(existsSync(path.join(hostRoot, "apps/web/package.json")), "host checkout is missing apps/web");
-assert.ok(existsSync(path.join(hostRoot, "apps/backend/bin/kandev")), "build the host backend first");
-assert.ok(existsSync(path.join(hostRoot, "apps/web/dist/index.html")), "build the host web app first");
+if (releaseRuntimeBin) {
+  assert.ok(existsSync(releaseRuntimeBin), `released Kandev runtime does not exist: ${releaseRuntimeBin}`);
+  assert.ok(
+    existsSync(releaseMockAgentBin),
+    "build mock-agent from the exact release source into the runtime bin directory before this smoke",
+  );
+  assert.match(expectedHostRevision, /^[0-9a-f]{40}$/, "set KANDEV_SMOKE_HOST_REVISION to the released source commit");
+  assert.match(expectedHostVersion, /^v\d+\.\d+\.\d+/, "set KANDEV_SMOKE_EXPECT_VERSION to the /health version");
+  assert.equal(expectedHostTag, expectedHostVersion, "set KANDEV_SMOKE_HOST_TAG to the matching release tag");
+  assert.ok(existsSync(playwrightPackageJson), "set KANDEV_SMOKE_PLAYWRIGHT_PACKAGE_JSON to a package.json that resolves @playwright/test");
+} else {
+  assert.ok(existsSync(path.join(hostRoot, "apps/web/package.json")), "host checkout is missing apps/web");
+  assert.ok(existsSync(path.join(hostRoot, "apps/backend/bin/kandev")), "build the host backend first");
+  assert.ok(existsSync(path.join(hostRoot, "apps/web/dist/index.html")), "build the host web app first");
+}
 assert.ok(existsSync(packagePath), `plugin package does not exist: ${packagePath}`);
 
 const outputDir = path.resolve(
@@ -40,18 +65,24 @@ const serverLogPath = path.join(outputDir, "host.log");
 mkdirSync(repositoryDir, { recursive: true });
 mkdirSync(path.join(homeDir, "tmp"), { recursive: true });
 
-const requireFromHost = createRequire(path.join(hostRoot, "apps/web/package.json"));
+const requireFromHost = createRequire(
+  releaseRuntimeBin ? path.resolve(playwrightPackageJson) : path.join(hostRoot, "apps/web/package.json"),
+);
 const { chromium, expect } = requireFromHost("@playwright/test");
 const baseUrl = `http://127.0.0.1:${port}`;
 const serverLog = createWriteStream(serverLogPath, { flags: "w" });
 let server;
 let browser;
+let hostVersion = null;
 
 function runGit(args) {
   execFileSync("git", args, {
     cwd: repositoryDir,
     env: {
-      ...process.env,
+      HOME: homeDir,
+      GIT_CONFIG_GLOBAL: path.join(homeDir, ".gitconfig"),
+      GIT_CONFIG_NOSYSTEM: "1",
+      PATH: process.env.PATH || "/usr/bin:/bin",
       GIT_AUTHOR_NAME: "Kandy Smoke",
       GIT_AUTHOR_EMAIL: "kandy-smoke@example.invalid",
       GIT_COMMITTER_NAME: "Kandy Smoke",
@@ -81,16 +112,17 @@ async function api(method, route, body) {
 }
 
 async function startHost() {
-  const backendBin = path.join(hostRoot, "apps/backend/bin/kandev");
+  const backendBin = releaseRuntimeBin || path.join(hostRoot, "apps/backend/bin/kandev");
   const agentctlPortBase = 30001 + (port % 30) * 1000;
   const env = {
-    ...process.env,
     HOME: homeDir,
+    XDG_CACHE_HOME: path.join(homeDir, ".cache"),
+    XDG_CONFIG_HOME: path.join(homeDir, ".config"),
     KANDEV_HOME_DIR: homeDir,
     KANDEV_DATABASE_PATH: path.join(homeDir, "kandev.db"),
     KANDEV_SERVER_HOST: "127.0.0.1",
     KANDEV_SERVER_PORT: String(port),
-    KANDEV_WEB_DIST_DIR: path.join(hostRoot, "apps/web/dist"),
+    ...(releaseRuntimeBin ? {} : { KANDEV_WEB_DIST_DIR: path.join(hostRoot, "apps/web/dist") }),
     KANDEV_E2E_MOCK: "true",
     KANDEV_E2E_SYSTEM_TEMP_ROOT: path.join(homeDir, "tmp"),
     KANDEV_DOCKER_ENABLED: "false",
@@ -104,14 +136,25 @@ async function startHost() {
     GIT_AUTHOR_EMAIL: "kandy-smoke@example.invalid",
     GIT_COMMITTER_NAME: "Kandy Smoke",
     GIT_COMMITTER_EMAIL: "kandy-smoke@example.invalid",
-    PATH: [path.join(hostRoot, "apps/backend/bin"), process.env.PATH || ""].join(path.delimiter),
+    GIT_CONFIG_GLOBAL: path.join(homeDir, ".gitconfig"),
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_TERMINAL_PROMPT: "0",
+    TMPDIR: path.join(homeDir, "tmp"),
+    PATH: [
+      releaseRuntimeBin ? path.dirname(releaseRuntimeBin) : path.join(hostRoot, "apps/backend/bin"),
+      process.env.PATH || "/usr/bin:/bin",
+    ].join(path.delimiter),
   };
-  server = spawn(backendBin, ["__backend"], {
+  server = spawn(
+    backendBin,
+    releaseRuntimeBin ? ["run", "--headless", "--port", String(port)] : ["__backend"],
+    {
     cwd: hostRoot,
     env,
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
-  });
+    },
+  );
   server.stdout.pipe(serverLog);
   server.stderr.pipe(serverLog);
   await expect
@@ -124,6 +167,25 @@ async function startHost() {
       }
     }, { timeout: 60_000, intervals: [250, 500, 1000] })
     .toBe(200);
+  const health = await api("GET", "/health");
+  assert.equal(health.status, "ok", "disposable host health is ready");
+  hostVersion = health.version;
+  if (expectedHostVersion) {
+    assert.equal(hostVersion, expectedHostVersion, "the real host reports the expected release version");
+  }
+}
+
+async function assertNoHorizontalOverflow(page, surface) {
+  const metrics = await page.evaluate(() => ({
+    viewportWidth: window.innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+    bodyWidth: document.body.scrollWidth,
+  }));
+  assert.ok(
+    metrics.documentWidth <= metrics.viewportWidth + 1 && metrics.bodyWidth <= metrics.viewportWidth + 1,
+    `${surface} has horizontal overflow: ${JSON.stringify(metrics)}`,
+  );
+  return metrics;
 }
 
 async function stopHost() {
@@ -164,7 +226,6 @@ async function seedTask() {
     .sort((left, right) => left.position - right.position)
     .find((item) => item.is_start_step) || stepResult.steps[0];
   assert.ok(step, "simple workflow has a start step");
-
   const agentResult = await api("GET", "/api/v1/agents");
   const profileId = agentResult.agents
     .filter((agent) => agent.id !== "dynamic")
@@ -182,14 +243,15 @@ async function seedTask() {
     workspace_id: workspace.id,
     title: "Kandy action host smoke",
     description: "/e2e:simple-message",
-    start_agent: true,
+    // The smoke intercepts Kandy's provider-facing data at the browser route.
+    // The real task surface uses the host's local E2E mock-agent profile.
+    start_agent: false,
     agent_profile_id: profileId,
     workflow_id: workflow.id,
     workflow_step_id: step.id,
     repositories: [{ repository_id: repository.id }],
   });
   assert.ok(task.id, "task API returned an id");
-  assert.ok(task.session_id, "task API created the disposable fake-agent session");
   return task;
 }
 
@@ -229,10 +291,12 @@ async function inspectAction(page, expectedSurface) {
       glyph: rect(element.querySelector('[data-slot="surface-action-icon"]')),
       art: rect(element.querySelector(".kandev-kandy-widget-art")),
       svg: rect(element.querySelector(".kandev-kandy-widget-art svg")),
+      viewport: { width: window.innerWidth, height: window.innerHeight },
     };
   });
   writeFileSync(path.join(outputDir, "action-geometry.json"), `${JSON.stringify(details, null, 2)}\n`);
   assert.match(details.accessibleName || "", /^Kandy: level \d+ /, "Kandy copy is accessible");
+  assert.ok(!details.accessibleName.includes("topbarAction"), "translation key does not leak into accessible copy");
   assert.ok(details.svg && details.svg.width > 0 && details.svg.height > 0, "creature SVG is visible");
 
   if (expectedSurface === "action") {
@@ -260,7 +324,7 @@ async function inspectAction(page, expectedSurface) {
   return { action, details };
 }
 
-const fakeKandy = {
+let fakeKandy = {
   level: 12,
   stage: 2,
   archetype: 3,
@@ -299,23 +363,42 @@ async function runDesktop(page, task) {
   });
 
   await page.goto(`${baseUrl}/t/${task.id}`);
+  const pointer = await page.evaluate(() => ({
+    fine: window.matchMedia("(pointer: fine)").matches,
+    coarse: window.matchMedia("(pointer: coarse)").matches,
+  }));
+  assert.equal(pointer.fine, true, "desktop browser exposes a fine pointer");
   const { action } = await inspectAction(page, hostVariant);
+  const desktopOverflow = await assertNoHorizontalOverflow(page, "desktop task surface");
   await expect.poll(() => actualWebhookResponses, { timeout: 20_000 }).toBeGreaterThan(0);
   await expect.poll(() => actualKandy, { timeout: 10_000 }).toBeTruthy();
   const expectedActualPrefix =
     `Kandy: level ${actualKandy.level} ${actualKandy.stage_name}, ` + (actualKandy.mood || "content");
   await expect(action).toHaveAccessibleName(new RegExp(`^${expectedActualPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 
+  fakeKandy = {
+    ...fakeKandy,
+    level: Number(actualKandy.level || 1) + 1,
+    award_seq: Number(actualKandy.award_seq || 0) + 1,
+  };
   allowFakeData = true;
   await action.hover();
   await expect(page.locator(".kandev-kandy-tooltip")).toBeVisible({ timeout: 15_000 });
-  await expect(action).toHaveAccessibleName(/^Kandy: level 12 Drowsy Sporeling, gloomy(?:, sleeping)?$/);
+  await expect(action).toHaveAccessibleName(
+    new RegExp(`^Kandy: level ${fakeKandy.level} Drowsy Sporeling, gloomy(?:, sleeping)?$`),
+  );
+  await expect(action.locator(".kandev-kandy-widget-art")).toHaveClass(/kandev-kandy-levelup/, {
+    timeout: 15_000,
+  });
   const preview = page.locator(".kandev-kandy-tooltip");
   await preview.screenshot({ path: path.join(outputDir, "desktop-hover-preview.png") });
+  await page.screenshot({ path: path.join(outputDir, "desktop-celebration.png"), fullPage: true });
+  const previewOverflow = await assertNoHorizontalOverflow(page, "desktop preview");
 
   await action.click();
   const dialog = page.locator("#kandev-kandy-dialog");
   await expect(dialog).toBeVisible();
+  const dialogOverflow = await assertNoHorizontalOverflow(page, "desktop dialog");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
 
@@ -358,7 +441,15 @@ async function runDesktop(page, task) {
   const reenabled = page.locator("#kandev-kandy-widget");
   await expect(reenabled).toHaveCount(1, { timeout: 20_000 });
   await expect(reenabled).toBeVisible();
-  return { actualWebhookResponses, reenabledCount: await reenabled.count() };
+  return {
+    pointer,
+    desktopOverflow,
+    previewOverflow,
+    dialogOverflow,
+    localizedAccessibleName: await reenabled.getAttribute("aria-label"),
+    actualWebhookResponses,
+    reenabledCount: await reenabled.count(),
+  };
 }
 
 async function runPhone(browser, task) {
@@ -367,6 +458,7 @@ async function runPhone(browser, task) {
     isMobile: true,
     hasTouch: true,
     deviceScaleFactor: 2,
+    locale: "en-US",
   });
   const page = await context.newPage();
   let allowFakeData = false;
@@ -380,6 +472,13 @@ async function runPhone(browser, task) {
 
   try {
     await page.goto(`${baseUrl}/t/${task.id}`);
+    const pointer = await page.evaluate(() => ({
+      coarse: window.matchMedia("(pointer: coarse)").matches,
+      fine: window.matchMedia("(pointer: fine)").matches,
+      maxTouchPoints: navigator.maxTouchPoints,
+    }));
+    assert.equal(pointer.coarse, true, "phone context exposes a coarse pointer");
+    assert.ok(pointer.maxTouchPoints > 0, "phone context exposes touch input");
     let section = null;
     let action;
     if (hostVariant === "action") {
@@ -396,6 +495,8 @@ async function runPhone(browser, task) {
     }
     await expect(action).toHaveCount(1, { timeout: 20_000 });
     await expect(action).toBeVisible();
+    await action.scrollIntoViewIfNeeded();
+    const menuOverflow = await assertNoHorizontalOverflow(page, "phone plugin navigation");
     const details = await action.evaluate((element) => {
       const rect = (node) => {
         if (!node) return null;
@@ -419,6 +520,10 @@ async function runPhone(browser, task) {
     assert.match(details.accessibleName || "", /^Kandy: level \d+ /);
     assert.ok(details.action.width >= 44 && details.action.height >= 44, "phone target is at least 44px");
     assert.ok(details.action.x >= -0.5 && details.action.y >= -0.5);
+    assert.ok(
+      details.action.y + details.action.height <= details.viewport.height + 0.5,
+      `phone action fits the visible viewport: ${JSON.stringify(details)}`,
+    );
     assert.ok(details.action.x + details.action.width <= details.viewport.width + 0.5);
     assert.ok(details.svg.width === 22 || Math.abs(details.svg.width - 16) < 0.6);
     if (hostVariant === "action") {
@@ -442,7 +547,18 @@ async function runPhone(browser, task) {
     await page.screenshot({ path: path.join(outputDir, "phone-action-surface.png"), fullPage: true });
     await action.tap();
     await expect(page.locator("#kandev-kandy-dialog")).toBeVisible();
-    return { details };
+    await expect(action).toHaveAttribute("aria-label",
+      new RegExp(`^Kandy: level ${fakeKandy.level} Drowsy Sporeling, gloomy(?:, sleeping)?$`),
+    );
+    const dialogOverflow = await assertNoHorizontalOverflow(page, "phone dialog");
+    await page.screenshot({ path: path.join(outputDir, "phone-dialog.png"), fullPage: true });
+    return {
+      pointer,
+      details,
+      localizedAccessibleName: await action.getAttribute("aria-label"),
+      menuOverflow,
+      dialogOverflow,
+    };
   } finally {
     await context.close();
   }
@@ -453,10 +569,22 @@ async function main() {
   try {
     await startHost();
     task = await seedTask();
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({
+      headless: true,
+      env: {
+        HOME: homeDir,
+        PATH: process.env.PATH || "/usr/bin:/bin",
+        PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || "",
+        TMPDIR: path.join(homeDir, "tmp"),
+        XDG_CACHE_HOME: path.join(homeDir, ".cache"),
+        XDG_CONFIG_HOME: path.join(homeDir, ".config"),
+      },
+      ...(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : {}),
+    });
     const desktopContext = await browser.newContext({
       viewport: { width: 1440, height: 1000 },
       timezoneId: "UTC",
+      locale: "en-US",
     });
     const desktopPage = await desktopContext.newPage();
     await desktopPage.clock.install({ time: new Date("2026-09-30T13:00:00Z") });
@@ -470,15 +598,29 @@ async function main() {
     const result = {
       hostRoot,
       hostRevision,
+      hostVersion,
+      hostTag: releaseRuntimeBin ? expectedHostTag : null,
+      hostSource: releaseRuntimeBin
+        ? "official Kandev release runtime bundle with exact-release mock-agent test helper"
+        : "source checkout build",
+      hostExecutableSha256: releaseRuntimeBin
+        ? createHash("sha256").update(readFileSync(releaseRuntimeBin)).digest("hex")
+        : null,
+      mockAgentHelperSha256: releaseMockAgentBin
+        ? createHash("sha256").update(readFileSync(releaseMockAgentBin)).digest("hex")
+        : null,
       package: packagePath,
+      packageSha256: createHash("sha256").update(readFileSync(packagePath)).digest("hex"),
       variant: hostVariant,
       desktop,
       phone,
       screenshots: [
         "desktop-hover-preview.png",
+        "desktop-celebration.png",
         "desktop-reduced-motion.png",
         "phone-action-viewport.png",
         "phone-action-surface.png",
+        "phone-dialog.png",
       ],
     };
     writeFileSync(path.join(outputDir, "result.json"), `${JSON.stringify(result, null, 2)}\n`);

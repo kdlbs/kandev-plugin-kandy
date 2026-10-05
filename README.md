@@ -224,11 +224,14 @@ package contract but does not replace validation in a Kandev host.
 
 For host integration, `scripts/smoke-real-host.mjs` launches a disposable
 Kandev backend, installs the built package through Settings, and tests the
-actual chat top bar and phone control with fake agent data. The SDK-pin host
-also has a phone plugin menu; v0.83.0 predates that menu, so its phone check
-uses the legacy top-bar button. Both checks require a 44px touch target. The
+actual chat top bar and phone control with a disposable task and fake Kandy
+webhook responses. The task uses Kandev's local E2E mock-agent; the smoke uses
+no external provider account or personal data. The
+SDK-pin host also has a phone plugin menu. v0.83.0 predates it, so that host's
+phone check uses the legacy top-bar button. Both checks require a 44px target. The
 script also checks hover/focus preview, Enter/Space and touch activation,
-reduced motion, and one registration after disable/re-enable. It writes
+reduced motion, one registration after disable/re-enable, coarse-pointer input,
+artwork containment, and horizontal overflow. It writes
 `result.json`, measured control geometry, host logs, and screenshots to each
 artifacts directory. Run it on Node 24 after building the two host revisions
 and installing the locked web dependencies and Playwright Chromium:
@@ -261,6 +264,53 @@ TMPDIR="$SMOKE_ROOT/runtime" node scripts/smoke-real-host.mjs \
 Use an available pair of ports. The smoke host uses isolated home and database
 directories and deletes them when each run ends. Screenshots and JSON
 measurements remain in the artifacts directories under `SMOKE_ROOT`.
+
+To validate a published runtime, use its released full bundle as the host. The
+source checkout supplies the release's locked Playwright dependency and a
+test-only mock agent. The host executable and UI still come from the downloaded
+runtime bundle. This example pins Kandev `v0.97.0` to commit
+`e43881c7555372897b57ec51c705f1e05da43c40`:
+
+```sh
+RELEASE_ROOT="$SMOKE_ROOT/releases/v0.97.0"
+SOURCE_ROOT="$SMOKE_ROOT/hosts/kandev-v0.97.0-source"
+mkdir -p "$RELEASE_ROOT/download"
+curl -fL https://github.com/kdlbs/kandev/releases/download/v0.97.0/kandev-linux-x64-full.tar.gz \
+  -o "$RELEASE_ROOT/download/kandev-linux-x64-full.tar.gz"
+curl -fsSL https://github.com/kdlbs/kandev/releases/download/v0.97.0/kandev-linux-x64-full.tar.gz.sha256 \
+  -o "$RELEASE_ROOT/download/kandev-linux-x64-full.tar.gz.sha256"
+(cd "$RELEASE_ROOT/download" && sha256sum -c kandev-linux-x64-full.tar.gz.sha256)
+mkdir -p "$RELEASE_ROOT/runtime"
+tar -xzf "$RELEASE_ROOT/download/kandev-linux-x64-full.tar.gz" -C "$RELEASE_ROOT/runtime"
+cp -a "$RELEASE_ROOT/runtime/kandev" "$RELEASE_ROOT/runtime/kandev-smoke"
+RUNTIME_ROOT="$RELEASE_ROOT/runtime/kandev-smoke"
+
+git clone --filter=blob:none --no-checkout https://github.com/kdlbs/kandev.git "$SOURCE_ROOT"
+git -C "$SOURCE_ROOT" fetch --depth=1 origin e43881c7555372897b57ec51c705f1e05da43c40
+git -C "$SOURCE_ROOT" checkout --detach e43881c7555372897b57ec51c705f1e05da43c40
+(cd "$SOURCE_ROOT/apps" && corepack enable && pnpm install --frozen-lockfile --filter @kandev/web...)
+(cd "$SOURCE_ROOT/apps/backend" && GOWORK=off go build -o "$RUNTIME_ROOT/bin/mock-agent" ./cmd/mock-agent)
+(
+  export PLAYWRIGHT_BROWSERS_PATH="$SMOKE_ROOT/playwright-browsers"
+  cd "$SOURCE_ROOT/apps/web"
+  pnpm exec playwright install chromium
+)
+
+KANDEV_SMOKE_RUNTIME_BIN="$RUNTIME_ROOT/bin/kandev" \
+KANDEV_SMOKE_HOST_REVISION=e43881c7555372897b57ec51c705f1e05da43c40 \
+KANDEV_SMOKE_HOST_TAG=v0.97.0 \
+KANDEV_SMOKE_EXPECT_VERSION=v0.97.0 \
+KANDEV_SMOKE_PLAYWRIGHT_PACKAGE_JSON="$SOURCE_ROOT/apps/web/package.json" \
+PLAYWRIGHT_BROWSERS_PATH="$SMOKE_ROOT/playwright-browsers" TMPDIR="$SMOKE_ROOT/runtime" \
+  node scripts/smoke-real-host.mjs "$RUNTIME_ROOT" "$PACKAGE" \
+    action 18431 "$RELEASE_ROOT/artifacts/action"
+```
+
+The release-runtime mode checks `/health` against the expected version before
+installing the package. It records host revision/version, package SHA-256,
+host executable and mock-agent helper SHA-256, desktop and coarse-pointer
+measurements, overflow checks, host logs, and screenshots in the selected
+artifact directory.
 
 ## Automation and releases
 
