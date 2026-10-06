@@ -57,3 +57,7 @@ jobs:
       - name: Build and verify every declared platform
         working-directory: plugin
         run: make package
+
+      - name: Audit packaged binaries and their compiled Go version
+        working-directory: plugin
+        run: make audit-package

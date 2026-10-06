@@ -36,9 +36,9 @@ for required in manifest.yaml README.md ui/bundle.js checksums.txt; do
 	[ -f "$package_dir/$required" ] || fail "missing required file: $required"
 done
 
-manifest_id=$(sed -nE 's/^id: "([^"]+)"$/\1/p' "$package_dir/manifest.yaml")
+manifest_id=$(sed -nE 's/^id: ("([^"]+)"|([^"[:space:]]+))$/\2\3/p' "$package_dir/manifest.yaml")
 [ "$manifest_id" = "kandev-plugin-kandy" ] || fail "unexpected manifest id: ${manifest_id:-missing}"
-manifest_version=$(sed -nE 's/^version: "([^"]+)"$/\1/p' "$package_dir/manifest.yaml")
+manifest_version=$(sed -nE 's/^version: ("([^"]+)"|([^"[:space:]]+))$/\2\3/p' "$package_dir/manifest.yaml")
 make_version=$(sed -nE 's/^VERSION := ([^[:space:]]+)$/\1/p' "$(dirname "$0")/../Makefile")
 [ -n "$manifest_version" ] || fail 'manifest.yaml has no version'
 [ "$manifest_version" = "$make_version" ] || fail "manifest version $manifest_version differs from Makefile version $make_version"
@@ -51,9 +51,20 @@ fi
 
 manifest_executables=$(awk '
 	$0 == "runtime:" { in_runtime = 1; next }
-	in_runtime && $0 == "  executables:" { in_executables = 1; next }
-	in_executables && $0 !~ /^    / { exit }
-	in_executables && /^    [[:alnum:]_-]+: "[^\"]+"$/ {
+	in_runtime && /^[[:space:]]+executables:$/ {
+		in_executables = 1
+		match($0, /^[[:space:]]*/)
+		parent_indent = RLENGTH
+		next
+	}
+	in_executables {
+		if (NF == 0) next
+		match($0, /^[[:space:]]*/)
+		if (RLENGTH <= parent_indent) exit
+		if (NF != 2 || $1 !~ /^[[:alnum:]_-]+:$/ || $2 !~ /^("[^"[:space:]]+"|[^"[:space:]]+)$/) {
+			print "invalid executable entry"
+			next
+		}
 		platform = $1
 		sub(/:$/, "", platform)
 		path = $2
@@ -61,27 +72,27 @@ manifest_executables=$(awk '
 		print platform " " path
 	}
 ' "$package_dir/manifest.yaml" | LC_ALL=C sort)
-expected_executables=$(printf '%s\n' \
+supported_executables=$(printf '%s\n' \
 	'darwin-amd64 server/plugin-darwin-amd64' \
 	'darwin-arm64 server/plugin-darwin-arm64' \
 	'linux-amd64 server/plugin-linux-amd64' \
 	'linux-arm64 server/plugin-linux-arm64' \
 	'windows-amd64 server/plugin-windows-amd64.exe' | LC_ALL=C sort)
-[ "$manifest_executables" = "$expected_executables" ] || fail 'manifest runtime.executables does not match the supported platform set'
-
 case "$mode" in
 	full)
-		executable_paths=$(printf '%s\n' "$manifest_executables" | awk '{ print $2 }')
+		expected_executables=$supported_executables
 		;;
 	host)
 		[ -n "$host_platform" ] || fail 'host mode requires a platform name'
-		executable_paths=$(printf '%s\n' "$manifest_executables" | awk -v platform="$host_platform" '$1 == platform { print $2 }')
-		[ -n "$executable_paths" ] || fail "host platform is not declared: $host_platform"
+		expected_executables=$(printf '%s\n' "$supported_executables" | awk -v platform="$host_platform" '$1 == platform')
+		[ -n "$expected_executables" ] || fail "unsupported host platform: $host_platform"
 		;;
 	*)
 		fail "unknown verification mode: $mode"
 		;;
 esac
+[ "$manifest_executables" = "$expected_executables" ] || fail 'manifest runtime.executables does not match the package platform set'
+executable_paths=$(printf '%s\n' "$manifest_executables" | awk '{ print $2 }')
 
 for executable in $executable_paths; do
 	[ -f "$package_dir/$executable" ] || fail "missing declared executable: $executable"

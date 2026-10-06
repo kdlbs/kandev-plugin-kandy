@@ -194,7 +194,7 @@ its grotto history.
 
 Kandy uses the Go SDK from a private sibling checkout of the Kandev monorepo.
 `.kandev-sdk-ref` pins that source to
-`570600439036e81f8e9e1c63f15c4abce8a6c846`, which contains the additive
+`e43881c7555372897b57ec51c705f1e05da43c40` (released Kandev v0.97.0), which contains the additive
 `host.ui.Action` API. The Go `replace` path expects the plugin and Kandev
 checkouts to be siblings:
 
@@ -213,14 +213,19 @@ make test
 make build
 make package-host
 make package
+make audit-package
 ```
 
-Use Go 1.26.0 and Node 24. The hand-written `ui/bundle.js` has no build step
+Use Go 1.26.8 and Node 24. The hand-written `ui/bundle.js` has no build step
 or frontend dependencies. `make test` runs Go tests, UI interaction tests,
 and positive and negative package/release verifier checks. `make smoke-package`
 opens the packaged UI bundle in a disposable Chrome fixture. It checks the
 Action and older-host paths on desktop and phone sizes. It exercises the
 package contract but does not replace validation in a Kandev host.
+
+`make audit-package` scans every binary in the verified package, including its
+compiled Go standard library. CI and releases enforce this check; a source
+scan alone can miss an older compiler embedded in an artifact.
 
 For host integration, `scripts/smoke-real-host.mjs` launches a disposable
 Kandev backend, installs the built package through Settings, and tests the
@@ -242,7 +247,7 @@ SMOKE_ROOT="$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/kandy-host-smoke.XXXXXX
 HOST_ROOT="$SMOKE_ROOT/hosts/kandev"
 mkdir -p "$SMOKE_ROOT/hosts"
 git clone https://github.com/kdlbs/kandev.git "$HOST_ROOT"
-git -C "$HOST_ROOT" checkout --detach 570600439036e81f8e9e1c63f15c4abce8a6c846
+git -C "$HOST_ROOT" checkout --detach e43881c7555372897b57ec51c705f1e05da43c40
 git -C "$HOST_ROOT" worktree add --detach "$SMOKE_ROOT/hosts/kandev-min" v0.83.0
 
 for checkout in "$HOST_ROOT" "$SMOKE_ROOT/hosts/kandev-min"; do

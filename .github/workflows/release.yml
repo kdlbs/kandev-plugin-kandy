@@ -274,6 +274,10 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "package=$PACKAGE_FILE" >> "$GITHUB_OUTPUT"
 
+      - name: Audit packaged binaries before release
+        working-directory: plugin
+        run: make audit-package
+
       - name: Generate release checksums
         working-directory: plugin
         env:
