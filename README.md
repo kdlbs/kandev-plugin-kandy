@@ -265,14 +265,19 @@ make test
 make build
 make package-host
 make package
+make audit-package
 ```
 
-Use Go 1.26.0 and Node 24. The hand-written `ui/bundle.js` has no build step
+Use Go 1.26.8 and Node 24. The hand-written `ui/bundle.js` has no build step
 or frontend dependencies. `make test` runs Go tests, UI interaction tests,
 and positive and negative package/release verifier checks. `make smoke-package`
 opens the packaged UI bundle in a disposable Chrome fixture. It checks the
 Action and older-host paths on desktop and phone sizes. It exercises the
 package contract but does not replace validation in a Kandev host.
+
+`make audit-package` scans every binary in the verified package, including its
+compiled Go standard library. CI and releases enforce this check; a source
+scan alone can miss an older compiler embedded in an artifact.
 
 For host integration, `scripts/smoke-real-host.mjs` launches a disposable
 Kandev backend, installs the built package through Settings, and tests the
