@@ -2722,11 +2722,11 @@ function sceneFor(biome, level, seed, timeOfDay, season, ancestors, ancestorBoun
 // ---------------------------------------------------------------------------
 
 var KANDY_CSS =
-  // The host's chat topbar uses 28px controls on desktop and 44px touch
-  // targets on phones. The ID selector keeps this plugin-owned geometry
-  // authoritative over the utility classes on the shared host button.
-  "#kandev-kandy-widget{width:28px;height:28px}" +
-  "@media (max-width:639px){#kandev-kandy-widget{width:44px;height:44px}}" +
+  // Older hosts without ui.Action use the original button shell. Current
+  // hosts own the action dimensions and icon box in the chat top bar.
+  "#kandev-kandy-widget.kandev-kandy-widget-legacy{width:28px;height:28px}" +
+  "@media (max-width:639px){#kandev-kandy-widget.kandev-kandy-widget-legacy{width:44px;height:44px}}" +
+  ".kandev-kandy-widget-art{position:relative;display:inline-flex;align-items:center;justify-content:center}" +
   // The shared TooltipContent always renders a small rotated-square arrow
   // (a direct span child wrapping an svg). On our full-bleed scene card it
   // reads as a stray floating square — hide it. :has() keeps the OTHER
@@ -3042,6 +3042,77 @@ function removeStyles() {
 // ---------------------------------------------------------------------------
 // Hover card + top-bar widget.
 // ---------------------------------------------------------------------------
+
+var KANDY_ACTION_TRANSLATIONS = {
+  en: {
+    topbarActionAwake: "Kandy: level {{level}} {{stageName}}, {{mood}}",
+    topbarActionAsleep: "Kandy: level {{level}} {{stageName}}, {{mood}}, sleeping",
+  },
+};
+
+function kandyTopbarLabel(translate, shown, asleep) {
+  var level = shown.level;
+  var stageName = shown.stage_name;
+  var mood = shown.mood || "content";
+  var fallback = "Kandy: level " + level + " " + stageName + ", " + mood + (asleep ? ", sleeping" : "");
+  if (typeof translate !== "function") return fallback;
+
+  var key = asleep ? "topbarActionAsleep" : "topbarActionAwake";
+  var label = translate(key, {
+    defaultValue: fallback,
+    values: { level: level, stageName: stageName, mood: mood },
+  });
+  return typeof label === "string" && label && label !== key ? label : fallback;
+}
+
+function kandyTopbarAction(h, ui, options) {
+  var Action = ui && ui.Action;
+  var chipClass = "";
+  if (options.celebration) {
+    chipClass = bigCelebration(options.celebration) ? "kandev-kandy-levelup" : "kandev-kandy-celebrate";
+  } else if (options.greetFx) {
+    chipClass = "kandev-kandy-celebrate";
+  }
+
+  var icon = h(
+    "span",
+    {
+      className: "kandev-kandy-widget-art" + (chipClass ? " " + chipClass : ""),
+      "aria-hidden": "true",
+    },
+    creatureSvg(h, options.chipShown, Action ? 16 : 22, Action ? "size-4" : "", true),
+  );
+  var label = kandyTopbarLabel(options.translate, options.shown, options.chipAsleep);
+
+  if (Action) {
+    return h(Action, {
+      id: "kandev-kandy-widget",
+      label: label,
+      icon: icon,
+      // The Kandy card is the rich preview. Do not add a second, short host
+      // tooltip around the same trigger.
+      tooltip: "",
+      onMouseEnter: options.onLoad,
+      onFocus: options.onLoad,
+      onClick: options.onOpen,
+    });
+  }
+
+  return h(
+    "button",
+    {
+      id: "kandev-kandy-widget",
+      type: "button",
+      className:
+        "kandev-kandy-widget-legacy relative h-7 w-7 flex items-center justify-center cursor-pointer rounded-md border border-border/60 bg-muted/30 hover:bg-muted/60",
+      "aria-label": label,
+      onMouseEnter: options.onLoad,
+      onFocus: options.onLoad,
+      onClick: options.onOpen,
+    },
+    icon,
+  );
+}
 
 var EGG_PLACEHOLDER = {
   level: 1,
@@ -7951,6 +8022,11 @@ function kandyCard(h, data, celebration, care, timeOfDay, season, speech, motion
       "div",
       {
         className: "kandev-kandy-wander",
+        // motion.wanderRef (when supplied) lets the widget drive the leg
+        // position straight on this node, so a stroll does not re-render the
+        // whole mascot tree ~25x/s. Legacy callers omit it and keep the
+        // pure, state-only transform below.
+        ref: motion.wanderRef,
         style: { transform: "translateX(" + wanderX + "px)" },
       },
       h(
@@ -8252,6 +8328,9 @@ function makeKandyWidget(host) {
   return function KandyWidget(props) {
     var slotProps = props && props.slotProps ? props.slotProps : {};
     var workspaceId = typeof slotProps.workspaceId === "string" ? slotProps.workspaceId : "";
+    var translation =
+      host.i18n && typeof host.i18n.useTranslation === "function" ? host.i18n.useTranslation() : null;
+    var translate = translation && translation.t;
     var stateHook = React.useState(null);
     var data = stateHook[0];
     var setData = stateHook[1];
@@ -8430,6 +8509,28 @@ function makeKandyWidget(host) {
     var cryEndTimerRef = React.useRef(null);
     var chainTimerRef = React.useRef(null);
     var lookTimerRef = React.useRef(null);
+    // Wander perf: during a leg only x changes, so it is pushed straight to
+    // the DOM (translateX on the wander wrapper) instead of re-rendering the
+    // whole mascot tree ~25x/s. React state still mirrors motion at leg
+    // boundaries (start/end, facing, cry). wanderNodesRef holds the live
+    // wander nodes; wanderRefCb (a stable callback ref) registers them on
+    // mount and, via the returned cleanup, unregisters them on unmount.
+    var wanderNodesRef = React.useRef(null);
+    if (!wanderNodesRef.current) {
+      var wanderRegistry = { nodes: new Set() };
+      wanderRegistry.cb = function (node) {
+        if (!node) return undefined;
+        wanderRegistry.nodes.add(node);
+        // A card mounting mid-leg must not flash the stale boundary x.
+        var live = motionRef.current;
+        node.style.transform = "translateX(" + ((live && live.x) || 0) + "px)";
+        return function () {
+          wanderRegistry.nodes.delete(node);
+        };
+      };
+      wanderNodesRef.current = wanderRegistry;
+    }
+    var wanderRefCb = wanderNodesRef.current.cb;
     // liveRef mirrors the latest render values for the interval callbacks
     // (the mount-effect closures would otherwise see mount-time state).
     var liveRef = React.useRef({});
@@ -8461,6 +8562,16 @@ function makeKandyWidget(host) {
         facing: m.facing,
         walking: !!m.leg,
         cry: m.cryUntil > Date.now() ? m.crySeq : 0,
+      });
+    }
+
+    // applyWanderX: the imperative half of publishMotion. Writes just the
+    // leg position onto every live wander node, with no React render.
+    function applyWanderX(x) {
+      var reg = wanderNodesRef.current;
+      if (!reg) return;
+      reg.nodes.forEach(function (node) {
+        if (node && node.style) node.style.transform = "translateX(" + x + "px)";
       });
     }
 
@@ -8506,8 +8617,13 @@ function makeKandyWidget(host) {
           }
           // v0.8.1: chained journeys — after a brief pause, amble on.
           if (m.chainLeft > 0) scheduleChainLeg();
+          // Leg boundary: mirror walking=false and the final x into React.
+          publishMotion();
+          return;
         }
-        publishMotion();
+        // Mid-leg: only x moves. Push it straight to the wander node(s)
+        // instead of re-rendering the whole mascot tree.
+        applyWanderX(m.x);
       }, WANDER_FRAME_MS);
     }
 
@@ -9317,6 +9433,15 @@ function makeKandyWidget(host) {
       }
     }
 
+    // Keep the imperative wander position correct across renders triggered
+    // by anything other than the leg timer (data refresh, clock tick). After
+    // each commit this reasserts the live x while a leg is in flight, so the
+    // node never flashes back to the last boundary value.
+    (React.useLayoutEffect || React.useEffect)(function () {
+      var m = motionRef.current;
+      if (m && m.leg) applyWanderX(m.x);
+    });
+
     React.useEffect(function () {
       mountedRef.current = true;
       load();
@@ -9405,7 +9530,13 @@ function makeKandyWidget(host) {
     var resolvedGrottoView = tokenGrottoResolvedView(tokenGrottoModel, grottoView);
     // The dialog card walks; the hover card never does.
     var cardWalk = grottoTransitClass(grottoTransit, "card");
-    var dialogMotion = cardWalk ? Object.assign({}, motionState, { facing: 1, transit: cardWalk }) : motionState;
+    // Both cards carry the stable wander ref so the leg timer can move them
+    // imperatively; the dialog card additionally faces right and wears its
+    // grotto transit gait while walking between scenes.
+    var chipMotion = Object.assign({}, motionState, { wanderRef: wanderRefCb });
+    var dialogMotion = cardWalk
+      ? Object.assign({}, motionState, { facing: 1, transit: cardWalk, wanderRef: wanderRefCb })
+      : Object.assign({}, motionState, { wanderRef: wanderRefCb });
 
     // The underground Kandy travels wearing its own gait. Which scene it is
     // standing in decides which leg of the trip applies to it. Asleep or still
@@ -9457,50 +9588,29 @@ function makeKandyWidget(host) {
     var chipAsleep = kandyAsleep;
     if (chipAsleep) chipShown = Object.assign({}, shown, { sleep_state: "asleep" });
 
-    // The chip is a real button: hover/focus gives the desktop quick-peek
-    // tooltip, tap/click opens the same card as a dialog (touch devices
-    // have no hover, so the dialog is the mobile path).
-    var chipCelebrateCls = "";
-    if (celebration) {
-      chipCelebrateCls =
-        bigCelebration(celebration) ? " kandev-kandy-levelup" : " kandev-kandy-celebrate";
-    } else if (greetFx) {
-      // The chip does its existing small hop alongside the arrival wave.
-      chipCelebrateCls = " kandev-kandy-celebrate";
-    }
-    var trigger = h(
-      "button",
-      {
-        id: "kandev-kandy-widget",
-        type: "button",
-        className:
-          "relative h-7 w-7 flex items-center justify-center cursor-pointer rounded-md border border-border/60 bg-muted/30 hover:bg-muted/60" +
-          chipCelebrateCls,
-        "aria-label":
-          "Kandy: level " +
-          shown.level +
-          " " +
-          shown.stage_name +
-          ", " +
-          (shown.mood || "content") +
-          (chipAsleep ? ", sleeping" : ""),
-        onMouseEnter: load,
-        onFocus: load,
-        onClick: function () {
-          load();
-          returnToPhotoEntryRef.current = false;
-          setPhotoOpen(false);
-          setPhotoStatus("idle");
-          returnToJarEntryRef.current = false;
-          setJarOpen(false);
-          setJarConfirmDisconnect(false);
-          setDialogOpen(true);
-          // The dialog always greets on open (arrival gets the hop too).
-          greetOnOpen();
-        },
+    // Hover/focus keeps the desktop quick peek warm; clicking, tapping, or
+    // using the keyboard opens the same card as a dialog on every surface.
+    var trigger = kandyTopbarAction(h, ui, {
+      shown: shown,
+      chipShown: chipShown,
+      chipAsleep: chipAsleep,
+      translate: translate,
+      celebration: celebration,
+      greetFx: greetFx,
+      onLoad: load,
+      onOpen: function () {
+        load();
+        returnToPhotoEntryRef.current = false;
+        setPhotoOpen(false);
+        setPhotoStatus("idle");
+        returnToJarEntryRef.current = false;
+        setJarOpen(false);
+        setJarConfirmDisconnect(false);
+        setDialogOpen(true);
+        // The dialog always greets on open (arrival gets the hop too).
+        greetOnOpen();
       },
-      creatureSvg(h, chipShown, 22, "", true),
-    );
+    });
 
     // Shared interaction wiring for BOTH card surfaces (hover preview and
     // click dialog): treat on click, bucket on right-click, plus the fx
@@ -9621,7 +9731,7 @@ function makeKandyWidget(host) {
           // Same care wiring as the dialog: the hover card is a first-class
           // surface — treat and bucket work here too. (Both cards are never
           // mounted at once: the dialog's overlay blocks chip hover.)
-          kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech, motionState),
+          kandyCard(h, shown, celebration, careProps, timeOfDay, currentSeason(), speech, chipMotion),
         ),
       ),
       h(
@@ -9819,6 +9929,9 @@ window.registerKandevPlugin(PLUGIN_ID, {
   initialize: function (registry, host) {
     h0 = host.jsx;
     injectStyles();
+    if (typeof registry.registerTranslations === "function") {
+      registry.registerTranslations(KANDY_ACTION_TRANSLATIONS);
+    }
     registry.registerComponent("chat-top-bar", makeKandyWidget(host));
     // Live updates: refetch when work happens, instead of waiting for the
     // backstop poll (or a page reload).
@@ -9853,6 +9966,8 @@ window.registerKandevPlugin(PLUGIN_ID, {
     photoAncestorsFor: photoAncestorsFor,
     growthForLevel: growthForLevel,
     kandyCard: kandyCard,
+    kandyTopbarAction: kandyTopbarAction,
+    kandyTopbarLabel: kandyTopbarLabel,
     petOverlay: petOverlay,
     bonkOverlay: bonkOverlay,
     distrustOverlay: distrustOverlay,

@@ -25,6 +25,27 @@
   usable publisher authority.
 - Revoke remote publication before deleting local connection data.
 
+## [0.15.0] - 2026-10-05
+
+### Changed
+
+- feat: adopt host Action for Kandy top bar (#23) (a5f3c18)
+
+
+## [0.14.1] - 2026-09-30
+
+### Changed
+
+- Fix marketplace release archive checksum (#24) (273c4f4)
+
+
+## [0.14.0] - 2026-09-05
+
+### Changed
+
+- perf(ui): drive Kandy wander position imperatively to stop idle re-render loop (#22) (230d949)
+
+
 ## [0.13.1] - 2026-08-11
 
 ### Changed

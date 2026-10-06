@@ -69,11 +69,42 @@ func TestManifest_SecuresKandySurfacesAndDeclaresJarActions(t *testing.T) {
 	require.Equal(t, "https://jar.kandev.ai", jarOrigin.Default)
 }
 
-func TestBuildAndReleasePinTheSecureKandevSDKRevision(t *testing.T) {
-	const revision = "d20a7c2884d01a799d5d64ecb5b2ede9dca29f16"
-	for _, path := range []string{"../.github/workflows/build.yml", "../.github/workflows/release.yml"} {
+func TestWorkflowsShareTheReleasedSecureKandevSDKRevision(t *testing.T) {
+	const revision = "e43881c7555372897b57ec51c705f1e05da43c40" // Kandev v0.97.0
+	pinned, err := os.ReadFile("../.kandev-sdk-ref")
+	require.NoError(t, err)
+	require.Equal(t, revision, strings.TrimSpace(string(pinned)))
+	for _, path := range []string{"../.github/workflows/ci.yml", "../.github/workflows/build.yml", "../.github/workflows/release.yml"} {
 		raw, err := os.ReadFile(path)
 		require.NoError(t, err)
-		require.Equal(t, 1, strings.Count(string(raw), "ref: "+revision), path)
+		var workflow struct {
+			Jobs map[string]struct {
+				Steps []struct {
+					ID   string `yaml:"id"`
+					Run  string `yaml:"run"`
+					With struct {
+						Repository string `yaml:"repository"`
+						Ref        string `yaml:"ref"`
+					} `yaml:"with"`
+				} `yaml:"steps"`
+			} `yaml:"jobs"`
+		}
+		require.NoError(t, yaml.Unmarshal(raw, &workflow), path)
+		checkouts := 0
+		for _, job := range workflow.Jobs {
+			pinRead := false
+			for _, step := range job.Steps {
+				if step.ID == "sdk" {
+					require.Contains(t, step.Run, "cat .kandev-sdk-ref", path)
+					pinRead = true
+				}
+				if step.With.Repository == "kdlbs/kandev" {
+					require.True(t, pinRead, "SDK checkout must follow the shared pin read: %s", path)
+					require.Equal(t, "${{ steps.sdk.outputs.ref }}", step.With.Ref, path)
+					checkouts++
+				}
+			}
+		}
+		require.Positive(t, checkouts, path)
 	}
 }

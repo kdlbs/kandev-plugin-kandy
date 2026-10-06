@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kandy packaged UI smoke</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font: 14px system-ui, sans-serif;
+        background: #f5f6f8;
+        color: #20232a;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+      }
+      #toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 52px;
+        padding: 0 16px;
+        border-bottom: 1px solid #d8dce3;
+        background: #fff;
+      }
+      .fixture-action {
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 1px solid #cbd0d9;
+        border-radius: 6px;
+        background: #f0f2f5;
+        color: #222;
+        cursor: pointer;
+      }
+      .fixture-action:hover {
+        background: #e5e8ed;
+      }
+      .fixture-action:focus-visible,
+      .kandev-kandy-widget-legacy:focus-visible {
+        outline: 2px solid #4078d4;
+        outline-offset: 2px;
+      }
+      .fixture-action-glyph {
+        display: inline-flex;
+        flex: 0 0 16px;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+      }
+      .kandev-kandy-widget-legacy {
+        box-sizing: border-box;
+        border: 1px solid #cbd0d9;
+        background: #f0f2f5;
+      }
+      #preview,
+      #dialog {
+        margin: 16px;
+        padding: 12px;
+        border: 1px solid #cbd0d9;
+        border-radius: 8px;
+        background: #fff;
+      }
+      #preview[hidden],
+      #dialog[hidden] {
+        display: none;
+      }
+      @media (max-width: 639px) {
+        .fixture-action {
+          width: 44px;
+          height: 44px;
+        }
+      }
+    </style>
+    <script>
+      window.registerKandevPlugin = function (id, plugin) {
+        window.kandyPluginRegistration = { id: id, plugin: plugin };
+      };
+    </script>
+    <script src="/ui/bundle.js"></script>
+  </head>
+  <body>
+    <div id="toolbar" aria-label="Chat toolbar"></div>
+    <div id="preview" hidden>Preview loaded from the packaged Kandy bundle.</div>
+    <div id="dialog" role="dialog" hidden>Kandy dialog opened from the action.</div>
+    <script>
+      (function () {
+        "use strict";
+
+        function h(type, props) {
+          var children = Array.prototype.slice.call(arguments, 2);
+          var nextProps = Object.assign({}, props || {});
+          if (children.length === 1) nextProps.children = children[0];
+          else if (children.length > 1) nextProps.children = children;
+          return { type: type, props: nextProps };
+        }
+
+        function appendNode(parent, node) {
+          if (node === null || node === undefined || typeof node === "boolean") return;
+          if (Array.isArray(node)) {
+            node.forEach(function (child) {
+              appendNode(parent, child);
+            });
+            return;
+          }
+          if (typeof node !== "object") {
+            parent.appendChild(document.createTextNode(String(node)));
+            return;
+          }
+
+          var element;
+          if (node.type === HostAction) {
+            element = document.createElement("button");
+            element.id = node.props.id || "";
+            element.className = "fixture-action";
+            element.type = "button";
+            element.setAttribute("aria-label", node.props.label);
+            var glyph = document.createElement("span");
+            glyph.className = "fixture-action-glyph";
+            appendNode(glyph, node.props.icon);
+            element.appendChild(glyph);
+            bindEvents(element, node.props);
+            parent.appendChild(element);
+            return;
+          }
+
+          var isSvg = node.type === "svg" || parent.namespaceURI === "http://www.w3.org/2000/svg";
+          element = isSvg
+            ? document.createElementNS("http://www.w3.org/2000/svg", node.type)
+            : document.createElement(node.type);
+          Object.keys(node.props || {}).forEach(function (key) {
+            var value = node.props[key];
+            if (key === "children" || key === "key" || key === "ref" || value === undefined || value === null) return;
+            if (key.indexOf("on") === 0 && typeof value === "function") {
+              element.addEventListener(key.slice(2).toLowerCase(), value);
+            } else if (key === "className") {
+              element.setAttribute("class", value);
+            } else if (key === "style" && typeof value === "object") {
+              Object.keys(value).forEach(function (styleKey) {
+                if (styleKey.indexOf("--") === 0) element.style.setProperty(styleKey, value[styleKey]);
+                else element.style[styleKey] = value[styleKey];
+              });
+            } else if (key !== "dangerouslySetInnerHTML") {
+              var attributeName = key === "viewBox"
+                ? key
+                : key.replace(/[A-Z]/g, function (letter) { return "-" + letter.toLowerCase(); });
+              element.setAttribute(attributeName, String(value));
+            }
+          });
+          appendNode(element, node.props && node.props.children);
+          parent.appendChild(element);
+        }
+
+        function bindEvents(element, props) {
+          Object.keys(props).forEach(function (key) {
+            var value = props[key];
+            if (key.indexOf("on") === 0 && typeof value === "function") {
+              element.addEventListener(key.slice(2).toLowerCase(), value);
+            }
+          });
+        }
+
+        function HostAction() {}
+
+        try {
+          var registration = window.kandyPluginRegistration;
+          if (!registration || registration.id !== "kandev-plugin-kandy") throw new Error("bundle did not register Kandy");
+
+          var mode = new URLSearchParams(window.location.search).get("mode") || "action";
+          var ui = {
+            Tooltip: function Tooltip() {},
+            TooltipTrigger: function TooltipTrigger() {},
+            TooltipContent: function TooltipContent() {},
+            Dialog: function Dialog() {},
+            DialogContent: function DialogContent() {},
+            DialogTitle: function DialogTitle() {},
+          };
+          if (mode === "action") ui.Action = HostAction;
+
+          var registrations = [];
+          var wsHandlers = [];
+          var host = { React: {}, jsx: h, ui: ui };
+          var registry = {
+            registerComponent: function (slot, component) { registrations.push({ slot: slot, component: component }); },
+            registerWsHandler: function (action) { wsHandlers.push(action); },
+          };
+
+          registration.plugin.initialize(registry, host);
+          var firstCount = registrations.length;
+          registration.plugin.destroy();
+          var styleRemoved = document.getElementById("kandev-kandy-style") === null;
+          registration.plugin.initialize(registry, host);
+          var styleRestored = document.getElementById("kandev-kandy-style") !== null;
+
+          var counters = { loads: 0, opens: 0 };
+          var action = registration.plugin.__render.kandyTopbarAction(h, ui, {
+            shown: {
+              level: 12,
+              stage_name: "Drowsy Sporeling",
+              mood: "gloomy",
+              lineage_seed: 99,
+              appearance_seed: 1234,
+              archetype: 4,
+              family: 2,
+              biome: 3,
+              stage: 2,
+              progress_pct: 64,
+            },
+            chipShown: {
+              level: 12,
+              stage_name: "Drowsy Sporeling",
+              mood: "gloomy",
+              lineage_seed: 99,
+              appearance_seed: 1234,
+              archetype: 4,
+              family: 2,
+              biome: 3,
+              stage: 2,
+              progress_pct: 64,
+            },
+            chipAsleep: false,
+            celebration: { kind: "levelup" },
+            greetFx: 0,
+            onLoad: function () {
+              counters.loads += 1;
+              document.getElementById("preview").hidden = false;
+            },
+            onOpen: function () {
+              counters.opens += 1;
+              document.getElementById("dialog").hidden = false;
+            },
+          });
+          appendNode(document.getElementById("toolbar"), action);
+
+          var button = document.getElementById("kandev-kandy-widget");
+          window.smoke = {
+            mode: mode,
+            counters: counters,
+            button: button,
+            registrationCountBeforeDisable: firstCount,
+            registrationCountAfterReenable: registrations.length,
+            registeredSlots: registrations.map(function (entry) { return entry.slot; }),
+            wsHandlerCount: wsHandlers.length,
+            styleRemoved: styleRemoved,
+            styleRestored: styleRestored,
+            reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+            pointerCoarse: window.matchMedia("(pointer: coarse)").matches,
+            metrics: function () {
+              var icon = button.querySelector("svg");
+              var hostGlyph = button.querySelector(".fixture-action-glyph");
+              var outer = button.getBoundingClientRect();
+              var art = button.querySelector(".kandev-kandy-widget-art");
+              var glyph = hostGlyph ? hostGlyph.getBoundingClientRect() : art.getBoundingClientRect();
+              var picture = icon.getBoundingClientRect();
+              return {
+                id: button.id,
+                label: button.getAttribute("aria-label"),
+                viewBox: icon.getAttribute("viewBox"),
+                outerWidth: outer.width,
+                outerHeight: outer.height,
+                glyphWidth: glyph.width,
+                glyphHeight: glyph.height,
+                artWidth: picture.width,
+                artHeight: picture.height,
+                artAnimation: getComputedStyle(art).animationName,
+                registrationCountBeforeDisable: window.smoke.registrationCountBeforeDisable,
+                registrationCountAfterReenable: window.smoke.registrationCountAfterReenable,
+                registeredSlots: window.smoke.registeredSlots,
+                wsHandlerCount: window.smoke.wsHandlerCount,
+                styleRemoved: window.smoke.styleRemoved,
+                styleRestored: window.smoke.styleRestored,
+                reducedMotion: window.smoke.reducedMotion,
+                pointerCoarse: window.smoke.pointerCoarse,
+                loads: counters.loads,
+                opens: counters.opens,
+                previewVisible: !document.getElementById("preview").hidden,
+                dialogVisible: !document.getElementById("dialog").hidden,
+                activeId: document.activeElement && document.activeElement.id,
+              };
+            },
+          };
+
+          window.smoke.keyEvents = [];
+          button.addEventListener("keydown", function (event) {
+            window.smoke.keyEvents.push("down:" + event.key);
+          });
+          button.addEventListener("keyup", function (event) {
+            window.smoke.keyEvents.push("up:" + event.key);
+          });
+          window.smoke.initialMetrics = window.smoke.metrics();
+          window.smoke.mobile = window.innerWidth <= 639;
+          window.smoke.nativeButton = button.tagName === "BUTTON";
+          document.body.dataset.smokeReady = "true";
+        } catch (error) {
+          document.body.dataset.smokeReady = "failed";
+          document.body.dataset.smokeError = String(error && error.stack || error);
+        }
+      })();
+    </script>
+  </body>
+</html>
