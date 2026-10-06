@@ -1,4 +1,4 @@
-.PHONY: build run test fmt check-format vet package package-host verify-package smoke-package clean package-file
+.PHONY: build run test fmt check-format vet package package-host verify-package audit-package smoke-package clean package-file
 
 BIN := bin/kandev-plugin-kandy
 VERSION := 0.15.0
@@ -56,6 +56,9 @@ package-host:
 	@echo "Wrote $(PKG_OUT)"
 
 verify-package: package
+
+audit-package:
+	sh scripts/audit-package.sh $(PKG_OUT)
 
 smoke-package: package-host
 	$(NODE) scripts/smoke-package-ui.js $(PKG_OUT)
