@@ -25,6 +25,10 @@ an egg. It never stops.
   exact lifetime count. A chamber floor holds ten piles: the biggest and the
   most recently used models get a spot, and anything left over is merged into
   one pile that opens into a list.
+- **Kandy Jar (optional)**: pair this instance with a shared Kandy Jar server
+  from the full Kandy dialog. Kandy publishes a deliberately small display
+  snapshot for shared rooms and leaderboards; disconnecting revokes the
+  publication and removes the local publisher credential.
 - **Moods**: it celebrates when XP lands and gets bored, sad, and eventually
   gloomy (rain cloud included) when nothing ships for days.
 - **Care**: left-click drops it a treat; right-click dumps a bucket of cold
@@ -75,7 +79,8 @@ Build a package (`make package-host` for your platform, `make package` for
 all platforms) and install the tarball via **Settings > Plugins > Install**
 or `POST /api/plugins/install`.
 
-The manifest requires Kandev 0.83.0 or newer. It declares instance state,
+The manifest requires Kandev 0.91.1 or newer to enforce Jar's administrator
+actions and configuration boundary. It declares instance state,
 encrypted host secrets, and event subscriptions. Kandy has no setup form and
 does not ask for provider credentials. The host `Action` is optional at
 runtime: newer hosts use it for the top-bar control, while older supported
@@ -159,8 +164,9 @@ cap because each chamber is part of Kandy's history.
 Both ledgers use domain-separated HMAC-SHA256 signatures backed by one key in
 kandev's encrypted secrets vault. Grotto corruption restarts only token history;
 it cannot counterfeit or rebirth Kandy. The browser UI uses the local clock
-only for day/night and sleep, and calls only Kandy's Kandev-hosted webhooks; it
-has no external service or analytics integration.
+only for day/night and sleep. It calls Kandy's authenticated Kandev-hosted
+webhooks and the three declared, authenticated Kandy Jar actions; it never
+contacts a Jar server directly. Kandy has no analytics integration.
 
 Kandy does not use, request, or spend LLM tokens. It observes aggregate usage
 reported by existing agent work and adds no model calls. Token count is not
@@ -190,13 +196,59 @@ lineage starts an empty grotto; rollback ignores the separate state; re-upgrade
 resumes it when lineage still matches. Uninstall removes the Kandy and ends
 its grotto history.
 
+## Kandy Jar security and operation
+
+Kandy Jar is opt-in. The plugin setting `jar_origin` defaults to
+`https://jar.kandev.ai`; operators can point it at a self-hosted server. The
+value must be an origin with no path, credentials, query, or fragment. HTTPS
+is mandatory except for HTTP on a loopback address during local development.
+The connect action never accepts an origin, and redirects are not followed.
+Kandy requires Kandev 0.91.1 or later because that release restricts this
+instance-global origin, plugin-management mutations, and Jar connect/disconnect
+actions to administrators.
+
+Pairing uses a one-time `KJ-XXXX-XXXX-XXXX` code. Kandy generates a random
+publisher token locally and sends only its SHA-256 hash while redeeming that
+code. The plaintext token is stored only in Kandev's encrypted secrets vault;
+it is never returned to the browser, written to plugin state, or logged. The
+vault record binds the token to the exact Jar origin, so a recovery credential
+is never reused after an administrator changes servers. Ambiguous Host writes
+retain that origin-bound credential until the exact sealed state can be
+confirmed. Kandev authorizes connection changes before invoking the plugin:
+authenticated members may inspect non-secret status, while administrators may
+connect or disconnect the instance-wide publication. The connecting actor ID is
+retained only as sealed audit metadata; it does not prevent another administrator
+from recovering the connection.
+
+Only an explicit allowlist of appearance and public progression fields is
+published. It excludes XP, activity and care counters, raw temperament,
+timestamps, task/session IDs, prompts, messages, agent/model/provider data,
+Token Grotto usage, seals, and credentials. Ancestors are capped at eight and
+use their own smaller allowlist. Snapshot requests are capped at 16 KiB.
+
+Publishing uses a persisted revisioned outbox: an unacknowledged snapshot is
+retried byte-for-byte, later changes are coalesced, and process restart resumes
+the pending revision. The complete connection and outbox document is protected
+by a domain-separated HMAC using Kandy's vault-backed integrity key. A missing
+or invalid seal fails closed before the publisher credential is read or any
+network request is made. Unsigned state from a pre-Jar development build is not
+trusted automatically; an operator must remove that stale connection state and
+pair again.
+
+Disconnect first revokes the remote publication, then deletes the vault
+credential and local connection state. Before uninstalling the plugin,
+disconnect it (or remove the installation from the Jar server) so the public
+snapshot is explicitly revoked.
+
 ## Development
 
 Kandy uses the Go SDK from a private sibling checkout of the Kandev monorepo.
 `.kandev-sdk-ref` pins that source to
-`570600439036e81f8e9e1c63f15c4abce8a6c846`, which contains the additive
-`host.ui.Action` API. The Go `replace` path expects the plugin and Kandev
-checkouts to be siblings:
+`e43881c7555372897b57ec51c705f1e05da43c40` (released Kandev v0.97.0), which
+contains the administrator action/configuration gates and the additive
+`host.ui.Action` API. Jar keeps the minimum host security floor at 0.91.1;
+the top-bar UI falls back on older supported hosts. The Go `replace` path
+expects the plugin and Kandev checkouts to be siblings:
 
 ```sh
 mkdir plugin-work && cd plugin-work
@@ -213,21 +265,26 @@ make test
 make build
 make package-host
 make package
+make audit-package
 ```
 
-Use Go 1.26.0 and Node 24. The hand-written `ui/bundle.js` has no build step
+Use Go 1.26.8 and Node 24. The hand-written `ui/bundle.js` has no build step
 or frontend dependencies. `make test` runs Go tests, UI interaction tests,
 and positive and negative package/release verifier checks. `make smoke-package`
 opens the packaged UI bundle in a disposable Chrome fixture. It checks the
 Action and older-host paths on desktop and phone sizes. It exercises the
 package contract but does not replace validation in a Kandev host.
 
+`make audit-package` scans every binary in the verified package, including its
+compiled Go standard library. CI and releases enforce this check; a source
+scan alone can miss an older compiler embedded in an artifact.
+
 For host integration, `scripts/smoke-real-host.mjs` launches a disposable
 Kandev backend, installs the built package through Settings, and tests the
 actual chat top bar and phone control with a disposable task and fake Kandy
 webhook responses. The task uses Kandev's local E2E mock-agent; the smoke uses
 no external provider account or personal data. The
-SDK-pin host also has a phone plugin menu. v0.83.0 predates it, so that host's
+SDK-pin host also has a phone plugin menu. v0.92.0 predates it, so that host's
 phone check uses the legacy top-bar button. Both checks require a 44px target. The
 script also checks hover/focus preview, Enter/Space and touch activation,
 reduced motion, one registration after disable/re-enable, coarse-pointer input,
@@ -242,8 +299,8 @@ SMOKE_ROOT="$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/kandy-host-smoke.XXXXXX
 HOST_ROOT="$SMOKE_ROOT/hosts/kandev"
 mkdir -p "$SMOKE_ROOT/hosts"
 git clone https://github.com/kdlbs/kandev.git "$HOST_ROOT"
-git -C "$HOST_ROOT" checkout --detach 570600439036e81f8e9e1c63f15c4abce8a6c846
-git -C "$HOST_ROOT" worktree add --detach "$SMOKE_ROOT/hosts/kandev-min" v0.83.0
+git -C "$HOST_ROOT" checkout --detach e43881c7555372897b57ec51c705f1e05da43c40
+git -C "$HOST_ROOT" worktree add --detach "$SMOKE_ROOT/hosts/kandev-min" v0.92.0
 
 for checkout in "$HOST_ROOT" "$SMOKE_ROOT/hosts/kandev-min"; do
   (cd "$checkout/apps" && corepack enable && pnpm install --frozen-lockfile)
@@ -340,6 +397,8 @@ validation.
 
 Two aggregate JSON ledgers in kandev Host state (scope `instance`) participate
 in kandev backups, survive plugin upgrades, and are removed on uninstall.
+An optional Kandy Jar connection adds one non-secret instance-state document;
+its publisher token lives separately in Kandev's encrypted secrets vault.
 Uninstalling the plugin is, in the kindest possible terms, the end of that
 kandy's story and its Token Grotto.
 
