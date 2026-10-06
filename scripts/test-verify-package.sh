@@ -76,6 +76,15 @@ expect_failure() {
 create_fixture "$test_dir/valid"
 sh "$verify_script" "$test_dir/valid" full >/dev/null
 
+# plugin-pack emits plain scalars and four-space YAML indentation when it
+# serializes a manifest. Verify that output, not only the hand-written source.
+copy_fixture sdk-full
+sed -e 's/"//g' -e 's/^    /        /' -e 's/^  \([^ ]\)/    \1/' \
+	"$test_dir/sdk-full/manifest.yaml" > "$test_dir/sdk-full/manifest.next"
+mv "$test_dir/sdk-full/manifest.next" "$test_dir/sdk-full/manifest.yaml"
+write_checksums "$test_dir/sdk-full"
+sh "$verify_script" "$test_dir/sdk-full" full >/dev/null
+
 host_platform=$(go env GOOS)-$(go env GOARCH)
 copy_fixture host-valid
 host_fixture=$test_dir/host-valid
@@ -84,6 +93,9 @@ host_executable=$(awk -v platform="$host_platform" '$0 ~ "    " platform ":" { g
 for executable in "$host_fixture"/server/*; do
 	[ "$executable" = "$host_fixture/$host_executable" ] || rm "$executable"
 done
+awk -v platform="$host_platform:" '$0 !~ /^    / || $1 == platform' \
+	"$host_fixture/manifest.yaml" > "$host_fixture/manifest.next"
+mv "$host_fixture/manifest.next" "$host_fixture/manifest.yaml"
 write_checksums "$host_fixture"
 sh "$verify_script" "$host_fixture" host "$host_platform" >/dev/null
 if sh "$verify_script" "$host_fixture" full >/dev/null 2>&1; then
@@ -91,11 +103,21 @@ if sh "$verify_script" "$host_fixture" full >/dev/null 2>&1; then
 	exit 1
 fi
 
-copy_fixture missing-host-binary
+mkdir -p "$test_dir/sdk-host"
+cp -R "$host_fixture/." "$test_dir/sdk-host/"
+sed -e 's/"//g' -e 's/^    /        /' -e 's/^  \([^ ]\)/    \1/' \
+	"$test_dir/sdk-host/manifest.yaml" > "$test_dir/sdk-host/manifest.next"
+mv "$test_dir/sdk-host/manifest.next" "$test_dir/sdk-host/manifest.yaml"
+write_checksums "$test_dir/sdk-host"
+sh "$verify_script" "$test_dir/sdk-host" host "$host_platform" >/dev/null
+
+mkdir -p "$test_dir/missing-host-binary"
+cp -R "$host_fixture/." "$test_dir/missing-host-binary/"
 rm "$test_dir/missing-host-binary/$host_executable"
 write_checksums "$test_dir/missing-host-binary"
 expect_failure 'a missing host platform binary' "$test_dir/missing-host-binary" host "$host_platform"
 expect_failure 'an undeclared host platform' "$test_dir/valid" host unsupported-host
+expect_failure 'extra platform declarations in a host-only package' "$test_dir/valid" host "$host_platform"
 
 copy_fixture missing-ui
 rm "$test_dir/missing-ui/ui/bundle.js"

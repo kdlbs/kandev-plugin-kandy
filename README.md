@@ -247,8 +247,8 @@ Kandy uses the Go SDK from a private sibling checkout of the Kandev monorepo.
 `e43881c7555372897b57ec51c705f1e05da43c40` (released Kandev v0.97.0), which
 contains the administrator action/configuration gates and the additive
 `host.ui.Action` API. Jar keeps the minimum host security floor at 0.91.1;
-the top-bar UI falls back on older supported hosts. The Go `replace` path expects the plugin and Kandev
-checkouts to be siblings:
+the top-bar UI falls back on older supported hosts. The Go `replace` path
+expects the plugin and Kandev checkouts to be siblings:
 
 ```sh
 mkdir plugin-work && cd plugin-work
