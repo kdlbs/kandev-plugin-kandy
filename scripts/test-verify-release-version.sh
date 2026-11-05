@@ -74,6 +74,12 @@ package_file="kandev-plugin-kandy-$base_version.tar.gz"
 tar -czf "$test_dir/matching-package/$package_file" -C "$test_dir/matching-package/archive" manifest.yaml
 (cd "$test_dir/matching-package" && sh "$verify_script" "v$base_version" "$package_file")
 
+make_fixture normalized-package
+mkdir -p "$test_dir/normalized-package/archive"
+sed 's/^version: "\([^"&]*\)"$/version: \1/' "$test_dir/normalized-package/manifest.yaml" > "$test_dir/normalized-package/archive/manifest.yaml"
+tar -czf "$test_dir/normalized-package/$package_file" -C "$test_dir/normalized-package/archive" manifest.yaml
+(cd "$test_dir/normalized-package" && sh "$verify_script" "v$base_version" "$package_file")
+
 expect_failure 'a non-version release tag' "$test_dir/valid" \
 	'tag is not a release version' "release-$base_version"
 printf 'release version positive and negative checks passed\n'

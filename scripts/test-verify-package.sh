@@ -91,6 +91,26 @@ if sh "$verify_script" "$host_fixture" full >/dev/null 2>&1; then
 	exit 1
 fi
 
+# Current plugin-pack emits normalized YAML and prunes host-only declarations.
+copy_fixture normalized-full
+sed -e 's/"//g' -e 's/^  /    /' -e 's/^      /        /' "$test_dir/normalized-full/manifest.yaml" > "$test_dir/normalized-full/manifest.next"
+mv "$test_dir/normalized-full/manifest.next" "$test_dir/normalized-full/manifest.yaml"
+write_checksums "$test_dir/normalized-full"
+sh "$verify_script" "$test_dir/normalized-full" full >/dev/null
+
+copy_fixture normalized-host
+sed -e 's/"//g' -e 's/^  /    /' -e 's/^      /        /' "$host_fixture/manifest.yaml" | awk -v platform="$host_platform" '!/^[[:space:]]+[[:alnum:]_-]+: server\// || $1 == platform ":"' > "$test_dir/normalized-host/manifest.yaml"
+for executable in "$test_dir/normalized-host"/server/*; do
+ [ "$executable" = "$test_dir/normalized-host/$host_executable" ] || rm "$executable"
+done
+write_checksums "$test_dir/normalized-host"
+sh "$verify_script" "$test_dir/normalized-host" host "$host_platform" >/dev/null
+expect_failure 'a pruned host package in full mode' "$test_dir/normalized-host"
+sed 's/^        /        unsupported-host: /' "$test_dir/normalized-host/manifest.yaml" > "$test_dir/normalized-host/manifest.next"
+mv "$test_dir/normalized-host/manifest.next" "$test_dir/normalized-host/manifest.yaml"
+write_checksums "$test_dir/normalized-host"
+expect_failure 'an invalid normalized host declaration' "$test_dir/normalized-host" host "$host_platform"
+
 copy_fixture missing-host-binary
 rm "$test_dir/missing-host-binary/$host_executable"
 write_checksums "$test_dir/missing-host-binary"
