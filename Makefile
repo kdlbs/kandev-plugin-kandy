@@ -1,12 +1,25 @@
-.PHONY: build run test fmt check-format vet package package-host verify-package smoke-package clean package-file
+.PHONY: build run test fmt check-format vet package package-host verify-package smoke-package clean package-file sdk-check check-tooling
+
+.DEFAULT_GOAL := build
 
 BIN := bin/kandev-plugin-kandy
 VERSION := 0.15.0
 STAGE := .build/stage
 PKG_OUT := kandev-plugin-kandy-$(VERSION).tar.gz
 NODE ?= node
+# Backend-owned plugin-pack requires this explicit checkout, not a Go SDK replacement.
+KANDEV_TOOLING ?=
+PLUGIN_ROOT := $(CURDIR)
 
-build:
+sdk-check:
+	go run github.com/kdlbs/kandev/pluginsdk/cmd/kandev-sdk-check@v0.1.0 --manifest manifest.yaml
+
+check-tooling:
+	@test -n "$(KANDEV_TOOLING)" || { echo "Set KANDEV_TOOLING to the checkout pinned in .kandev-tooling-ref" >&2; exit 1; }
+	@test "$$(git -C "$(KANDEV_TOOLING)" rev-parse HEAD)" = "$$(cat .kandev-tooling-ref)" || { echo "KANDEV_TOOLING must match .kandev-tooling-ref" >&2; exit 1; }
+	@test -d "$(KANDEV_TOOLING)/apps/backend/cmd/plugin-pack" && test -d "$(KANDEV_TOOLING)/pluginsdk"
+
+build: sdk-check
 	mkdir -p bin
 	go build -o $(BIN) ./server/...
 
@@ -28,7 +41,7 @@ check-format:
 vet:
 	go vet ./server/...
 
-package:
+package: sdk-check check-tooling
 	rm -rf $(STAGE)
 	mkdir -p $(STAGE)/server $(STAGE)/ui
 	cp manifest.yaml README.md $(STAGE)/
@@ -38,19 +51,19 @@ package:
 	GOOS=darwin GOARCH=amd64 go build -o $(STAGE)/server/plugin-darwin-amd64 ./server
 	GOOS=darwin GOARCH=arm64 go build -o $(STAGE)/server/plugin-darwin-arm64 ./server
 	GOOS=windows GOARCH=amd64 go build -o $(STAGE)/server/plugin-windows-amd64.exe ./server
-	go run github.com/kandev/kandev/cmd/plugin-pack -dir $(STAGE) -out $(PKG_OUT)
+	cd "$(KANDEV_TOOLING)/apps/backend" && GOWORK=off go run ./cmd/plugin-pack -dir "$(PLUGIN_ROOT)/$(STAGE)" -out "$(PLUGIN_ROOT)/$(PKG_OUT)"
 	rm -rf $(STAGE)
 	sh scripts/verify-package.sh $(PKG_OUT) full
 	@echo "Wrote $(PKG_OUT)"
 
-package-host:
+package-host: sdk-check check-tooling
 	rm -rf $(STAGE)
 	mkdir -p $(STAGE)/server $(STAGE)/ui
 	cp manifest.yaml README.md $(STAGE)/
 	cp ui/bundle.js $(STAGE)/ui/bundle.js
 	set -eu; host_platform="$$(go env GOOS)-$$(go env GOARCH)"; host_executable="server/plugin-$$(go env GOOS)-$$(go env GOARCH)$$(go env GOEXE)"; \
 		go build -o "$(STAGE)/$$host_executable" ./server; \
-		go run github.com/kandev/kandev/cmd/plugin-pack -dir $(STAGE) -out $(PKG_OUT) -platform-only; \
+		(cd "$(KANDEV_TOOLING)/apps/backend" && GOWORK=off go run ./cmd/plugin-pack -dir "$(PLUGIN_ROOT)/$(STAGE)" -out "$(PLUGIN_ROOT)/$(PKG_OUT)" -platform-only); \
 		rm -rf $(STAGE); \
 		sh scripts/verify-package.sh $(PKG_OUT) host "$$host_platform"
 	@echo "Wrote $(PKG_OUT)"
