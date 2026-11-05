@@ -238,7 +238,7 @@ git -C "$KANDEV_TOOLING" sparse-checkout set apps/backend pluginsdk
 git -C "$KANDEV_TOOLING" checkout --detach "$(cat .kandev-tooling-ref)"
 export KANDEV_TOOLING
 make package-host
-make package
+CGO_ENABLED=0 make package
 ```
 
 The root `pluginsdk/` directory is needed by the backend tool's local module
@@ -253,10 +253,12 @@ fallbacks at desktop and phone sizes. Set `CHROME_BIN` when needed.
 `scripts/smoke-real-host.mjs` installs the package through Settings in a disposable
 host and exercises the real top bar and phone control, hover/focus, keyboard and
 touch activation, reduced motion, disable/re-enable, artwork bounds, and overflow.
-It uses a local mock agent and fake presentation webhook responses for predictable
-UI measurements. These UI checks do not prove backend state, secrets, or token
-event delivery. Validate actual webhooks and lifecycle separately against the
-same minimum host.
+Before applying presentation mocks, it calls all three actual webhooks, checks
+undeclared/disabled route rejection, restarts the plugin to verify Host state
+and vault-key recovery, and starts a local mock agent with `/with-usage` to
+verify activity and token-usage event delivery. Later browser measurements use
+fake presentation responses for predictable UI assertions. No external agent
+provider is contacted.
 
 Use the released full Kandev **v0.99.0** bundle as the runtime. Its exact source
 commit is `f0e2e774cfe2df8a0d15e4c21dea7b48580e38fb`; source supplies only the
