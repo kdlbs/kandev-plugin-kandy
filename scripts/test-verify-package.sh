@@ -101,7 +101,7 @@ sh "$verify_script" "$test_dir/normalized-full" full >/dev/null
 copy_fixture normalized-host
 sed -e 's/"//g' -e 's/^  /    /' -e 's/^      /        /' "$host_fixture/manifest.yaml" | awk -v platform="$host_platform" '!/^[[:space:]]+[[:alnum:]_-]+: server\// || $1 == platform ":"' > "$test_dir/normalized-host/manifest.yaml"
 for executable in "$test_dir/normalized-host"/server/*; do
- [ "$executable" = "$test_dir/normalized-host/$host_executable" ] || rm "$executable"
+	[ "$executable" = "$test_dir/normalized-host/$host_executable" ] || rm "$executable"
 done
 write_checksums "$test_dir/normalized-host"
 sh "$verify_script" "$test_dir/normalized-host" host "$host_platform" >/dev/null

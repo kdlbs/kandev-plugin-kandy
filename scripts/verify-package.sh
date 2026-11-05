@@ -50,16 +50,16 @@ if [ -f "$input" ]; then
 fi
 
 manifest_executables=$(awk '
- $0 == "runtime:" { in_runtime = 1; next }
- in_runtime && /^[[:space:]]+executables:$/ { in_executables = 1; next }
- in_executables && /^[^[:space:]]/ { exit }
- in_executables && /^[[:space:]]+[[:alnum:]_-]+: / {
-  platform = $1
-  sub(/:$/, "", platform)
-  path = $2
-  gsub(/"/, "", path)
-  print platform " " path
- }
+	$0 == "runtime:" { in_runtime = 1; next }
+	in_runtime && /^[[:space:]]+executables:$/ { in_executables = 1; next }
+	in_executables && /^[^[:space:]]/ { exit }
+	in_executables && /^[[:space:]]+[[:alnum:]_-]+: / {
+		platform = $1
+		sub(/:$/, "", platform)
+		path = $2
+		gsub(/"/, "", path)
+		print platform " " path
+	}
 ' "$package_dir/manifest.yaml" | LC_ALL=C sort)
 expected_executables=$(printf '%s\n' \
 	'darwin-amd64 server/plugin-darwin-amd64' \
@@ -75,9 +75,9 @@ case "$mode" in
 		;;
 	host)
 		[ -n "$host_platform" ] || fail 'host mode requires a platform name'
-  expected_host=$(printf '%s\n' "$expected_executables" | awk -v platform="$host_platform" '$1 == platform { print }')
-  [ -n "$expected_host" ] || fail "host platform is not supported: $host_platform"
-  [ "$manifest_executables" = "$expected_executables" ] || [ "$manifest_executables" = "$expected_host" ] || fail 'manifest runtime.executables does not match the supported platform set'
+		expected_host=$(printf '%s\n' "$expected_executables" | awk -v platform="$host_platform" '$1 == platform { print }')
+		[ -n "$expected_host" ] || fail "host platform is not supported: $host_platform"
+		[ "$manifest_executables" = "$expected_executables" ] || [ "$manifest_executables" = "$expected_host" ] || fail 'manifest runtime.executables does not match the supported platform set'
 		executable_paths=$(printf '%s\n' "$manifest_executables" | awk -v platform="$host_platform" '$1 == platform { print $2 }')
 		[ -n "$executable_paths" ] || fail "host platform is not declared: $host_platform"
 		;;
