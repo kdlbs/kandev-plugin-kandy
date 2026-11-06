@@ -10,7 +10,7 @@
   "packageSha256": "808ae47eaf82687a96d45ae31b87c03b14665c15f513e272dbdb076ba6c60193",
   "variant": "action",
   "backend": {
-    "activityTaskId": "bac1ee67-2ea2-4024-8618-c468629bcb43",
+    "activityTaskId": "ba3840b0-9a51-4a41-94b3-27d0521ebd5f",
     "initialAwardSeq": 0,
     "observedAwardSeq": 6,
     "stateAndSecretRestart": "passed",

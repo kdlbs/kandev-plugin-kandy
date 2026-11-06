@@ -54,6 +54,10 @@ manifest_executables=$(awk '
 	in_runtime && /^[[:space:]]+executables:$/ { in_executables = 1; next }
 	in_executables && /^[^[:space:]]/ { exit }
 	in_executables && /^[[:space:]]+[[:alnum:]_-]+: / {
+		if ($0 !~ /^[[:space:]]+[[:alnum:]_-]+: ("[^"[:space:]]+"|[^"[:space:]]+)$/) {
+			print "invalid executable declaration"
+			next
+		}
 		platform = $1
 		sub(/:$/, "", platform)
 		path = $2

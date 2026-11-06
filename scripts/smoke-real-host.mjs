@@ -303,7 +303,7 @@ async function runBackendContract(task) {
   await expect.poll(async () => (await api("GET", `${root}/webhooks/kandy`)).award_seq,
     { timeout: 90_000 }).toBeGreaterThan(initial.award_seq);
   await expect.poll(async () => (await api("GET", `${root}/webhooks/kandy`)).token_grotto.total_tokens,
-    { timeout: 90_000 }).not.toBe("0");
+    { timeout: 90_000 }).toMatch(/^[1-9][0-9]*$/);
   const afterEvents = await api("GET", `${root}/webhooks/kandy`);
   return {
     activityTaskId: activityTask.id,

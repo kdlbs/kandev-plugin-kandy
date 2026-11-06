@@ -281,6 +281,7 @@ git -C "$SOURCE_ROOT" checkout --detach f0e2e774cfe2df8a0d15e4c21dea7b48580e38fb
 (cd "$SOURCE_ROOT/apps" && corepack enable && pnpm install --frozen-lockfile --filter @kandev/web...)
 (cd "$SOURCE_ROOT/apps/backend" && GOWORK=off go build -o "$RUNTIME_ROOT/bin/mock-agent" ./cmd/mock-agent)
 (cd "$SOURCE_ROOT/apps/web" && pnpm exec playwright install chromium)
+export KANDEV_TOOLING="$SOURCE_ROOT"
 make package-host
 KANDEV_SMOKE_RUNTIME_BIN="$RUNTIME_ROOT/bin/kandev" \
 KANDEV_SMOKE_HOST_REVISION=f0e2e774cfe2df8a0d15e4c21dea7b48580e38fb \

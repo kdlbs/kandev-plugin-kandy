@@ -77,6 +77,7 @@ tar -czf "$test_dir/matching-package/$package_file" -C "$test_dir/matching-packa
 make_fixture normalized-package
 mkdir -p "$test_dir/normalized-package/archive"
 sed 's/^version: "\([^"&]*\)"$/version: \1/' "$test_dir/normalized-package/manifest.yaml" > "$test_dir/normalized-package/archive/manifest.yaml"
+grep -Fx "version: $base_version" "$test_dir/normalized-package/archive/manifest.yaml" >/dev/null
 tar -czf "$test_dir/normalized-package/$package_file" -C "$test_dir/normalized-package/archive" manifest.yaml
 (cd "$test_dir/normalized-package" && sh "$verify_script" "v$base_version" "$package_file")
 

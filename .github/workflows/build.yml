@@ -48,11 +48,9 @@ jobs:
           go-version-file: plugin/go.mod
           cache-dependency-path: plugin/go.sum
 
-      - name: Install and check public SDK dependencies
+      - name: Install public SDK dependencies
         working-directory: plugin
-        run: |
-          go mod download
-          make sdk-check
+        run: go mod download
 
       - name: Build host binary
         working-directory: plugin

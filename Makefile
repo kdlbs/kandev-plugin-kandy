@@ -12,12 +12,14 @@ KANDEV_TOOLING ?=
 PLUGIN_ROOT := $(CURDIR)
 
 sdk-check:
+	# Pin the checker; it resolves the project's selected SDK through go list.
 	go run github.com/kdlbs/kandev/pluginsdk/cmd/kandev-sdk-check@v0.1.0 --manifest manifest.yaml
 
 check-tooling:
 	@test -n "$(KANDEV_TOOLING)" || { echo "Set KANDEV_TOOLING to the checkout pinned in .kandev-tooling-ref" >&2; exit 1; }
 	@test "$$(git -C "$(KANDEV_TOOLING)" rev-parse HEAD)" = "$$(cat .kandev-tooling-ref)" || { echo "KANDEV_TOOLING must match .kandev-tooling-ref" >&2; exit 1; }
-	@test -d "$(KANDEV_TOOLING)/apps/backend/cmd/plugin-pack" && test -d "$(KANDEV_TOOLING)/pluginsdk"
+	@tooling_status="$$(git -C "$(KANDEV_TOOLING)" status --porcelain)" && test -z "$$tooling_status" || { echo "KANDEV_TOOLING must be clean (no staged, unstaged, or untracked source changes)" >&2; exit 1; }
+	@test -d "$(KANDEV_TOOLING)/apps/backend/cmd/plugin-pack" && test -d "$(KANDEV_TOOLING)/pluginsdk" || { echo "KANDEV_TOOLING must contain apps/backend/cmd/plugin-pack and root pluginsdk" >&2; exit 1; }
 
 build: sdk-check
 	mkdir -p bin
@@ -31,6 +33,7 @@ test:
 	$(NODE) --test ui/bundle.test.js
 	sh scripts/test-verify-package.sh
 	sh scripts/test-verify-release-version.sh
+	sh scripts/test-check-tooling.sh
 
 fmt:
 	gofmt -w ./server

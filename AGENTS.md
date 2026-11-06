@@ -16,6 +16,7 @@ and use Kandev's
   `make check-format`, `make vet`, `make test`, and `make build`.
 - Packaging separately needs an explicit `KANDEV_TOOLING` checkout matching
   `.kandev-tooling-ref`, with `apps/backend` and root `pluginsdk/`.
+  The tooling checkout must have no staged, unstaged, or untracked changes.
   Run `make package-host`, `make package`, inspect inventory/checksums, then
   smoke-test the package on the declared minimum host. SDK compilation is
   standalone; packaging still needs backend-owned `plugin-pack`.

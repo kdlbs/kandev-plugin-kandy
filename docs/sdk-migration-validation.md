@@ -133,8 +133,8 @@ GOWORK=off go build \
 The source checkout supplies the locked Playwright package. The test uses an
 existing Playwright Chromium 149 executable via `CHROME_BIN`. The local wrapper
 sets `LD_LIBRARY_PATH` to the installed Nix browser libraries, then execs
-`/home/zeval/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome` with the
-original arguments. A short task-owned `TMPDIR` avoids Chromium's Unix-socket
+the installed Playwright Chromium executable with the original arguments.
+A short task-owned `TMPDIR` avoids Chromium's Unix-socket
 path limit. Initial browser attempts failed for missing libraries and an
 oversized temporary path; a full-package attempt later hit a navigation timeout
 under machine load. The final unchanged smoke command completed successfully:
@@ -170,3 +170,28 @@ Exact host/runtime/package identity, backend results and geometry are in
 and full logs remain under `/tmp/kandy-sdk-migration-evidence/`; they are not
 part of the plugin archive. The smoke exercises restart state preservation;
 it does not certify every historical plugin upgrade or non-Linux runtime.
+
+## Automated review follow-up
+
+The package verifier now validates complete quoted/unquoted executable paths,
+including rejection of trailing text and malformed extra host declarations.
+The normalized-host negative case adds a separate unsupported platform without
+removing the supported host. The normalized release fixture asserts its plain
+version before archiving. `sh scripts/test-verify-package.sh` and
+`sh scripts/test-verify-release-version.sh` passed after these changes.
+
+`sh scripts/test-check-tooling.sh` passes clean, staged, unstaged, untracked,
+wrong-revision and missing-directory cases using a disposable Git fixture.
+It is included in `make test`. `make check-tooling` also passes against the
+real pinned clean tooling checkout. The SDK checker's explicit v0.1.0 pin is
+retained: its `internal/compatibility/resolve.go` resolves the project's selected
+SDK with `go list -mod=readonly -m -json`, rather than checking its own module.
+The minimum-host smoke now requires a positive decimal token count.
+
+The stricter smoke was rerun successfully against the same full archive using
+identical environment/arguments above, with output directed to
+`/tmp/kandy-sdk-migration-evidence/minimum-host-review`. The committed machine
+record was refreshed from that run and reports 150 observed tokens.
+`make test` passed again with all 98 UI tests, backend tests, both package/release
+verifier suites, and the new tooling-checkout suite. The real full archive also
+passed the tightened `scripts/verify-package.sh` after remediation.
