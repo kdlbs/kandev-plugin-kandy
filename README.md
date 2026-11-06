@@ -231,6 +231,9 @@ Kandev source checkout at `.kandev-tooling-ref`; it is independent of the
 plugin's public SDK dependency. Compilation independence does not imply
 checkout-free packaging. Obtain the pinned tool outside the plugin checkout:
 
+The tooling checkout must be clean: staged, unstaged, and untracked changes
+are rejected. Use a separate checkout for local Kandev development.
+
 ```sh
 KANDEV_TOOLING="$(mktemp -d)/kandev-tooling"
 git clone --filter=blob:none --sparse https://github.com/kdlbs/kandev.git "$KANDEV_TOOLING"

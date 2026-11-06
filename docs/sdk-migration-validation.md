@@ -182,6 +182,8 @@ version before archiving. `sh scripts/test-verify-package.sh` and
 
 `sh scripts/test-check-tooling.sh` passes clean, staged, unstaged, untracked,
 wrong-revision and missing-directory cases using a disposable Git fixture.
+Both missing-directory halves are isolated: the SDK case retains the packaging
+command, and the command case restores the SDK before removing the command.
 It is included in `make test`. `make check-tooling` also passes against the
 real pinned clean tooling checkout. The SDK checker's explicit v0.1.0 pin is
 retained: its `internal/compatibility/resolve.go` resolves the project's selected

@@ -46,6 +46,15 @@ git -C "$tooling" rm -q pluginsdk/go.mod
 git -C "$tooling" commit -qm 'remove SDK directory'
 git -C "$tooling" rev-parse HEAD > "$fixture/.kandev-tooling-ref"
 expect_failure 'missing SDK directory' 'apps/backend/cmd/plugin-pack and root pluginsdk'
+
+mkdir -p "$tooling/pluginsdk"
+printf 'module fixture\n' > "$tooling/pluginsdk/go.mod"
+git -C "$tooling" rm -q apps/backend/cmd/plugin-pack/main.go
+git -C "$tooling" add pluginsdk/go.mod
+git -C "$tooling" commit -qm 'remove packaging command directory'
+git -C "$tooling" rev-parse HEAD > "$fixture/.kandev-tooling-ref"
+expect_failure 'missing packaging command directory' 'apps/backend/cmd/plugin-pack and root pluginsdk'
+
 printf '%040d\n' 0 > "$fixture/.kandev-tooling-ref"
 expect_failure 'a different tooling revision' 'must match .kandev-tooling-ref'
 
