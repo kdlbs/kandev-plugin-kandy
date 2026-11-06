@@ -75,12 +75,14 @@ Build a package (`make package-host` for your platform, `make package` for
 all platforms) and install the tarball via **Settings > Plugins > Install**
 or `POST /api/plugins/install`.
 
-The manifest requires Kandev 0.83.0 or newer. It declares instance state,
+The manifest requires Kandev 0.99.0 or newer, the SDK-wide minimum recorded
+in the published Go SDK v0.1.0 `sdk-release.json`. It declares instance state,
 encrypted host secrets, and event subscriptions. Kandy has no setup form and
 does not ask for provider credentials. The host `Action` is optional at
 runtime: newer hosts use it for the top-bar control, while older supported
-hosts keep the native-button fallback. The source SDK pin below identifies the
-build contract; it does not change the runtime minimum.
+hosts keep the native-button fallback. The published SDK changes source imports without changing the wire protocol.
+Previously built Kandy releases retain their own declared host minimum; this
+source migration raises the minimum for newly built packages to 0.99.0.
 
 The package includes binaries for Linux amd64/arm64, macOS amd64/arm64, and
 Windows amd64. `make package-host` builds only for the current machine;
@@ -192,132 +194,120 @@ its grotto history.
 
 ## Development
 
-Kandy uses the Go SDK from a private sibling checkout of the Kandev monorepo.
-`.kandev-sdk-ref` pins that source to
-`570600439036e81f8e9e1c63f15c4abce8a6c846`, which contains the additive
-`host.ui.Action` API. The Go `replace` path expects the plugin and Kandev
-checkouts to be siblings:
+Kandy pins the public Go module `github.com/kdlbs/kandev/pluginsdk v0.1.0`.
+Its SDK version is independent of Kandy's plugin version. No sibling Kandev
+checkout or Go replacement is needed to compile or test the plugin:
 
 ```sh
-mkdir plugin-work && cd plugin-work
-git clone https://github.com/kdlbs/kandev.git kandev
-git clone https://github.com/kdlbs/kandev-plugin-kandy.git kandev-plugin-kandy
-git -C kandev checkout "$(cat kandev-plugin-kandy/.kandev-sdk-ref)"
+git clone https://github.com/kdlbs/kandev-plugin-kandy.git
 cd kandev-plugin-kandy
-
+GOWORK=off go mod download
 go mod tidy
 git diff --exit-code -- go.mod go.sum
+make sdk-check
 make check-format
 make vet
 make test
 make build
-make package-host
-make package
 ```
 
-Use Go 1.26.0 and Node 24. The hand-written `ui/bundle.js` has no build step
-or frontend dependencies. `make test` runs Go tests, UI interaction tests,
-and positive and negative package/release verifier checks. `make smoke-package`
-opens the packaged UI bundle in a disposable Chrome fixture. It checks the
-Action and older-host paths on desktop and phone sizes. It exercises the
-package contract but does not replace validation in a Kandev host.
+Use Go 1.26.0 or newer and Node 24. The hand-written `ui/bundle.js` has no
+build step, npm SDK imports, package manifest, frontend dependencies, or lockfile.
+`make test` runs Go tests, all UI interaction tests, and positive and negative
+package/release verifier checks. There is no frontend typecheck command.
 
-For host integration, `scripts/smoke-real-host.mjs` launches a disposable
-Kandev backend, installs the built package through Settings, and tests the
-actual chat top bar and phone control with a disposable task and fake Kandy
-webhook responses. The task uses Kandev's local E2E mock-agent; the smoke uses
-no external provider account or personal data. The
-SDK-pin host also has a phone plugin menu. v0.83.0 predates it, so that host's
-phone check uses the legacy top-bar button. Both checks require a 44px target. The
-script also checks hover/focus preview, Enter/Space and touch activation,
-reduced motion, one registration after disable/re-enable, coarse-pointer input,
-artwork containment, and horizontal overflow. It writes
-`result.json`, measured control geometry, host logs, and screenshots to each
-artifacts directory. Run it on Node 24 after building the two host revisions
-and installing the locked web dependencies and Playwright Chromium:
+`make sdk-check` runs the installed-dependency compatibility checker from
+`github.com/kdlbs/kandev/pluginsdk/cmd/kandev-sdk-check@v0.1.0`. It checks the
+selected Go SDK's release record against the manifest. Keep exact pins and
+upgrade deliberately: install the selected public version, regenerate `go.sum`,
+read its `sdk-release.json`, update the SDK-wide host floor if required, then
+rerun compatibility, tests, packaging, and minimum-host smoke. Preserve a
+manifest API version supported by that SDK; Kandy continues to use API 1.
+
+### Packaging tooling
+
+`plugin-pack` remains backend-owned tooling. Packaging needs an explicit
+Kandev source checkout at `.kandev-tooling-ref`; it is independent of the
+plugin's public SDK dependency. Compilation independence does not imply
+checkout-free packaging. Obtain the pinned tool outside the plugin checkout:
+
+The tooling checkout must be clean: staged, unstaged, and untracked changes
+are rejected. Use a separate checkout for local Kandev development.
 
 ```sh
-mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
-SMOKE_ROOT="$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/kandy-host-smoke.XXXXXX")"
-HOST_ROOT="$SMOKE_ROOT/hosts/kandev"
-mkdir -p "$SMOKE_ROOT/hosts"
-git clone https://github.com/kdlbs/kandev.git "$HOST_ROOT"
-git -C "$HOST_ROOT" checkout --detach 570600439036e81f8e9e1c63f15c4abce8a6c846
-git -C "$HOST_ROOT" worktree add --detach "$SMOKE_ROOT/hosts/kandev-min" v0.83.0
-
-for checkout in "$HOST_ROOT" "$SMOKE_ROOT/hosts/kandev-min"; do
-  (cd "$checkout/apps" && corepack enable && pnpm install --frozen-lockfile)
-  (cd "$checkout/apps/web" && pnpm exec playwright install chromium)
-  (cd "$checkout" && make build)
-done
-
-mkdir -p "$SMOKE_ROOT/runtime"
-VERSION="$(sed -n 's/^VERSION := //p' Makefile)"
-PACKAGE="kandev-plugin-kandy-$VERSION.tar.gz"
+KANDEV_TOOLING="$(mktemp -d)/kandev-tooling"
+git clone --filter=blob:none --sparse https://github.com/kdlbs/kandev.git "$KANDEV_TOOLING"
+git -C "$KANDEV_TOOLING" sparse-checkout set apps/backend pluginsdk
+git -C "$KANDEV_TOOLING" checkout --detach "$(cat .kandev-tooling-ref)"
+export KANDEV_TOOLING
 make package-host
-TMPDIR="$SMOKE_ROOT/runtime" node scripts/smoke-real-host.mjs \
-  "$HOST_ROOT" "$PACKAGE" action 18431 "$SMOKE_ROOT/action"
-TMPDIR="$SMOKE_ROOT/runtime" node scripts/smoke-real-host.mjs \
-  "$SMOKE_ROOT/hosts/kandev-min" "$PACKAGE" legacy 18432 "$SMOKE_ROOT/minimum"
+CGO_ENABLED=0 make package
 ```
 
-Use an available pair of ports. The smoke host uses isolated home and database
-directories and deletes them when each run ends. Screenshots and JSON
-measurements remain in the artifacts directories under `SMOKE_ROOT`.
+The root `pluginsdk/` directory is needed by the backend tool's local module
+replacement; it is not substituted into Kandy's module graph. The package targets
+check the tooling revision and run the SDK checker before building. They verify
+archive inventory and every generated checksum. `make smoke-package` also opens
+the packaged UI in a disposable Chrome fixture and covers Action and legacy
+fallbacks at desktop and phone sizes. Set `CHROME_BIN` when needed.
 
-To validate a published runtime, use its released full bundle as the host. The
-source checkout supplies the release's locked Playwright dependency and a
-test-only mock agent. The host executable and UI still come from the downloaded
-runtime bundle. This example pins Kandev `v0.97.0` to commit
-`e43881c7555372897b57ec51c705f1e05da43c40`:
+### Minimum-host integration
+
+`scripts/smoke-real-host.mjs` installs the package through Settings in a disposable
+host and exercises the real top bar and phone control, hover/focus, keyboard and
+touch activation, reduced motion, disable/re-enable, artwork bounds, and overflow.
+Before applying presentation mocks, it calls all three actual webhooks, checks
+undeclared/disabled route rejection, restarts the plugin to verify Host state
+and vault-key recovery, and starts a local mock agent with `/with-usage` to
+verify activity and token-usage event delivery. Later browser measurements use
+fake presentation responses for predictable UI assertions. No external agent
+provider is contacted.
+
+Use the released full Kandev **v0.99.0** bundle as the runtime. Its exact source
+commit is `f0e2e774cfe2df8a0d15e4c21dea7b48580e38fb`; source supplies only the
+locked Playwright dependency and test-only mock agent. Prepare an isolated runtime,
+source checkout, and artifact directory (use absolute paths):
 
 ```sh
-RELEASE_ROOT="$SMOKE_ROOT/releases/v0.97.0"
-SOURCE_ROOT="$SMOKE_ROOT/hosts/kandev-v0.97.0-source"
-mkdir -p "$RELEASE_ROOT/download"
-curl -fL https://github.com/kdlbs/kandev/releases/download/v0.97.0/kandev-linux-x64-full.tar.gz \
-  -o "$RELEASE_ROOT/download/kandev-linux-x64-full.tar.gz"
-curl -fsSL https://github.com/kdlbs/kandev/releases/download/v0.97.0/kandev-linux-x64-full.tar.gz.sha256 \
-  -o "$RELEASE_ROOT/download/kandev-linux-x64-full.tar.gz.sha256"
-(cd "$RELEASE_ROOT/download" && sha256sum -c kandev-linux-x64-full.tar.gz.sha256)
-mkdir -p "$RELEASE_ROOT/runtime"
-tar -xzf "$RELEASE_ROOT/download/kandev-linux-x64-full.tar.gz" -C "$RELEASE_ROOT/runtime"
-cp -a "$RELEASE_ROOT/runtime/kandev" "$RELEASE_ROOT/runtime/kandev-smoke"
-RUNTIME_ROOT="$RELEASE_ROOT/runtime/kandev-smoke"
-
-git clone --filter=blob:none --no-checkout https://github.com/kdlbs/kandev.git "$SOURCE_ROOT"
-git -C "$SOURCE_ROOT" fetch --depth=1 origin e43881c7555372897b57ec51c705f1e05da43c40
-git -C "$SOURCE_ROOT" checkout --detach e43881c7555372897b57ec51c705f1e05da43c40
+SMOKE_ROOT="$(mktemp -d)"
+SOURCE_ROOT="$SMOKE_ROOT/source"
+mkdir -p "$SMOKE_ROOT/download" "$SMOKE_ROOT/runtime" "$SMOKE_ROOT/tmp"
+curl -fL https://github.com/kdlbs/kandev/releases/download/v0.99.0/kandev-linux-x64-full.tar.gz \
+  -o "$SMOKE_ROOT/download/kandev-linux-x64-full.tar.gz"
+curl -fL https://github.com/kdlbs/kandev/releases/download/v0.99.0/kandev-linux-x64-full.tar.gz.sha256 \
+  -o "$SMOKE_ROOT/download/kandev-linux-x64-full.tar.gz.sha256"
+(cd "$SMOKE_ROOT/download" && sha256sum -c kandev-linux-x64-full.tar.gz.sha256)
+tar -xzf "$SMOKE_ROOT/download/kandev-linux-x64-full.tar.gz" -C "$SMOKE_ROOT/runtime"
+RUNTIME_ROOT="$SMOKE_ROOT/runtime/kandev"
+git clone --filter=blob:none https://github.com/kdlbs/kandev.git "$SOURCE_ROOT"
+git -C "$SOURCE_ROOT" checkout --detach f0e2e774cfe2df8a0d15e4c21dea7b48580e38fb
 (cd "$SOURCE_ROOT/apps" && corepack enable && pnpm install --frozen-lockfile --filter @kandev/web...)
 (cd "$SOURCE_ROOT/apps/backend" && GOWORK=off go build -o "$RUNTIME_ROOT/bin/mock-agent" ./cmd/mock-agent)
-(
-  export PLAYWRIGHT_BROWSERS_PATH="$SMOKE_ROOT/playwright-browsers"
-  cd "$SOURCE_ROOT/apps/web"
-  pnpm exec playwright install chromium
-)
-
+(cd "$SOURCE_ROOT/apps/web" && pnpm exec playwright install chromium)
+export KANDEV_TOOLING="$SOURCE_ROOT"
+make package-host
 KANDEV_SMOKE_RUNTIME_BIN="$RUNTIME_ROOT/bin/kandev" \
-KANDEV_SMOKE_HOST_REVISION=e43881c7555372897b57ec51c705f1e05da43c40 \
-KANDEV_SMOKE_HOST_TAG=v0.97.0 \
-KANDEV_SMOKE_EXPECT_VERSION=v0.97.0 \
+KANDEV_SMOKE_HOST_REVISION=f0e2e774cfe2df8a0d15e4c21dea7b48580e38fb \
+KANDEV_SMOKE_HOST_TAG=v0.99.0 KANDEV_SMOKE_EXPECT_VERSION=v0.99.0 \
 KANDEV_SMOKE_PLAYWRIGHT_PACKAGE_JSON="$SOURCE_ROOT/apps/web/package.json" \
-PLAYWRIGHT_BROWSERS_PATH="$SMOKE_ROOT/playwright-browsers" TMPDIR="$SMOKE_ROOT/runtime" \
-  node scripts/smoke-real-host.mjs "$RUNTIME_ROOT" "$PACKAGE" \
-    action 18431 "$RELEASE_ROOT/artifacts/action"
+TMPDIR="$SMOKE_ROOT/tmp" node scripts/smoke-real-host.mjs \
+  "$RUNTIME_ROOT" "$(make -s package-file)" action 18431 "$SMOKE_ROOT/artifacts"
 ```
 
-The release-runtime mode checks `/health` against the expected version before
-installing the package. It records host revision/version, package SHA-256,
-host executable and mock-agent helper SHA-256, desktop and coarse-pointer
-measurements, overflow checks, host logs, and screenshots in the selected
-artifact directory.
+Choose an available port. The host uses isolated home/database directories and
+deletes them when the run ends. Artifacts retain host/version and executable
+hashes, package digest, measurements, logs, and screenshots. See
+[`docs/sdk-migration-validation.md`](docs/sdk-migration-validation.md) for the
+migration's exact commands, results, and coverage limits.
 
 ## Automation and releases
 
 Pull requests to `master` run separate verification and packaging workflows.
-They pin the Kandev source checkout, check module tidiness and formatting, run
-`go vet` and tests, and build and verify the host-only and all-platform
-packages. Package verification checks the manifest identity and version,
+Verification installs only public Go dependencies, checks SDK compatibility,
+module tidiness and formatting, and runs `go vet` and tests. Packaging and
+release workflows additionally use the separately pinned backend tooling
+checkout, including root `pluginsdk/`, to build and verify host-only and
+all-platform packages. Package verification checks the manifest identity and version,
 declared binaries, exact file inventory, and every SHA-256 checksum.
 
 The `release` workflow runs from `master`. It validates the candidate, runs
@@ -329,8 +319,10 @@ validation.
 
 ## Troubleshooting
 
-- If `go test` cannot resolve `github.com/kandev/kandev`, check that the host
-  checkout is beside the plugin and is at `.kandev-sdk-ref`.
+- If SDK resolution fails, run `GOWORK=off go mod download` and `make sdk-check`.
+  The plugin needs public `github.com/kdlbs/kandev/pluginsdk v0.1.0`.
+- If packaging cannot find its tooling, set `KANDEV_TOOLING` to the checkout
+  pinned in `.kandev-tooling-ref`, with `apps/backend` and root `pluginsdk/`.
 - If packaging reports a missing runtime executable, check that the build
   platform is declared in `manifest.yaml`, then run `make clean` and retry.
 - `make smoke-package` requires Chrome or Chromium. Set `CHROME_BIN` if the

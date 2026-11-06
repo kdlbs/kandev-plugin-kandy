@@ -35,6 +35,8 @@ jobs:
     name: Validate and prepare release candidate
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
+    env:
+      KANDEV_TOOLING: ${{ github.workspace }}/kandev-tooling
     permissions:
       contents: write
     outputs:
@@ -57,24 +59,24 @@ jobs:
           ref: master
           fetch-depth: 0
 
-      - name: Read pinned Kandev source revision
-        id: sdk
+      - name: Read pinned packaging tooling revision
+        id: tooling
         working-directory: plugin
         run: |
           set -euo pipefail
-          sdk_ref="$(cat .kandev-sdk-ref)"
-          [[ "$sdk_ref" =~ ^[0-9a-f]{40}$ ]]
-          echo "ref=$sdk_ref" >> "$GITHUB_OUTPUT"
+          tooling_ref="$(cat .kandev-tooling-ref)"
+          [[ "$tooling_ref" =~ ^[0-9a-f]{40}$ ]]
+          echo "ref=$tooling_ref" >> "$GITHUB_OUTPUT"
 
-      - name: Check out Kandev SDK contract
+      - name: Check out backend packaging tooling
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           repository: kdlbs/kandev
-          path: kandev
-          ref: ${{ steps.sdk.outputs.ref }}
+          path: kandev-tooling
+          ref: ${{ steps.tooling.outputs.ref }}
           sparse-checkout: |
             apps/backend
-            apps/packages/plugin-sdk
+            pluginsdk
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -172,6 +174,7 @@ jobs:
           sh scripts/verify-release-version.sh "$TAG"
           go mod tidy
           git diff --exit-code -- go.mod go.sum
+          make sdk-check
           make check-format
           make vet
           make test
@@ -213,6 +216,8 @@ jobs:
         (github.event_name == 'workflow_dispatch' && !inputs.dry_run && needs.prepare.result == 'success'))
       }}
     runs-on: ubuntu-latest
+    env:
+      KANDEV_TOOLING: ${{ github.workspace }}/kandev-tooling
     permissions:
       contents: write
     steps:
@@ -223,24 +228,24 @@ jobs:
           ref: ${{ github.event_name == 'push' && github.ref || needs.prepare.outputs.tag }}
           fetch-depth: 0
 
-      - name: Read pinned Kandev source revision
-        id: sdk
+      - name: Read pinned packaging tooling revision
+        id: tooling
         working-directory: plugin
         run: |
           set -euo pipefail
-          sdk_ref="$(cat .kandev-sdk-ref)"
-          [[ "$sdk_ref" =~ ^[0-9a-f]{40}$ ]]
-          echo "ref=$sdk_ref" >> "$GITHUB_OUTPUT"
+          tooling_ref="$(cat .kandev-tooling-ref)"
+          [[ "$tooling_ref" =~ ^[0-9a-f]{40}$ ]]
+          echo "ref=$tooling_ref" >> "$GITHUB_OUTPUT"
 
-      - name: Check out Kandev SDK contract
+      - name: Check out backend packaging tooling
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           repository: kdlbs/kandev
-          path: kandev
-          ref: ${{ steps.sdk.outputs.ref }}
+          path: kandev-tooling
+          ref: ${{ steps.tooling.outputs.ref }}
           sparse-checkout: |
             apps/backend
-            apps/packages/plugin-sdk
+            pluginsdk
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -263,6 +268,7 @@ jobs:
           sh scripts/verify-release-version.sh "$TAG"
           go mod tidy
           git diff --exit-code -- go.mod go.sum
+          make sdk-check
           make check-format
           make vet
           make test

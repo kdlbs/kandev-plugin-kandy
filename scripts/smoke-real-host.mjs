@@ -239,7 +239,7 @@ async function seedTask() {
     local_path: repositoryDir,
     default_branch: "main",
   });
-  const task = await api("POST", "/api/v1/tasks", {
+  const taskInput = {
     workspace_id: workspace.id,
     title: "Kandy action host smoke",
     description: "/e2e:simple-message",
@@ -250,9 +250,10 @@ async function seedTask() {
     workflow_id: workflow.id,
     workflow_step_id: step.id,
     repositories: [{ repository_id: repository.id }],
-  });
+  };
+  const task = await api("POST", "/api/v1/tasks", taskInput);
   assert.ok(task.id, "task API returned an id");
-  return task;
+  return { ...task, smokeTaskInput: taskInput };
 }
 
 async function installPlugin(page) {
@@ -265,6 +266,54 @@ async function installPlugin(page) {
   const row = page.getByTestId(`plugin-row-${PLUGIN_ID}`);
   await expect(row).toBeVisible({ timeout: 30_000 });
   await expect(row.getByText("Active", { exact: true })).toBeVisible({ timeout: 30_000 });
+}
+
+// These calls reach the installed plugin; presentation mocks are added later.
+async function runBackendContract(task) {
+  const root = `/api/plugins/${PLUGIN_ID}`;
+  const initial = await api("GET", `${root}/webhooks/kandy`);
+  assert.equal(initial.counterfeit, false);
+  assert.ok(initial.alive_since);
+  assert.ok(initial.generation >= 1);
+  const petted = await api("POST", `${root}/webhooks/pet`);
+  assert.equal(petted.lineage_seed, initial.lineage_seed);
+  assert.equal(petted.award_seq, initial.award_seq, "care does not award XP");
+  const bonked = await api("POST", `${root}/webhooks/bonk`);
+  assert.equal(bonked.refusing_pets, true);
+  assert.equal(bonked.award_seq, initial.award_seq);
+  assert.equal((await fetch(`${baseUrl}${root}/webhooks/undeclared`)).status, 404);
+  await api("POST", `${root}/disable`);
+  assert.equal((await fetch(`${baseUrl}${root}/webhooks/kandy`)).ok, false);
+  await api("POST", `${root}/enable`);
+  await expect.poll(async () => {
+    const response = await fetch(`${baseUrl}${root}/webhooks/kandy`);
+    return response.ok;
+  }, { timeout: 30_000 }).toBe(true);
+  const restored = await api("GET", `${root}/webhooks/kandy`);
+  assert.equal(restored.lineage_seed, initial.lineage_seed);
+  assert.equal(restored.alive_since, initial.alive_since);
+  assert.equal(restored.counterfeit, false, "Host vault key validates the restored ledger");
+  assert.equal(restored.refusing_pets, true, "care survives process restart through Host state");
+  const activityTask = await api("POST", "/api/v1/tasks", {
+    ...task.smokeTaskInput,
+    title: "Kandy live event SDK smoke",
+    description: "/e2e:simple-message /with-usage",
+    start_agent: true,
+  });
+  await expect.poll(async () => (await api("GET", `${root}/webhooks/kandy`)).award_seq,
+    { timeout: 90_000 }).toBeGreaterThan(initial.award_seq);
+  await expect.poll(async () => (await api("GET", `${root}/webhooks/kandy`)).token_grotto.total_tokens,
+    { timeout: 90_000 }).toMatch(/^[1-9][0-9]*$/);
+  const afterEvents = await api("GET", `${root}/webhooks/kandy`);
+  return {
+    activityTaskId: activityTask.id,
+    initialAwardSeq: initial.award_seq,
+    observedAwardSeq: afterEvents.award_seq,
+    stateAndSecretRestart: "passed",
+    undeclaredWebhookRejected: true,
+    tokenGrottoStatus: afterEvents.token_grotto.status,
+    observedTokens: afterEvents.token_grotto.total_tokens,
+  };
 }
 
 async function actionLocator(page) {
@@ -589,6 +638,7 @@ async function main() {
     const desktopPage = await desktopContext.newPage();
     await desktopPage.clock.install({ time: new Date("2026-09-30T13:00:00Z") });
     await installPlugin(desktopPage);
+    const backend = await runBackendContract(task);
     await desktopPage.goto(`${baseUrl}/t/${task.id}`);
     await expect(desktopPage.locator("#kandev-kandy-widget:visible")).toHaveCount(1, {
       timeout: 20_000,
@@ -612,6 +662,7 @@ async function main() {
       package: packagePath,
       packageSha256: createHash("sha256").update(readFileSync(packagePath)).digest("hex"),
       variant: hostVariant,
+      backend,
       desktop,
       phone,
       screenshots: [

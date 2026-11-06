@@ -14,7 +14,7 @@ tag=$1
 version_pattern='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
 printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || fail "tag is not a release version: $tag"
 tag_version=${tag#v}
-manifest_version=$(sed -nE 's/^version: "([^"]+)"$/\1/p' manifest.yaml)
+manifest_version=$(sed -nE 's/^version: "([^"]+)"$/\1/p; s/^version: ([^"[:space:]]+)$/\1/p' manifest.yaml)
 make_version=$(sed -nE 's/^VERSION := ([^[:space:]]+)$/\1/p' Makefile)
 [ -n "$manifest_version" ] || fail 'manifest.yaml has no version'
 [ -n "$make_version" ] || fail 'Makefile has no VERSION'
@@ -28,6 +28,6 @@ if [ "$#" -eq 2 ]; then
 	expected_package=$(make -s package-file)
 	[ -f "$package_file" ] || fail "package file not found: $package_file"
 	[ "$(basename "$package_file")" = "$expected_package" ] || fail "package filename $(basename "$package_file") differs from $expected_package"
-	package_version=$(tar -xOzf "$package_file" manifest.yaml | sed -nE 's/^version: "([^"]+)"$/\1/p') || fail 'could not read package manifest'
+	package_version=$(tar -xOzf "$package_file" manifest.yaml | sed -nE 's/^version: "([^"]+)"$/\1/p; s/^version: ([^"[:space:]]+)$/\1/p') || fail 'could not read package manifest'
 	[ "$package_version" = "$tag_version" ] || fail "package manifest version ${package_version:-missing} differs from tag $tag"
 fi

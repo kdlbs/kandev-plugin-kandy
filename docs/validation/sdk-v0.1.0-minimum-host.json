@@ -1,0 +1,110 @@
+{
+  "hostRoot": "/tmp/kandy-sdk-migration-evidence/runtime/kandev",
+  "hostRevision": "f0e2e774cfe2df8a0d15e4c21dea7b48580e38fb",
+  "hostVersion": "v0.99.0",
+  "hostTag": "v0.99.0",
+  "hostSource": "official Kandev release runtime bundle with exact-release mock-agent test helper",
+  "hostExecutableSha256": "11133f4d27efac7259d6f3ff6f598e3b018eeb10e0976b5b931a2a77968d572d",
+  "mockAgentHelperSha256": "39927dfaf09e8e77829cd4bc3c93966c82b5cc599f3489167d62f4641ec32455",
+  "package": "/tmp/kandy-sdk-migration-evidence/standalone/kandev-plugin-kandy-0.15.0.tar.gz",
+  "packageSha256": "808ae47eaf82687a96d45ae31b87c03b14665c15f513e272dbdb076ba6c60193",
+  "variant": "action",
+  "backend": {
+    "activityTaskId": "ba3840b0-9a51-4a41-94b3-27d0521ebd5f",
+    "initialAwardSeq": 0,
+    "observedAwardSeq": 6,
+    "stateAndSecretRestart": "passed",
+    "undeclaredWebhookRejected": true,
+    "tokenGrottoStatus": "ready",
+    "observedTokens": "150"
+  },
+  "desktop": {
+    "pointer": {
+      "fine": true,
+      "coarse": false
+    },
+    "desktopOverflow": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440
+    },
+    "previewOverflow": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440
+    },
+    "dialogOverflow": {
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440
+    },
+    "localizedAccessibleName": "Kandy: level 2 Drowsy Sporeling, gloomy",
+    "actualWebhookResponses": 13,
+    "reenabledCount": 1
+  },
+  "phone": {
+    "pointer": {
+      "coarse": true,
+      "fine": false,
+      "maxTouchPoints": 1
+    },
+    "details": {
+      "accessibleName": "Kandy: level 1 Egg, happy",
+      "presentation": "mobile",
+      "surface": "topbar",
+      "action": {
+        "x": 24,
+        "y": 477,
+        "width": 44,
+        "height": 44
+      },
+      "art": {
+        "x": 38,
+        "y": 491,
+        "width": 16,
+        "height": 16
+      },
+      "glyph": {
+        "x": 38,
+        "y": 491,
+        "width": 16,
+        "height": 16
+      },
+      "svg": {
+        "x": 38,
+        "y": 491,
+        "width": 16,
+        "height": 16
+      },
+      "section": {
+        "x": 24,
+        "y": 428,
+        "width": 345,
+        "height": 93
+      },
+      "viewport": {
+        "width": 393,
+        "height": 852
+      }
+    },
+    "localizedAccessibleName": "Kandy: level 2 Drowsy Sporeling, gloomy",
+    "menuOverflow": {
+      "viewportWidth": 393,
+      "documentWidth": 393,
+      "bodyWidth": 393
+    },
+    "dialogOverflow": {
+      "viewportWidth": 393,
+      "documentWidth": 393,
+      "bodyWidth": 393
+    }
+  },
+  "screenshots": [
+    "desktop-hover-preview.png",
+    "desktop-celebration.png",
+    "desktop-reduced-motion.png",
+    "phone-action-viewport.png",
+    "phone-action-surface.png",
+    "phone-dialog.png"
+  ]
+}

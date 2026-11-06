@@ -15,36 +15,42 @@ jobs:
   package:
     name: Build and verify plugin packages
     runs-on: ubuntu-latest
+    env:
+      KANDEV_TOOLING: ${{ github.workspace }}/kandev-tooling
     steps:
       - name: Check out plugin
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           path: plugin
 
-      - name: Read pinned Kandev source revision
-        id: sdk
+      - name: Read pinned packaging tooling revision
+        id: tooling
         working-directory: plugin
         run: |
           set -euo pipefail
-          sdk_ref="$(cat .kandev-sdk-ref)"
-          [[ "$sdk_ref" =~ ^[0-9a-f]{40}$ ]]
-          echo "ref=$sdk_ref" >> "$GITHUB_OUTPUT"
+          tooling_ref="$(cat .kandev-tooling-ref)"
+          [[ "$tooling_ref" =~ ^[0-9a-f]{40}$ ]]
+          echo "ref=$tooling_ref" >> "$GITHUB_OUTPUT"
 
-      - name: Check out Kandev SDK contract
+      - name: Check out backend packaging tooling
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           repository: kdlbs/kandev
-          path: kandev
-          ref: ${{ steps.sdk.outputs.ref }}
+          path: kandev-tooling
+          ref: ${{ steps.tooling.outputs.ref }}
           sparse-checkout: |
             apps/backend
-            apps/packages/plugin-sdk
+            pluginsdk
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: plugin/go.mod
           cache-dependency-path: plugin/go.sum
+
+      - name: Install public SDK dependencies
+        working-directory: plugin
+        run: go mod download
 
       - name: Build host binary
         working-directory: plugin
