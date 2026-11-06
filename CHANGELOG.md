@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0] - 2026-11-06
+
+### Changed
+
+- chore: migrate Kandy to public SDK v0.1.0 (#26) (479e8ba)
+
+
 ## [0.15.0] - 2026-10-05
 
 ### Changed

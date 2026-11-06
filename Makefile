@@ -3,7 +3,7 @@
 .DEFAULT_GOAL := build
 
 BIN := bin/kandev-plugin-kandy
-VERSION := 0.15.0
+VERSION := 0.16.0
 STAGE := .build/stage
 PKG_OUT := kandev-plugin-kandy-$(VERSION).tar.gz
 NODE ?= node
