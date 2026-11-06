@@ -1,0 +1,46 @@
+{
+  "package": "kandev-plugin-kandy-0.15.0.tar.gz",
+  "browser": "/tmp/kandy-sdk-migration-evidence/chrome",
+  "checks": [
+    {
+      "hostPath": "host Action",
+      "layout": "desktop/keyboard",
+      "target": "28x28px",
+      "creature": "16x16px",
+      "coarsePointer": false,
+      "reducedMotion": "none",
+      "loads": 2,
+      "opens": 2
+    },
+    {
+      "hostPath": "host Action",
+      "layout": "phone/touch",
+      "target": "44x44px",
+      "creature": "16x16px",
+      "coarsePointer": true,
+      "reducedMotion": "none",
+      "loads": 2,
+      "opens": 1
+    },
+    {
+      "hostPath": "older-host fallback",
+      "layout": "desktop/keyboard",
+      "target": "28x28px",
+      "creature": "22x22px",
+      "coarsePointer": false,
+      "reducedMotion": "none",
+      "loads": 2,
+      "opens": 2
+    },
+    {
+      "hostPath": "older-host fallback",
+      "layout": "phone/touch",
+      "target": "44x44px",
+      "creature": "22x22px",
+      "coarsePointer": true,
+      "reducedMotion": "none",
+      "loads": 2,
+      "opens": 1
+    }
+  ]
+}
